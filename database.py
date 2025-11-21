@@ -164,6 +164,16 @@ class Database:
             messages = session.query(Message).filter_by(
                 telegram_user_id=telegram_id
             ).order_by(Message.message_date.desc()).all()
+
+            # Принудительно загружаем все атрибуты перед закрытием сессии
+            for msg in messages:
+                _ = msg.id
+                _ = msg.telegram_user_id
+                _ = msg.message_text
+                _ = msg.message_date
+                _ = msg.username
+
+            session.expunge_all()
             return messages
 
     def get_all_users(self) -> list:
@@ -175,6 +185,18 @@ class Database:
         """
         with self.get_session() as session:
             users = session.query(User).all()
+
+            # Принудительно загружаем все атрибуты перед закрытием сессии
+            for user in users:
+                _ = user.id
+                _ = user.telegram_id
+                _ = user.username
+                _ = user.first_name
+                _ = user.last_name
+                _ = user.first_seen
+                _ = user.last_seen
+
+            session.expunge_all()
             return users
 
     def search_messages_by_username(self, username: str, offset: int = 0, limit: int = 10) -> tuple:
@@ -202,5 +224,17 @@ class Database:
             messages = session.query(Message).filter(
                 Message.username.ilike(clean_username)
             ).order_by(Message.message_date.desc()).offset(offset).limit(limit).all()
+
+            # Принудительно загружаем все атрибуты перед закрытием сессии
+            for msg in messages:
+                # Обращаемся к атрибутам, чтобы они были загружены в память
+                _ = msg.id
+                _ = msg.telegram_user_id
+                _ = msg.message_text
+                _ = msg.message_date
+                _ = msg.username
+
+            # Отключаем объекты от сессии, чтобы они оставались доступными после закрытия
+            session.expunge_all()
 
             return messages, total_count
