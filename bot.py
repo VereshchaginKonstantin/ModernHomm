@@ -65,7 +65,8 @@ class SimpleBot:
             "Доступные команды:\n"
             "/start - Начать работу с ботом\n"
             "/help - Показать это сообщение\n"
-            "/search &lt;username&gt; - Поиск сообщений пользователя"
+            "/search &lt;username&gt; - Поиск сообщений пользователя\n"
+            "/users - Просмотр всех пользователей"
         )
         await update.message.reply_text(help_text, parse_mode=self.parse_mode)
         logger.info(f"Команда /help от пользователя {update.effective_user.id}")
@@ -204,6 +205,207 @@ class SimpleBot:
 
         return keyboard
 
+    async def users_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Обработчик команды /users для просмотра всех пользователей"""
+        logger.info(f"Команда /users от пользователя {update.effective_user.id}")
+
+        try:
+            users, total_count = self.db.get_users_paginated(offset=0, limit=10)
+
+            if not users:
+                await update.message.reply_text(
+                    "Пользователи не найдены.",
+                    parse_mode=self.parse_mode
+                )
+                return
+
+            # Формируем текст с результатами
+            response = self._format_users_list(users, total_count, page=0)
+
+            # Создаем кнопки с пользователями и пагинацией
+            keyboard = self._create_users_keyboard(users, page=0, total_count=total_count)
+
+            await update.message.reply_text(
+                response,
+                parse_mode=self.parse_mode,
+                reply_markup=InlineKeyboardMarkup(keyboard)
+            )
+
+        except Exception as e:
+            logger.error(f"Ошибка при получении списка пользователей: {e}")
+            await update.message.reply_text(
+                "Произошла ошибка при получении списка пользователей. Попробуйте позже.",
+                parse_mode=self.parse_mode
+            )
+
+    async def users_pagination_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Обработчик callback для пагинации списка пользователей"""
+        query = update.callback_query
+        await query.answer()
+
+        # Парсим данные из callback (формат: users:page)
+        data = query.data.split(':')
+        if len(data) != 2 or data[0] != 'users':
+            return
+
+        page = int(data[1])
+        offset = page * 10
+
+        try:
+            users, total_count = self.db.get_users_paginated(offset=offset, limit=10)
+
+            if not users:
+                await query.edit_message_text(
+                    "Больше пользователей не найдено.",
+                    parse_mode=self.parse_mode
+                )
+                return
+
+            # Формируем текст с результатами
+            response = self._format_users_list(users, total_count, page)
+
+            # Создаем кнопки с пользователями и пагинацией
+            keyboard = self._create_users_keyboard(users, page, total_count)
+
+            await query.edit_message_text(
+                response,
+                parse_mode=self.parse_mode,
+                reply_markup=InlineKeyboardMarkup(keyboard)
+            )
+
+        except Exception as e:
+            logger.error(f"Ошибка при пагинации списка пользователей: {e}")
+            await query.edit_message_text(
+                "Произошла ошибка при загрузке следующей страницы.",
+                parse_mode=self.parse_mode
+            )
+
+    async def user_messages_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Обработчик callback для просмотра сообщений пользователя"""
+        query = update.callback_query
+        await query.answer()
+
+        # Парсим данные из callback (формат: user_msgs:telegram_id:page или user_msgs:telegram_id:page:back_page)
+        data = query.data.split(':')
+        if len(data) < 3 or data[0] != 'user_msgs':
+            return
+
+        telegram_id = int(data[1])
+        page = int(data[2])
+        back_page = int(data[3]) if len(data) > 3 else 0
+        offset = page * 10
+
+        try:
+            messages, total_count = self.db.get_user_messages_paginated(telegram_id, offset=offset, limit=10)
+
+            if not messages:
+                await query.edit_message_text(
+                    "Сообщения не найдены.",
+                    parse_mode=self.parse_mode
+                )
+                return
+
+            # Формируем текст с результатами
+            response = self._format_user_messages(messages, total_count, page, telegram_id)
+
+            # Создаем кнопки пагинации и кнопку "Назад"
+            keyboard = self._create_user_messages_keyboard(telegram_id, page, total_count, back_page)
+
+            await query.edit_message_text(
+                response,
+                parse_mode=self.parse_mode,
+                reply_markup=InlineKeyboardMarkup(keyboard)
+            )
+
+        except Exception as e:
+            logger.error(f"Ошибка при получении сообщений пользователя: {e}")
+            await query.edit_message_text(
+                "Произошла ошибка при загрузке сообщений.",
+                parse_mode=self.parse_mode
+            )
+
+    def _format_users_list(self, users: list, total_count: int, page: int) -> str:
+        """Форматирование списка пользователей"""
+        start_num = page * 10 + 1
+        end_num = min(start_num + len(users) - 1, total_count)
+
+        response = f"👥 Список пользователей\n"
+        response += f"Показаны {start_num}-{end_num} из {total_count} пользователей\n\n"
+        response += "Выберите пользователя, чтобы посмотреть его сообщения:"
+
+        return response
+
+    def _format_user_messages(self, messages: list, total_count: int, page: int, telegram_id: int) -> str:
+        """Форматирование сообщений пользователя"""
+        start_num = page * 10 + 1
+        end_num = min(start_num + len(messages) - 1, total_count)
+
+        # Получаем информацию о пользователе из первого сообщения
+        username = messages[0].username if messages and messages[0].username else f"ID: {telegram_id}"
+        user_display = f"@{username}" if messages[0].username else username
+
+        response = f"💬 Сообщения пользователя {user_display}\n"
+        response += f"Показаны {start_num}-{end_num} из {total_count} сообщений\n\n"
+
+        for i, msg in enumerate(messages, start=start_num):
+            # Форматируем дату
+            date_str = msg.message_date.strftime("%d.%m.%Y %H:%M")
+            # Ограничиваем длину сообщения
+            text_preview = msg.message_text[:100] + "..." if len(msg.message_text) > 100 else msg.message_text
+            response += f"{i}. [{date_str}]\n{text_preview}\n\n"
+
+        return response
+
+    def _create_users_keyboard(self, users: list, page: int, total_count: int) -> list:
+        """Создание клавиатуры со списком пользователей и пагинацией"""
+        keyboard = []
+
+        # Кнопки с пользователями (по 1 в строке)
+        for user in users:
+            user_display = f"@{user.username}" if user.username else f"{user.first_name or 'User'} (ID: {user.telegram_id})"
+            # Формат callback: user_msgs:telegram_id:page:back_page
+            keyboard.append([
+                InlineKeyboardButton(
+                    user_display,
+                    callback_data=f"user_msgs:{user.telegram_id}:0:{page}"
+                )
+            ])
+
+        # Кнопки пагинации
+        total_pages = (total_count + 9) // 10
+        if total_pages > 1:
+            nav_buttons = []
+            if page > 0:
+                nav_buttons.append(InlineKeyboardButton("⬅️ Назад", callback_data=f"users:{page-1}"))
+            nav_buttons.append(InlineKeyboardButton(f"📄 {page+1}/{total_pages}", callback_data="noop"))
+            if page < total_pages - 1:
+                nav_buttons.append(InlineKeyboardButton("Вперед ➡️", callback_data=f"users:{page+1}"))
+            keyboard.append(nav_buttons)
+
+        return keyboard
+
+    def _create_user_messages_keyboard(self, telegram_id: int, page: int, total_count: int, back_page: int) -> list:
+        """Создание клавиатуры для пагинации сообщений пользователя"""
+        keyboard = []
+        total_pages = (total_count + 9) // 10
+
+        # Кнопки пагинации сообщений
+        if total_pages > 1:
+            nav_buttons = []
+            if page > 0:
+                nav_buttons.append(InlineKeyboardButton("⬅️ Назад", callback_data=f"user_msgs:{telegram_id}:{page-1}:{back_page}"))
+            nav_buttons.append(InlineKeyboardButton(f"📄 {page+1}/{total_pages}", callback_data="noop"))
+            if page < total_pages - 1:
+                nav_buttons.append(InlineKeyboardButton("Вперед ➡️", callback_data=f"user_msgs:{telegram_id}:{page+1}:{back_page}"))
+            keyboard.append(nav_buttons)
+
+        # Кнопка "Вернуться к списку пользователей"
+        keyboard.append([
+            InlineKeyboardButton("🔙 К списку пользователей", callback_data=f"users:{back_page}")
+        ])
+
+        return keyboard
+
     async def handle_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Обработчик всех текстовых сообщений"""
         user_message = update.message.text
@@ -256,11 +458,18 @@ class SimpleBot:
         # Создание приложения
         application = Application.builder().token(self.bot_token).build()
 
-        # Регистрация обработчиков
+        # Регистрация обработчиков команд
         application.add_handler(CommandHandler("start", self.start_command))
         application.add_handler(CommandHandler("help", self.help_command))
         application.add_handler(CommandHandler("search", self.search_command))
-        application.add_handler(CallbackQueryHandler(self.search_pagination_callback))
+        application.add_handler(CommandHandler("users", self.users_command))
+
+        # Регистрация обработчиков callback (порядок важен для правильной маршрутизации)
+        application.add_handler(CallbackQueryHandler(self.search_pagination_callback, pattern=r'^search:'))
+        application.add_handler(CallbackQueryHandler(self.users_pagination_callback, pattern=r'^users:'))
+        application.add_handler(CallbackQueryHandler(self.user_messages_callback, pattern=r'^user_msgs:'))
+
+        # Обработчик текстовых сообщений
         application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_message))
 
         # Регистрация обработчика ошибок

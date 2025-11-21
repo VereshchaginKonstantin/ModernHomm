@@ -199,6 +199,73 @@ class Database:
             session.expunge_all()
             return users
 
+    def get_users_paginated(self, offset: int = 0, limit: int = 10) -> tuple:
+        """
+        Получение пользователей с пагинацией
+
+        Args:
+            offset: Смещение для пагинации
+            limit: Количество пользователей на странице
+
+        Returns:
+            tuple: (список пользователей, общее количество пользователей)
+        """
+        with self.get_session() as session:
+            # Получаем общее количество пользователей
+            total_count = session.query(User).count()
+
+            # Получаем пользователей с пагинацией, сортируем по последней активности
+            users = session.query(User).order_by(
+                User.last_seen.desc()
+            ).offset(offset).limit(limit).all()
+
+            # Принудительно загружаем все атрибуты перед закрытием сессии
+            for user in users:
+                _ = user.id
+                _ = user.telegram_id
+                _ = user.username
+                _ = user.first_name
+                _ = user.last_name
+                _ = user.first_seen
+                _ = user.last_seen
+
+            session.expunge_all()
+            return users, total_count
+
+    def get_user_messages_paginated(self, telegram_id: int, offset: int = 0, limit: int = 10) -> tuple:
+        """
+        Получение сообщений пользователя с пагинацией
+
+        Args:
+            telegram_id: ID пользователя в Telegram
+            offset: Смещение для пагинации
+            limit: Количество сообщений на странице
+
+        Returns:
+            tuple: (список сообщений, общее количество сообщений)
+        """
+        with self.get_session() as session:
+            # Получаем общее количество сообщений
+            total_count = session.query(Message).filter_by(
+                telegram_user_id=telegram_id
+            ).count()
+
+            # Получаем сообщения с пагинацией
+            messages = session.query(Message).filter_by(
+                telegram_user_id=telegram_id
+            ).order_by(Message.message_date.desc()).offset(offset).limit(limit).all()
+
+            # Принудительно загружаем все атрибуты перед закрытием сессии
+            for msg in messages:
+                _ = msg.id
+                _ = msg.telegram_user_id
+                _ = msg.message_text
+                _ = msg.message_date
+                _ = msg.username
+
+            session.expunge_all()
+            return messages, total_count
+
     def search_messages_by_username(self, username: str, offset: int = 0, limit: int = 10) -> tuple:
         """
         Поиск сообщений по username пользователя с пагинацией
