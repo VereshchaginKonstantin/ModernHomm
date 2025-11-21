@@ -1,0 +1,9 @@
+{
+  "telegram": {
+    "bot_token": "YOUR_BOT_TOKEN_HERE",
+    "parse_mode": "HTML"
+  },
+  "bot": {
+    "default_response": "Спасибо за ваше сообщение! Я простой бот и отвечаю всем одинаково."
+  }
+}
