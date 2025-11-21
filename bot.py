@@ -65,7 +65,7 @@ class SimpleBot:
             "Доступные команды:\n"
             "/start - Начать работу с ботом\n"
             "/help - Показать это сообщение\n"
-            "/search <username> - Поиск сообщений пользователя"
+            "/search &lt;username&gt; - Поиск сообщений пользователя"
         )
         await update.message.reply_text(help_text, parse_mode=self.parse_mode)
         logger.info(f"Команда /help от пользователя {update.effective_user.id}")
