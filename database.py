@@ -176,3 +176,31 @@ class Database:
         with self.get_session() as session:
             users = session.query(User).all()
             return users
+
+    def search_messages_by_username(self, username: str, offset: int = 0, limit: int = 10) -> tuple:
+        """
+        Поиск сообщений по username пользователя с пагинацией
+
+        Args:
+            username: Username пользователя (без @)
+            offset: Смещение для пагинации
+            limit: Количество сообщений на странице
+
+        Returns:
+            tuple: (список сообщений, общее количество сообщений)
+        """
+        with self.get_session() as session:
+            # Нормализуем username - убираем @ если есть
+            clean_username = username.lstrip('@').lower()
+
+            # Получаем общее количество сообщений
+            total_count = session.query(Message).filter(
+                Message.username.ilike(clean_username)
+            ).count()
+
+            # Получаем сообщения с пагинацией
+            messages = session.query(Message).filter(
+                Message.username.ilike(clean_username)
+            ).order_by(Message.message_date.desc()).offset(offset).limit(limit).all()
+
+            return messages, total_count

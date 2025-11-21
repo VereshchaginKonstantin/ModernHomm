@@ -7,8 +7,8 @@
 import json
 import logging
 import os
-from telegram import Update
-from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, CallbackQueryHandler
 from database import Database
 
 
@@ -64,10 +64,145 @@ class SimpleBot:
             "Я простой бот, который отвечает на все сообщения одинаково.\n\n"
             "Доступные команды:\n"
             "/start - Начать работу с ботом\n"
-            "/help - Показать это сообщение"
+            "/help - Показать это сообщение\n"
+            "/search <username> - Поиск сообщений пользователя"
         )
         await update.message.reply_text(help_text, parse_mode=self.parse_mode)
         logger.info(f"Команда /help от пользователя {update.effective_user.id}")
+
+    async def search_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Обработчик команды /search для поиска сообщений по username"""
+        if not context.args:
+            await update.message.reply_text(
+                "Использование: /search <username>\n\n"
+                "Например: /search john или /search @john",
+                parse_mode=self.parse_mode
+            )
+            return
+
+        username = context.args[0]
+        logger.info(f"Команда /search от пользователя {update.effective_user.id} для username: {username}")
+
+        try:
+            messages, total_count = self.db.search_messages_by_username(username, offset=0, limit=10)
+
+            if not messages:
+                await update.message.reply_text(
+                    f"Сообщения от пользователя {username} не найдены.",
+                    parse_mode=self.parse_mode
+                )
+                return
+
+            # Формируем текст с результатами
+            response = self._format_search_results(username, messages, total_count, page=0)
+
+            # Создаем кнопки пагинации если сообщений больше 10
+            keyboard = self._create_pagination_keyboard(username, page=0, total_count=total_count)
+
+            if keyboard:
+                await update.message.reply_text(
+                    response,
+                    parse_mode=self.parse_mode,
+                    reply_markup=InlineKeyboardMarkup(keyboard)
+                )
+            else:
+                await update.message.reply_text(response, parse_mode=self.parse_mode)
+
+        except Exception as e:
+            logger.error(f"Ошибка при поиске сообщений: {e}")
+            await update.message.reply_text(
+                "Произошла ошибка при поиске сообщений. Попробуйте позже.",
+                parse_mode=self.parse_mode
+            )
+
+    async def search_pagination_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Обработчик callback для пагинации результатов поиска"""
+        query = update.callback_query
+        await query.answer()
+
+        # Парсим данные из callback (формат: search:username:page)
+        data = query.data.split(':')
+        if len(data) != 3 or data[0] != 'search':
+            return
+
+        username = data[1]
+        page = int(data[2])
+        offset = page * 10
+
+        try:
+            messages, total_count = self.db.search_messages_by_username(username, offset=offset, limit=10)
+
+            if not messages:
+                await query.edit_message_text(
+                    f"Больше сообщений от пользователя {username} не найдено.",
+                    parse_mode=self.parse_mode
+                )
+                return
+
+            # Формируем текст с результатами
+            response = self._format_search_results(username, messages, total_count, page)
+
+            # Создаем кнопки пагинации
+            keyboard = self._create_pagination_keyboard(username, page, total_count)
+
+            if keyboard:
+                await query.edit_message_text(
+                    response,
+                    parse_mode=self.parse_mode,
+                    reply_markup=InlineKeyboardMarkup(keyboard)
+                )
+            else:
+                await query.edit_message_text(response, parse_mode=self.parse_mode)
+
+        except Exception as e:
+            logger.error(f"Ошибка при пагинации результатов поиска: {e}")
+            await query.edit_message_text(
+                "Произошла ошибка при загрузке следующей страницы.",
+                parse_mode=self.parse_mode
+            )
+
+    def _format_search_results(self, username: str, messages: list, total_count: int, page: int) -> str:
+        """Форматирование результатов поиска"""
+        start_num = page * 10 + 1
+        end_num = min(start_num + len(messages) - 1, total_count)
+
+        response = f"🔍 Результаты поиска для @{username}\n"
+        response += f"Показаны {start_num}-{end_num} из {total_count} сообщений\n\n"
+
+        for i, msg in enumerate(messages, start=start_num):
+            # Форматируем дату
+            date_str = msg.message_date.strftime("%d.%m.%Y %H:%M")
+            # Ограничиваем длину сообщения
+            text_preview = msg.message_text[:100] + "..." if len(msg.message_text) > 100 else msg.message_text
+            response += f"{i}. [{date_str}]\n{text_preview}\n\n"
+
+        return response
+
+    def _create_pagination_keyboard(self, username: str, page: int, total_count: int) -> list:
+        """Создание клавиатуры для пагинации"""
+        total_pages = (total_count + 9) // 10  # Округление вверх
+
+        if total_pages <= 1:
+            return None
+
+        keyboard = []
+        buttons = []
+
+        # Кнопка "Предыдущая"
+        if page > 0:
+            buttons.append(InlineKeyboardButton("⬅️ Назад", callback_data=f"search:{username}:{page-1}"))
+
+        # Показываем текущую страницу
+        buttons.append(InlineKeyboardButton(f"📄 {page+1}/{total_pages}", callback_data="noop"))
+
+        # Кнопка "Следующая"
+        if page < total_pages - 1:
+            buttons.append(InlineKeyboardButton("Вперед ➡️", callback_data=f"search:{username}:{page+1}"))
+
+        if buttons:
+            keyboard.append(buttons)
+
+        return keyboard
 
     async def handle_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Обработчик всех текстовых сообщений"""
@@ -124,6 +259,8 @@ class SimpleBot:
         # Регистрация обработчиков
         application.add_handler(CommandHandler("start", self.start_command))
         application.add_handler(CommandHandler("help", self.help_command))
+        application.add_handler(CommandHandler("search", self.search_command))
+        application.add_handler(CallbackQueryHandler(self.search_pagination_callback))
         application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_message))
 
         # Регистрация обработчика ошибок
