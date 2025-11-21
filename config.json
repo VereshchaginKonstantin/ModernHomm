@@ -1,9 +1,12 @@
 {
   "telegram": {
-    "bot_token": "YOUR_BOT_TOKEN_HERE",
+    "bot_token": "8099872464:AAEnudjOLXTp30psb4Yz3ZrsDI0bGEpZDUU",
     "parse_mode": "HTML"
   },
   "bot": {
     "default_response": "Спасибо за ваше сообщение! Я простой бот и отвечаю всем одинаково."
+  },
+  "database": {
+    "url": "postgresql://postgres:postgres@localhost:5432/telegram_bot"
   }
 }
