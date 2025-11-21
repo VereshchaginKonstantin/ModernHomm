@@ -5,7 +5,7 @@
 
 import pytest
 from datetime import datetime
-from database import User, Message
+from db import User, Message
 
 
 class TestDatabase:

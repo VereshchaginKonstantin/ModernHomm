@@ -9,7 +9,7 @@ import tempfile
 import os
 from unittest.mock import AsyncMock, MagicMock, patch
 from bot import SimpleBot
-from database import Database
+from db import Database
 
 
 @pytest.fixture

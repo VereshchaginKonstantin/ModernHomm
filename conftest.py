@@ -5,7 +5,7 @@
 
 import pytest
 import os
-from database import Database
+from db import Database
 
 
 @pytest.fixture(scope="session")
