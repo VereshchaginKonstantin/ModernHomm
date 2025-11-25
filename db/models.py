@@ -4,7 +4,8 @@
 """
 
 from datetime import datetime
-from sqlalchemy import Column, Integer, String, Text, DateTime, BigInteger
+from sqlalchemy import Column, Integer, String, Text, DateTime, BigInteger, ForeignKey, Numeric
+from sqlalchemy.orm import relationship
 from sqlalchemy.ext.declarative import declarative_base
 
 Base = declarative_base()
@@ -38,3 +39,39 @@ class Message(Base):
 
     def __repr__(self):
         return f"<Message(id={self.id}, telegram_user_id={self.telegram_user_id})>"
+
+
+class GameUser(Base):
+    """Модель игрового профиля пользователя"""
+    __tablename__ = 'game_users'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    telegram_id = Column(BigInteger, unique=True, nullable=False, index=True)
+    name = Column(String(255), nullable=False)
+    balance = Column(Numeric(12, 2), nullable=False, default=1000)
+    wins = Column(Integer, nullable=False, default=0)
+    losses = Column(Integer, nullable=False, default=0)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    # Связь с юнитами
+    units = relationship("UserUnit", back_populates="game_user", cascade="all, delete-orphan")
+
+    def __repr__(self):
+        return f"<GameUser(telegram_id={self.telegram_id}, name={self.name}, balance={self.balance})>"
+
+
+class UserUnit(Base):
+    """Модель юнитов пользователя"""
+    __tablename__ = 'user_units'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    game_user_id = Column(Integer, ForeignKey('game_users.id', ondelete='CASCADE'), nullable=False, index=True)
+    unit_type_id = Column(Integer, nullable=False)
+    count = Column(Integer, nullable=False, default=0)
+
+    # Связь с игровым пользователем
+    game_user = relationship("GameUser", back_populates="units")
+
+    def __repr__(self):
+        return f"<UserUnit(game_user_id={self.game_user_id}, unit_type_id={self.unit_type_id}, count={self.count})>"

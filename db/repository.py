@@ -9,7 +9,7 @@ from contextlib import contextmanager
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, Session
 
-from .models import Base, User, Message
+from .models import Base, User, Message, GameUser, UserUnit
 
 
 class Database:
@@ -274,3 +274,306 @@ class Database:
             session.expunge_all()
 
             return messages, total_count
+
+    # ===== CRUD методы для GameUser =====
+
+    def create_game_user(self, telegram_id: int, name: str, initial_balance: float = 1000) -> GameUser:
+        """
+        Создание нового игрового пользователя
+
+        Args:
+            telegram_id: ID пользователя в Telegram
+            name: Имя игрока
+            initial_balance: Начальный баланс (по умолчанию 1000)
+
+        Returns:
+            GameUser: Объект игрового пользователя
+        """
+        with self.get_session() as session:
+            game_user = GameUser(
+                telegram_id=telegram_id,
+                name=name,
+                balance=initial_balance
+            )
+            session.add(game_user)
+            session.flush()
+            session.refresh(game_user)
+
+            # Загружаем все атрибуты
+            _ = game_user.id
+            _ = game_user.telegram_id
+            _ = game_user.name
+            _ = game_user.balance
+            _ = game_user.wins
+            _ = game_user.losses
+            _ = game_user.created_at
+            _ = game_user.updated_at
+
+            session.expunge_all()
+            return game_user
+
+    def get_game_user(self, telegram_id: int) -> GameUser:
+        """
+        Получение игрового пользователя по telegram_id
+
+        Args:
+            telegram_id: ID пользователя в Telegram
+
+        Returns:
+            GameUser: Объект игрового пользователя или None
+        """
+        with self.get_session() as session:
+            game_user = session.query(GameUser).filter_by(telegram_id=telegram_id).first()
+
+            if game_user:
+                # Загружаем все атрибуты
+                _ = game_user.id
+                _ = game_user.telegram_id
+                _ = game_user.name
+                _ = game_user.balance
+                _ = game_user.wins
+                _ = game_user.losses
+                _ = game_user.created_at
+                _ = game_user.updated_at
+
+                session.expunge_all()
+
+            return game_user
+
+    def update_game_user(self, telegram_id: int, **kwargs) -> GameUser:
+        """
+        Обновление данных игрового пользователя
+
+        Args:
+            telegram_id: ID пользователя в Telegram
+            **kwargs: Поля для обновления (name, balance, wins, losses)
+
+        Returns:
+            GameUser: Обновленный объект игрового пользователя
+        """
+        with self.get_session() as session:
+            game_user = session.query(GameUser).filter_by(telegram_id=telegram_id).first()
+
+            if not game_user:
+                raise ValueError(f"Игровой пользователь с telegram_id={telegram_id} не найден")
+
+            # Обновляем только переданные поля
+            for key, value in kwargs.items():
+                if hasattr(game_user, key):
+                    setattr(game_user, key, value)
+
+            session.flush()
+            session.refresh(game_user)
+
+            # Загружаем все атрибуты
+            _ = game_user.id
+            _ = game_user.telegram_id
+            _ = game_user.name
+            _ = game_user.balance
+            _ = game_user.wins
+            _ = game_user.losses
+            _ = game_user.created_at
+            _ = game_user.updated_at
+
+            session.expunge_all()
+            return game_user
+
+    def delete_game_user(self, telegram_id: int) -> bool:
+        """
+        Удаление игрового пользователя
+
+        Args:
+            telegram_id: ID пользователя в Telegram
+
+        Returns:
+            bool: True если пользователь был удален, False если не найден
+        """
+        with self.get_session() as session:
+            game_user = session.query(GameUser).filter_by(telegram_id=telegram_id).first()
+
+            if game_user:
+                session.delete(game_user)
+                return True
+
+            return False
+
+    def get_or_create_game_user(self, telegram_id: int, name: str, initial_balance: float = 1000) -> tuple:
+        """
+        Получение или создание игрового пользователя
+
+        Args:
+            telegram_id: ID пользователя в Telegram
+            name: Имя игрока
+            initial_balance: Начальный баланс (по умолчанию 1000)
+
+        Returns:
+            tuple: (GameUser, created) - объект и флаг создания нового пользователя
+        """
+        game_user = self.get_game_user(telegram_id)
+
+        if game_user:
+            return game_user, False
+
+        game_user = self.create_game_user(telegram_id, name, initial_balance)
+        return game_user, True
+
+    # ===== CRUD методы для UserUnit =====
+
+    def add_unit(self, telegram_id: int, unit_type_id: int, count: int = 1) -> UserUnit:
+        """
+        Добавление юнитов пользователю
+
+        Args:
+            telegram_id: ID пользователя в Telegram
+            unit_type_id: ID типа юнита
+            count: Количество юнитов для добавления
+
+        Returns:
+            UserUnit: Объект юнита пользователя
+        """
+        with self.get_session() as session:
+            # Получаем игрового пользователя
+            game_user = session.query(GameUser).filter_by(telegram_id=telegram_id).first()
+
+            if not game_user:
+                raise ValueError(f"Игровой пользователь с telegram_id={telegram_id} не найден")
+
+            # Проверяем, есть ли уже такой юнит
+            user_unit = session.query(UserUnit).filter_by(
+                game_user_id=game_user.id,
+                unit_type_id=unit_type_id
+            ).first()
+
+            if user_unit:
+                # Увеличиваем количество существующих юнитов
+                user_unit.count += count
+            else:
+                # Создаем новую запись
+                user_unit = UserUnit(
+                    game_user_id=game_user.id,
+                    unit_type_id=unit_type_id,
+                    count=count
+                )
+                session.add(user_unit)
+
+            session.flush()
+            session.refresh(user_unit)
+
+            # Загружаем все атрибуты
+            _ = user_unit.id
+            _ = user_unit.game_user_id
+            _ = user_unit.unit_type_id
+            _ = user_unit.count
+
+            session.expunge_all()
+            return user_unit
+
+    def get_user_units(self, telegram_id: int) -> list:
+        """
+        Получение всех юнитов пользователя
+
+        Args:
+            telegram_id: ID пользователя в Telegram
+
+        Returns:
+            list: Список юнитов пользователя
+        """
+        with self.get_session() as session:
+            # Получаем игрового пользователя
+            game_user = session.query(GameUser).filter_by(telegram_id=telegram_id).first()
+
+            if not game_user:
+                return []
+
+            # Получаем все юниты пользователя
+            units = session.query(UserUnit).filter_by(game_user_id=game_user.id).all()
+
+            # Загружаем все атрибуты
+            for unit in units:
+                _ = unit.id
+                _ = unit.game_user_id
+                _ = unit.unit_type_id
+                _ = unit.count
+
+            session.expunge_all()
+            return units
+
+    def update_unit_count(self, telegram_id: int, unit_type_id: int, count: int) -> UserUnit:
+        """
+        Обновление количества юнитов
+
+        Args:
+            telegram_id: ID пользователя в Telegram
+            unit_type_id: ID типа юнита
+            count: Новое количество юнитов
+
+        Returns:
+            UserUnit: Обновленный объект юнита
+        """
+        with self.get_session() as session:
+            # Получаем игрового пользователя
+            game_user = session.query(GameUser).filter_by(telegram_id=telegram_id).first()
+
+            if not game_user:
+                raise ValueError(f"Игровой пользователь с telegram_id={telegram_id} не найден")
+
+            # Получаем юнит
+            user_unit = session.query(UserUnit).filter_by(
+                game_user_id=game_user.id,
+                unit_type_id=unit_type_id
+            ).first()
+
+            if not user_unit:
+                raise ValueError(f"Юнит с unit_type_id={unit_type_id} не найден")
+
+            user_unit.count = count
+            session.flush()
+            session.refresh(user_unit)
+
+            # Загружаем все атрибуты
+            _ = user_unit.id
+            _ = user_unit.game_user_id
+            _ = user_unit.unit_type_id
+            _ = user_unit.count
+
+            session.expunge_all()
+            return user_unit
+
+    def remove_unit(self, telegram_id: int, unit_type_id: int, count: int = None) -> bool:
+        """
+        Удаление юнитов пользователя
+
+        Args:
+            telegram_id: ID пользователя в Telegram
+            unit_type_id: ID типа юнита
+            count: Количество юнитов для удаления (если None, удаляет всех)
+
+        Returns:
+            bool: True если юниты были удалены, False если не найдены
+        """
+        with self.get_session() as session:
+            # Получаем игрового пользователя
+            game_user = session.query(GameUser).filter_by(telegram_id=telegram_id).first()
+
+            if not game_user:
+                return False
+
+            # Получаем юнит
+            user_unit = session.query(UserUnit).filter_by(
+                game_user_id=game_user.id,
+                unit_type_id=unit_type_id
+            ).first()
+
+            if not user_unit:
+                return False
+
+            if count is None:
+                # Удаляем всех юнитов этого типа
+                session.delete(user_unit)
+            else:
+                # Уменьшаем количество
+                user_unit.count -= count
+                if user_unit.count <= 0:
+                    session.delete(user_unit)
+
+            return True

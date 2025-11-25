@@ -27,6 +27,7 @@ class SimpleBot:
         self.default_response = self.config['bot']['default_response']
         self.bot_token = self.config['telegram']['bot_token']
         self.parse_mode = self.config['telegram'].get('parse_mode', 'HTML')
+        self.initial_balance = self.config.get('game', {}).get('initial_balance', 1000)
 
         # Инициализация базы данных
         if db is None:
@@ -65,11 +66,96 @@ class SimpleBot:
             "Доступные команды:\n"
             "/start - Начать работу с ботом\n"
             "/help - Показать это сообщение\n"
+            "/play - Начать игру (инициализация игрового профиля)\n"
+            "/profile - Посмотреть свой игровой профиль\n"
             "/search &lt;username&gt; - Поиск сообщений пользователя\n"
             "/users - Просмотр всех пользователей"
         )
         await update.message.reply_text(help_text, parse_mode=self.parse_mode)
         logger.info(f"Команда /help от пользователя {update.effective_user.id}")
+
+    async def play_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Обработчик команды /play - инициализация игрового профиля"""
+        user = update.effective_user
+        logger.info(f"Команда /play от пользователя {user.id}")
+
+        try:
+            # Получаем или создаем игрового пользователя
+            game_user, created = self.db.get_or_create_game_user(
+                telegram_id=user.id,
+                name=user.first_name or user.username or f"User_{user.id}",
+                initial_balance=self.initial_balance
+            )
+
+            if created:
+                response = (
+                    f"🎮 Добро пожаловать в игру, {game_user.name}!\n\n"
+                    f"💰 Ваш начальный баланс: ${game_user.balance}\n"
+                    f"🏆 Побед: {game_user.wins}\n"
+                    f"💔 Поражений: {game_user.losses}\n\n"
+                    "Удачи в игре!"
+                )
+            else:
+                response = (
+                    f"👋 С возвращением, {game_user.name}!\n\n"
+                    f"💰 Текущий баланс: ${game_user.balance}\n"
+                    f"🏆 Побед: {game_user.wins}\n"
+                    f"💔 Поражений: {game_user.losses}\n\n"
+                    "Вы уже зарегистрированы в игре!"
+                )
+
+            await update.message.reply_text(response, parse_mode=self.parse_mode)
+
+        except Exception as e:
+            logger.error(f"Ошибка при инициализации игрового профиля: {e}")
+            await update.message.reply_text(
+                "Произошла ошибка при создании игрового профиля. Попробуйте позже.",
+                parse_mode=self.parse_mode
+            )
+
+    async def profile_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Обработчик команды /profile - просмотр игрового профиля"""
+        user = update.effective_user
+        logger.info(f"Команда /profile от пользователя {user.id}")
+
+        try:
+            game_user = self.db.get_game_user(user.id)
+
+            if not game_user:
+                await update.message.reply_text(
+                    "❌ У вас еще нет игрового профиля.\n"
+                    "Используйте /play для создания профиля.",
+                    parse_mode=self.parse_mode
+                )
+                return
+
+            # Получаем юнитов пользователя
+            units = self.db.get_user_units(user.id)
+
+            units_text = ""
+            if units:
+                units_text = "\n\n🔰 Ваши юниты:\n"
+                for unit in units:
+                    units_text += f"- Тип юнита #{unit.unit_type_id}: {unit.count} шт.\n"
+            else:
+                units_text = "\n\n🔰 У вас пока нет юнитов."
+
+            response = (
+                f"👤 Профиль игрока {game_user.name}\n\n"
+                f"💰 Баланс: ${game_user.balance}\n"
+                f"🏆 Побед: {game_user.wins}\n"
+                f"💔 Поражений: {game_user.losses}"
+                f"{units_text}"
+            )
+
+            await update.message.reply_text(response, parse_mode=self.parse_mode)
+
+        except Exception as e:
+            logger.error(f"Ошибка при получении профиля: {e}")
+            await update.message.reply_text(
+                "Произошла ошибка при получении профиля. Попробуйте позже.",
+                parse_mode=self.parse_mode
+            )
 
     async def search_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Обработчик команды /search для поиска сообщений по username"""
@@ -431,9 +517,31 @@ class SimpleBot:
 
             logger.info(f"Сообщение от пользователя {user.id} сохранено в БД")
 
-            # Формируем ответ с упоминанием username
-            username_display = f"@{user.username}" if user.username else user.first_name or "пользователь"
-            response = f"{username_display}, я сохранила твое сообщение!\n\n{self.default_response}"
+            # Проверяем, есть ли у пользователя игровой профиль, и создаем его при необходимости
+            game_user = self.db.get_game_user(user.id)
+            if not game_user:
+                # Автоматически создаем игровой профиль при первом сообщении
+                game_user, created = self.db.get_or_create_game_user(
+                    telegram_id=user.id,
+                    name=user.first_name or user.username or f"User_{user.id}",
+                    initial_balance=self.initial_balance
+                )
+                logger.info(f"Создан игровой профиль для пользователя {user.id}")
+
+            # Обработка специальных текстовых команд
+            if user_message.lower() in ['играть', 'play', 'start game']:
+                # Пользователь написал "Играть" вместо команды /play
+                response = (
+                    f"🎮 Добро пожаловать в игру, {game_user.name}!\n\n"
+                    f"💰 Ваш баланс: ${game_user.balance}\n"
+                    f"🏆 Побед: {game_user.wins}\n"
+                    f"💔 Поражений: {game_user.losses}\n\n"
+                    "Используйте /profile для просмотра профиля!"
+                )
+            else:
+                # Формируем стандартный ответ с упоминанием username
+                username_display = f"@{user.username}" if user.username else user.first_name or "пользователь"
+                response = f"{username_display}, я сохранила твое сообщение!\n\n{self.default_response}"
 
             await update.message.reply_text(
                 response,
@@ -461,6 +569,8 @@ class SimpleBot:
         # Регистрация обработчиков команд
         application.add_handler(CommandHandler("start", self.start_command))
         application.add_handler(CommandHandler("help", self.help_command))
+        application.add_handler(CommandHandler("play", self.play_command))
+        application.add_handler(CommandHandler("profile", self.profile_command))
         application.add_handler(CommandHandler("search", self.search_command))
         application.add_handler(CommandHandler("users", self.users_command))
 
