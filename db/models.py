@@ -61,17 +61,37 @@ class GameUser(Base):
         return f"<GameUser(telegram_id={self.telegram_id}, name={self.name}, balance={self.balance})>"
 
 
+class Unit(Base):
+    """Модель типа юнита (базовый справочник юнитов)"""
+    __tablename__ = 'units'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String(255), nullable=False, unique=True)
+    price = Column(Numeric(12, 2), nullable=False)
+    damage = Column(Integer, nullable=False)
+    range = Column(Integer, nullable=False)
+    health = Column(Integer, nullable=False)
+    speed = Column(Integer, nullable=False, default=1)  # Число перемещений за ход
+    luck = Column(Numeric(5, 4), nullable=False, default=0)  # Вероятность максимального урона (0-1)
+    crit_chance = Column(Numeric(5, 4), nullable=False, default=0)  # Вероятность критического удара (0-1)
+
+    def __repr__(self):
+        return f"<Unit(id={self.id}, name={self.name}, price={self.price})>"
+
+
 class UserUnit(Base):
     """Модель юнитов пользователя"""
     __tablename__ = 'user_units'
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     game_user_id = Column(Integer, ForeignKey('game_users.id', ondelete='CASCADE'), nullable=False, index=True)
-    unit_type_id = Column(Integer, nullable=False)
+    unit_type_id = Column(Integer, ForeignKey('units.id', ondelete='CASCADE'), nullable=False, index=True)
     count = Column(Integer, nullable=False, default=0)
 
     # Связь с игровым пользователем
     game_user = relationship("GameUser", back_populates="units")
+    # Связь с типом юнита
+    unit = relationship("Unit")
 
     def __repr__(self):
         return f"<UserUnit(game_user_id={self.game_user_id}, unit_type_id={self.unit_type_id}, count={self.count})>"

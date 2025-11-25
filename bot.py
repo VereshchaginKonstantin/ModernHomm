@@ -34,6 +34,9 @@ class SimpleBot:
             db_url = os.getenv('DATABASE_URL', self.config.get('database', {}).get('url'))
             self.db = Database(db_url)
             self.db.create_tables()
+            # Инициализация базовых юнитов
+            self.db.initialize_base_units()
+            logger.info("Базовые юниты инициализированы")
         else:
             self.db = db
 

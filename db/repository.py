@@ -9,7 +9,7 @@ from contextlib import contextmanager
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, Session
 
-from .models import Base, User, Message, GameUser, UserUnit
+from .models import Base, User, Message, GameUser, Unit, UserUnit
 
 
 class Database:
@@ -577,3 +577,124 @@ class Database:
                     session.delete(user_unit)
 
             return True
+
+    # ===== CRUD методы для Unit =====
+
+    def initialize_base_units(self):
+        """
+        Инициализация базовых юнитов в базе данных
+        Создает юнитов, если они еще не существуют
+        """
+        with self.get_session() as session:
+            base_units = [
+                {
+                    'name': 'Пехота',
+                    'price': 100,
+                    'damage': 10,
+                    'range': 1,
+                    'health': 50,
+                    'speed': 3,          # Средняя скорость
+                    'luck': 0.05,        # 5% шанс максимального урона
+                    'crit_chance': 0.10  # 10% шанс критического удара
+                },
+                {
+                    'name': 'Снайпер',
+                    'price': 500,
+                    'damage': 50,
+                    'range': 3,
+                    'health': 50,
+                    'speed': 2,          # Медленный
+                    'luck': 0.15,        # 15% шанс максимального урона
+                    'crit_chance': 0.25  # 25% шанс критического удара
+                }
+            ]
+
+            for unit_data in base_units:
+                # Проверяем, существует ли уже такой юнит
+                existing_unit = session.query(Unit).filter_by(name=unit_data['name']).first()
+                if not existing_unit:
+                    unit = Unit(**unit_data)
+                    session.add(unit)
+
+    def get_all_units(self) -> list:
+        """
+        Получение всех типов юнитов
+
+        Returns:
+            list: Список всех юнитов
+        """
+        with self.get_session() as session:
+            units = session.query(Unit).all()
+
+            # Загружаем все атрибуты
+            for unit in units:
+                _ = unit.id
+                _ = unit.name
+                _ = unit.price
+                _ = unit.damage
+                _ = unit.range
+                _ = unit.health
+                _ = unit.speed
+                _ = unit.luck
+                _ = unit.crit_chance
+
+            session.expunge_all()
+            return units
+
+    def get_unit_by_id(self, unit_id: int) -> Unit:
+        """
+        Получение юнита по ID
+
+        Args:
+            unit_id: ID юнита
+
+        Returns:
+            Unit: Объект юнита или None
+        """
+        with self.get_session() as session:
+            unit = session.query(Unit).filter_by(id=unit_id).first()
+
+            if unit:
+                # Загружаем все атрибуты
+                _ = unit.id
+                _ = unit.name
+                _ = unit.price
+                _ = unit.damage
+                _ = unit.range
+                _ = unit.health
+                _ = unit.speed
+                _ = unit.luck
+                _ = unit.crit_chance
+
+                session.expunge_all()
+
+            return unit
+
+    def get_unit_by_name(self, name: str) -> Unit:
+        """
+        Получение юнита по имени
+
+        Args:
+            name: Название юнита
+
+        Returns:
+            Unit: Объект юнита или None
+        """
+        with self.get_session() as session:
+            unit = session.query(Unit).filter_by(name=name).first()
+
+            if unit:
+                # Загружаем все атрибуты
+                _ = unit.id
+                _ = unit.name
+                _ = unit.price
+                _ = unit.damage
+                _ = unit.range
+                _ = unit.health
+                _ = unit.speed
+                _ = unit.luck
+                _ = unit.crit_chance
+
+                session.expunge_all()
+
+            return unit

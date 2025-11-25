@@ -5,7 +5,7 @@
 Содержит модели данных и репозиторий для работы с PostgreSQL
 """
 
-from .models import Base, User, Message, GameUser, UserUnit
+from .models import Base, User, Message, GameUser, Unit, UserUnit
 from .repository import Database
 
-__all__ = ['Base', 'User', 'Message', 'GameUser', 'UserUnit', 'Database']
+__all__ = ['Base', 'User', 'Message', 'GameUser', 'Unit', 'UserUnit', 'Database']
