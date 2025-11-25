@@ -71,6 +71,7 @@ class SimpleBot:
             "/help - Показать это сообщение\n"
             "/play - Начать игру (инициализация игрового профиля)\n"
             "/profile - Посмотреть свой игровой профиль\n"
+            "/shop - Магазин юнитов (покупка армии)\n"
             "/search &lt;username&gt; - Поиск сообщений пользователя\n"
             "/users - Просмотр всех пользователей"
         )
@@ -133,15 +134,22 @@ class SimpleBot:
                 return
 
             # Получаем юнитов пользователя
-            units = self.db.get_user_units(user.id)
+            user_units = self.db.get_user_units(user.id)
 
             units_text = ""
-            if units:
+            if user_units:
                 units_text = "\n\n🔰 Ваши юниты:\n"
-                for unit in units:
-                    units_text += f"- Тип юнита #{unit.unit_type_id}: {unit.count} шт.\n"
+                for user_unit in user_units:
+                    # Получаем детали юнита
+                    unit = self.db.get_unit_by_id(user_unit.unit_type_id)
+                    if unit:
+                        units_text += (
+                            f"\n{unit.name} x{user_unit.count}\n"
+                            f"  ⚔️ Урон: {unit.damage} | 🎯 Дальность: {unit.range}\n"
+                            f"  ❤️ HP: {unit.health} | 🏃 Скорость: {unit.speed}\n"
+                        )
             else:
-                units_text = "\n\n🔰 У вас пока нет юнитов."
+                units_text = "\n\n🔰 У вас пока нет юнитов. Посетите /shop для покупки!"
 
             response = (
                 f"👤 Профиль игрока {game_user.name}\n\n"
@@ -157,6 +165,297 @@ class SimpleBot:
             logger.error(f"Ошибка при получении профиля: {e}")
             await update.message.reply_text(
                 "Произошла ошибка при получении профиля. Попробуйте позже.",
+                parse_mode=self.parse_mode
+            )
+
+    async def shop_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Обработчик команды /shop - магазин юнитов"""
+        user = update.effective_user
+        logger.info(f"Команда /shop от пользователя {user.id}")
+
+        try:
+            # Проверяем наличие игрового профиля
+            game_user = self.db.get_game_user(user.id)
+            if not game_user:
+                await update.message.reply_text(
+                    "❌ У вас еще нет игрового профиля.\n"
+                    "Используйте /play для создания профиля.",
+                    parse_mode=self.parse_mode
+                )
+                return
+
+            # Получаем все доступные юниты
+            units = self.db.get_all_units()
+
+            if not units:
+                await update.message.reply_text(
+                    "Магазин пуст. Юниты временно недоступны.",
+                    parse_mode=self.parse_mode
+                )
+                return
+
+            # Формируем сообщение с магазином
+            response = f"🏪 <b>Магазин юнитов</b>\n\n💰 Ваш баланс: ${game_user.balance}\n\n"
+            response += "Выберите юнита для покупки:\n"
+
+            # Создаем кнопки для каждого юнита
+            keyboard = []
+            for unit in units:
+                unit_info = (
+                    f"{unit.name} - ${unit.price}\n"
+                    f"⚔️ {unit.damage} | 🎯 {unit.range} | ❤️ {unit.health} | 🏃 {unit.speed}\n"
+                    f"🍀 {float(unit.luck)*100:.0f}% | 💥 {float(unit.crit_chance)*100:.0f}%"
+                )
+                response += f"\n{unit_info}\n"
+
+                keyboard.append([
+                    InlineKeyboardButton(
+                        f"Купить {unit.name}",
+                        callback_data=f"buy_unit:{unit.id}"
+                    )
+                ])
+
+            await update.message.reply_text(
+                response,
+                parse_mode=self.parse_mode,
+                reply_markup=InlineKeyboardMarkup(keyboard)
+            )
+
+        except Exception as e:
+            logger.error(f"Ошибка при открытии магазина: {e}")
+            await update.message.reply_text(
+                "Произошла ошибка при открытии магазина. Попробуйте позже.",
+                parse_mode=self.parse_mode
+            )
+
+    async def buy_unit_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Обработчик callback для выбора юнита в магазине"""
+        query = update.callback_query
+        await query.answer()
+
+        # Парсим данные из callback (формат: buy_unit:unit_id)
+        data = query.data.split(':')
+        if len(data) != 2 or data[0] != 'buy_unit':
+            return
+
+        unit_id = int(data[1])
+        user = update.effective_user
+
+        try:
+            # Получаем информацию о юните
+            unit = self.db.get_unit_by_id(unit_id)
+            if not unit:
+                await query.edit_message_text(
+                    "❌ Юнит не найден.",
+                    parse_mode=self.parse_mode
+                )
+                return
+
+            # Получаем баланс пользователя
+            game_user = self.db.get_game_user(user.id)
+            if not game_user:
+                await query.edit_message_text(
+                    "❌ Игровой профиль не найден.",
+                    parse_mode=self.parse_mode
+                )
+                return
+
+            # Показываем информацию о юните и кнопки для выбора количества
+            response = (
+                f"🛒 <b>Покупка: {unit.name}</b>\n\n"
+                f"💰 Цена за 1 шт: ${unit.price}\n"
+                f"💵 Ваш баланс: ${game_user.balance}\n\n"
+                f"<b>Характеристики:</b>\n"
+                f"⚔️ Урон: {unit.damage}\n"
+                f"🎯 Дальность: {unit.range}\n"
+                f"❤️ Здоровье: {unit.health}\n"
+                f"🏃 Скорость: {unit.speed}\n"
+                f"🍀 Удача: {float(unit.luck)*100:.0f}%\n"
+                f"💥 Крит: {float(unit.crit_chance)*100:.0f}%\n\n"
+                f"Выберите количество:"
+            )
+
+            # Создаем кнопки для выбора количества
+            keyboard = []
+            quantities = [1, 5, 10]
+            row = []
+            for qty in quantities:
+                total = float(unit.price) * qty
+                if total <= float(game_user.balance):
+                    row.append(InlineKeyboardButton(
+                        f"{qty} шт (${total:.0f})",
+                        callback_data=f"confirm_buy:{unit_id}:{qty}"
+                    ))
+            if row:
+                keyboard.append(row)
+
+            keyboard.append([
+                InlineKeyboardButton("◀️ Назад в магазин", callback_data="back_to_shop")
+            ])
+
+            await query.edit_message_text(
+                response,
+                parse_mode=self.parse_mode,
+                reply_markup=InlineKeyboardMarkup(keyboard)
+            )
+
+        except Exception as e:
+            logger.error(f"Ошибка при выборе юнита: {e}")
+            await query.edit_message_text(
+                "Произошла ошибка. Попробуйте позже.",
+                parse_mode=self.parse_mode
+            )
+
+    async def confirm_buy_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Обработчик callback для подтверждения покупки"""
+        query = update.callback_query
+        await query.answer()
+
+        # Парсим данные из callback (формат: confirm_buy:unit_id:quantity)
+        data = query.data.split(':')
+        if len(data) != 3 or data[0] != 'confirm_buy':
+            return
+
+        unit_id = int(data[1])
+        quantity = int(data[2])
+        user = update.effective_user
+
+        try:
+            # Выполняем покупку
+            success, message = self.db.purchase_units(user.id, unit_id, quantity)
+
+            if success:
+                # Получаем обновленный профиль
+                game_user = self.db.get_game_user(user.id)
+                response = (
+                    f"✅ {message}\n\n"
+                    f"💰 Новый баланс: ${game_user.balance}"
+                )
+            else:
+                response = f"❌ {message}"
+
+            # Кнопки для дальнейших действий
+            keyboard = [
+                [
+                    InlineKeyboardButton("🏪 Продолжить покупки", callback_data="back_to_shop"),
+                    InlineKeyboardButton("👤 Профиль", callback_data="show_profile")
+                ]
+            ]
+
+            await query.edit_message_text(
+                response,
+                parse_mode=self.parse_mode,
+                reply_markup=InlineKeyboardMarkup(keyboard)
+            )
+
+        except Exception as e:
+            logger.error(f"Ошибка при покупке юнита: {e}")
+            await query.edit_message_text(
+                f"❌ Произошла ошибка при покупке: {e}",
+                parse_mode=self.parse_mode
+            )
+
+    async def back_to_shop_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Обработчик callback для возврата в магазин"""
+        query = update.callback_query
+        await query.answer()
+
+        user = update.effective_user
+
+        try:
+            # Получаем игрового пользователя
+            game_user = self.db.get_game_user(user.id)
+            if not game_user:
+                await query.edit_message_text("❌ Игровой профиль не найден.", parse_mode=self.parse_mode)
+                return
+
+            # Получаем все доступные юниты
+            units = self.db.get_all_units()
+
+            # Формируем сообщение с магазином
+            response = f"🏪 <b>Магазин юнитов</b>\n\n💰 Ваш баланс: ${game_user.balance}\n\n"
+            response += "Выберите юнита для покупки:\n"
+
+            # Создаем кнопки для каждого юнита
+            keyboard = []
+            for unit in units:
+                unit_info = (
+                    f"{unit.name} - ${unit.price}\n"
+                    f"⚔️ {unit.damage} | 🎯 {unit.range} | ❤️ {unit.health} | 🏃 {unit.speed}\n"
+                    f"🍀 {float(unit.luck)*100:.0f}% | 💥 {float(unit.crit_chance)*100:.0f}%"
+                )
+                response += f"\n{unit_info}\n"
+
+                keyboard.append([
+                    InlineKeyboardButton(
+                        f"Купить {unit.name}",
+                        callback_data=f"buy_unit:{unit.id}"
+                    )
+                ])
+
+            await query.edit_message_text(
+                response,
+                parse_mode=self.parse_mode,
+                reply_markup=InlineKeyboardMarkup(keyboard)
+            )
+
+        except Exception as e:
+            logger.error(f"Ошибка при возврате в магазин: {e}")
+            await query.edit_message_text(
+                "Произошла ошибка. Попробуйте позже.",
+                parse_mode=self.parse_mode
+            )
+
+    async def show_profile_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Обработчик callback для показа профиля"""
+        query = update.callback_query
+        await query.answer()
+
+        user = update.effective_user
+
+        try:
+            game_user = self.db.get_game_user(user.id)
+            if not game_user:
+                await query.edit_message_text("❌ Игровой профиль не найден.", parse_mode=self.parse_mode)
+                return
+
+            # Получаем юнитов пользователя
+            user_units = self.db.get_user_units(user.id)
+
+            units_text = ""
+            if user_units:
+                units_text = "\n\n🔰 Ваши юниты:\n"
+                for user_unit in user_units:
+                    unit = self.db.get_unit_by_id(user_unit.unit_type_id)
+                    if unit:
+                        units_text += (
+                            f"\n{unit.name} x{user_unit.count}\n"
+                            f"  ⚔️ Урон: {unit.damage} | 🎯 Дальность: {unit.range}\n"
+                            f"  ❤️ HP: {unit.health} | 🏃 Скорость: {unit.speed}\n"
+                        )
+            else:
+                units_text = "\n\n🔰 У вас пока нет юнитов. Посетите /shop для покупки!"
+
+            response = (
+                f"👤 Профиль игрока {game_user.name}\n\n"
+                f"💰 Баланс: ${game_user.balance}\n"
+                f"🏆 Побед: {game_user.wins}\n"
+                f"💔 Поражений: {game_user.losses}"
+                f"{units_text}"
+            )
+
+            keyboard = [[InlineKeyboardButton("🏪 Магазин", callback_data="back_to_shop")]]
+
+            await query.edit_message_text(
+                response,
+                parse_mode=self.parse_mode,
+                reply_markup=InlineKeyboardMarkup(keyboard)
+            )
+
+        except Exception as e:
+            logger.error(f"Ошибка при показе профиля: {e}")
+            await query.edit_message_text(
+                "Произошла ошибка. Попробуйте позже.",
                 parse_mode=self.parse_mode
             )
 
@@ -574,10 +873,15 @@ class SimpleBot:
         application.add_handler(CommandHandler("help", self.help_command))
         application.add_handler(CommandHandler("play", self.play_command))
         application.add_handler(CommandHandler("profile", self.profile_command))
+        application.add_handler(CommandHandler("shop", self.shop_command))
         application.add_handler(CommandHandler("search", self.search_command))
         application.add_handler(CommandHandler("users", self.users_command))
 
         # Регистрация обработчиков callback (порядок важен для правильной маршрутизации)
+        application.add_handler(CallbackQueryHandler(self.buy_unit_callback, pattern=r'^buy_unit:'))
+        application.add_handler(CallbackQueryHandler(self.confirm_buy_callback, pattern=r'^confirm_buy:'))
+        application.add_handler(CallbackQueryHandler(self.back_to_shop_callback, pattern=r'^back_to_shop$'))
+        application.add_handler(CallbackQueryHandler(self.show_profile_callback, pattern=r'^show_profile$'))
         application.add_handler(CallbackQueryHandler(self.search_pagination_callback, pattern=r'^search:'))
         application.add_handler(CallbackQueryHandler(self.users_pagination_callback, pattern=r'^users:'))
         application.add_handler(CallbackQueryHandler(self.user_messages_callback, pattern=r'^user_msgs:'))

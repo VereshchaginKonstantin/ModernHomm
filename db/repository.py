@@ -698,3 +698,60 @@ class Database:
                 session.expunge_all()
 
             return unit
+
+    def purchase_units(self, telegram_id: int, unit_id: int, quantity: int) -> tuple:
+        """
+        Покупка юнитов пользователем
+
+        Args:
+            telegram_id: ID пользователя в Telegram
+            unit_id: ID типа юнита
+            quantity: Количество юнитов для покупки
+
+        Returns:
+            tuple: (success: bool, message: str) - результат операции и сообщение
+        """
+        with self.get_session() as session:
+            # Получаем игрового пользователя
+            game_user = session.query(GameUser).filter_by(telegram_id=telegram_id).first()
+            if not game_user:
+                return False, "Игровой профиль не найден. Используйте /play для создания профиля."
+
+            # Получаем информацию о юните
+            unit = session.query(Unit).filter_by(id=unit_id).first()
+            if not unit:
+                return False, "Юнит не найден."
+
+            # Проверяем количество
+            if quantity <= 0:
+                return False, "Количество должно быть больше 0."
+
+            # Вычисляем стоимость
+            total_cost = unit.price * quantity
+
+            # Проверяем баланс
+            if game_user.balance < total_cost:
+                return False, f"Недостаточно средств. Требуется: ${total_cost:.2f}, доступно: ${game_user.balance:.2f}"
+
+            # Списываем средства
+            game_user.balance -= total_cost
+
+            # Добавляем юнитов
+            user_unit = session.query(UserUnit).filter_by(
+                game_user_id=game_user.id,
+                unit_type_id=unit_id
+            ).first()
+
+            if user_unit:
+                user_unit.count += quantity
+            else:
+                user_unit = UserUnit(
+                    game_user_id=game_user.id,
+                    unit_type_id=unit_id,
+                    count=quantity
+                )
+                session.add(user_unit)
+
+            session.flush()
+
+            return True, f"Успешно куплено {quantity} x {unit.name} за ${total_cost:.2f}"
