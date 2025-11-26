@@ -14,12 +14,64 @@ pip install -r requirements.txt
 ```
 
 ### Database Setup
+
+#### Option 1: Using Migrations (Recommended)
+```bash
+# Create PostgreSQL database
+psql -U postgres
+CREATE DATABASE telegram_bot;
+\q
+
+# Run migrations using bash script
+./migrate.sh up
+
+# OR using Python script
+python3 migrate.py up
+```
+
+#### Option 2: Manual Setup
 ```bash
 # Create PostgreSQL database
 psql -U postgres
 CREATE DATABASE telegram_bot;
 \q
 ```
+
+### Database Migrations
+
+The project uses [goose](https://github.com/pressly/goose) for database migrations with version control.
+
+**Migration Commands:**
+```bash
+# Apply all pending migrations
+./migrate.sh up
+
+# Rollback last migration
+./migrate.sh down
+
+# Show migration status
+./migrate.sh status
+
+# Create new migration
+./migrate.sh create migration_name
+
+# Reset database (rollback all and reapply)
+./migrate.sh reset
+```
+
+**Python alternative:**
+```bash
+python3 migrate.py up
+python3 migrate.py status
+python3 migrate.py create migration_name
+```
+
+**Migration Files:**
+- `migrations/00001_initial_schema.sql` - Creates all database tables
+- `migrations/00002_add_icon_to_units.sql` - Adds icon field to units table
+- `migrations/00003_seed_units_and_fields.sql` - Seeds initial game data (units and fields)
+
+All migrations support both `up` (apply) and `down` (rollback) operations.
 
 ### Running the Bot
 ```bash
