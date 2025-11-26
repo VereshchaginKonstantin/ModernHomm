@@ -1,4 +1,6 @@
 -- +goose Up
+-- Наполнение справочников начальными данными
+
 -- Добавление начальных игровых полей
 INSERT INTO fields (name, width, height) VALUES
     ('5x5', 5, 5),
@@ -16,6 +18,6 @@ INSERT INTO units (name, icon, price, damage, defense, range, health, speed, luc
 ON CONFLICT (name) DO NOTHING;
 
 -- +goose Down
--- Удаление начальных данных (опционально, можно оставить данные)
+-- Удаление справочных данных
 DELETE FROM units WHERE name IN ('Мечник', 'Лучник', 'Рыцарь', 'Маг', 'Дракон');
 DELETE FROM fields WHERE name IN ('5x5', '7x7', '10x10');

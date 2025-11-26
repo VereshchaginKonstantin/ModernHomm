@@ -67,11 +67,15 @@ python3 migrate.py create migration_name
 ```
 
 **Migration Files:**
-- `migrations/00001_initial_schema.sql` - Creates all database tables
-- `migrations/00002_add_icon_to_units.sql` - Adds icon field to units table
-- `migrations/00003_seed_units_and_fields.sql` - Seeds initial game data (units and fields)
+- `migrations/00001_create_schema.sql` - Creates all database tables with complete schema (structure)
+- `migrations/00002_seed_reference_data.sql` - Seeds reference data (units and fields)
 
 All migrations support both `up` (apply) and `down` (rollback) operations.
+
+**Migration Structure:**
+- **Schema migrations** (00001) contain only database structure (tables, indexes, constraints)
+- **Seed migrations** (00002) contain reference data population
+- This separation allows for better version control and cleaner rollback scenarios
 
 ### Running the Bot
 ```bash
@@ -150,11 +154,42 @@ The project includes comprehensive integration tests with PostgreSQL:
 
 - **test_database.py** - Tests for database operations (saving users, messages, retrieving data)
 - **test_bot_integration.py** - Integration tests for bot with database (message handling, user saving, personalized responses)
-
-Tests use Docker Compose to run an isolated PostgreSQL instance on port 5433.
+- **test_reference_data.py** - Integration tests for reference data (units and fields initialization)
 
 ### Test Database Configuration
 
-Test database connection: `postgresql://postgres:postgres@localhost:5433/telegram_bot_test`
+The test suite uses a separate test database. There are two options for setup:
 
-The test suite automatically creates and drops tables for each test to ensure isolation.
+**Option 1: Using Docker (Recommended)**
+```bash
+# Start test database container
+docker compose -f docker-compose.test.yml up -d
+
+# Apply migrations to test database
+goose -dir migrations postgres "user=postgres password=postgres host=localhost port=5433 dbname=telegram_bot_test sslmode=disable" up
+
+# Run tests
+pytest
+
+# Stop test database
+docker compose -f docker-compose.test.yml down
+```
+
+**Option 2: Using local PostgreSQL**
+```bash
+# Create test database
+psql -U postgres -c "CREATE DATABASE telegram_bot_test;"
+
+# Apply migrations to test database
+goose -dir migrations postgres "user=postgres dbname=telegram_bot_test sslmode=disable" up
+
+# Run tests
+pytest
+```
+
+Test database connection (Docker): `postgresql://postgres:postgres@localhost:5433/telegram_bot_test`
+
+The test suite verifies:
+- All 5 unit types are created with correct attributes (Мечник, Лучник, Рыцарь, Маг, Дракон)
+- All 3 field sizes are created (5x5, 7x7, 10x10)
+- All reference data has valid values and constraints

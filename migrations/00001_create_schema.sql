@@ -1,4 +1,6 @@
 -- +goose Up
+-- Создание структуры базы данных
+
 -- Создание таблицы пользователей Telegram
 CREATE TABLE users (
     id SERIAL PRIMARY KEY,
@@ -37,10 +39,11 @@ CREATE TABLE game_users (
 
 CREATE INDEX idx_game_users_telegram_id ON game_users(telegram_id);
 
--- Создание таблицы типов юнитов
+-- Создание таблицы типов юнитов (справочник)
 CREATE TABLE units (
     id SERIAL PRIMARY KEY,
     name VARCHAR(255) NOT NULL UNIQUE,
+    icon VARCHAR(10) NOT NULL DEFAULT '🎮',
     price NUMERIC(12, 2) NOT NULL,
     damage INTEGER NOT NULL,
     defense INTEGER NOT NULL DEFAULT 0,
@@ -62,7 +65,7 @@ CREATE TABLE user_units (
 CREATE INDEX idx_user_units_game_user_id ON user_units(game_user_id);
 CREATE INDEX idx_user_units_unit_type_id ON user_units(unit_type_id);
 
--- Создание таблицы игровых полей
+-- Создание таблицы игровых полей (справочник)
 CREATE TABLE fields (
     id SERIAL PRIMARY KEY,
     width INTEGER NOT NULL,
@@ -115,6 +118,7 @@ CREATE INDEX idx_battle_units_game_id ON battle_units(game_id);
 CREATE INDEX idx_battle_units_player_id ON battle_units(player_id);
 
 -- +goose Down
+-- Удаление всех таблиц в обратном порядке
 DROP TABLE IF EXISTS battle_units CASCADE;
 DROP TABLE IF EXISTS games CASCADE;
 DROP TYPE IF EXISTS game_status CASCADE;
