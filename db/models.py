@@ -69,6 +69,7 @@ class Unit(Base):
     name = Column(String(255), nullable=False, unique=True)
     price = Column(Numeric(12, 2), nullable=False)
     damage = Column(Integer, nullable=False)
+    defense = Column(Integer, nullable=False, default=0)  # Показатель защиты
     range = Column(Integer, nullable=False)
     health = Column(Integer, nullable=False)
     speed = Column(Integer, nullable=False, default=1)  # Число перемещений за ход

@@ -145,7 +145,7 @@ class SimpleBot:
                     if unit:
                         units_text += (
                             f"\n{unit.name} x{user_unit.count}\n"
-                            f"  ⚔️ Урон: {unit.damage} | 🎯 Дальность: {unit.range}\n"
+                            f"  ⚔️ Урон: {unit.damage} | 🛡️ Защита: {unit.defense} | 🎯 Дальность: {unit.range}\n"
                             f"  ❤️ HP: {unit.health} | 🏃 Скорость: {unit.speed}\n"
                         )
             else:
@@ -203,7 +203,7 @@ class SimpleBot:
             for unit in units:
                 unit_info = (
                     f"{unit.name} - ${unit.price}\n"
-                    f"⚔️ {unit.damage} | 🎯 {unit.range} | ❤️ {unit.health} | 🏃 {unit.speed}\n"
+                    f"⚔️ {unit.damage} | 🛡️ {unit.defense} | 🎯 {unit.range} | ❤️ {unit.health} | 🏃 {unit.speed}\n"
                     f"🍀 {float(unit.luck)*100:.0f}% | 💥 {float(unit.crit_chance)*100:.0f}%"
                 )
                 response += f"\n{unit_info}\n"
@@ -267,6 +267,7 @@ class SimpleBot:
                 f"💵 Ваш баланс: ${game_user.balance}\n\n"
                 f"<b>Характеристики:</b>\n"
                 f"⚔️ Урон: {unit.damage}\n"
+                f"🛡️ Защита: {unit.defense}\n"
                 f"🎯 Дальность: {unit.range}\n"
                 f"❤️ Здоровье: {unit.health}\n"
                 f"🏃 Скорость: {unit.speed}\n"
@@ -381,7 +382,7 @@ class SimpleBot:
             for unit in units:
                 unit_info = (
                     f"{unit.name} - ${unit.price}\n"
-                    f"⚔️ {unit.damage} | 🎯 {unit.range} | ❤️ {unit.health} | 🏃 {unit.speed}\n"
+                    f"⚔️ {unit.damage} | 🛡️ {unit.defense} | 🎯 {unit.range} | ❤️ {unit.health} | 🏃 {unit.speed}\n"
                     f"🍀 {float(unit.luck)*100:.0f}% | 💥 {float(unit.crit_chance)*100:.0f}%"
                 )
                 response += f"\n{unit_info}\n"
@@ -430,7 +431,7 @@ class SimpleBot:
                     if unit:
                         units_text += (
                             f"\n{unit.name} x{user_unit.count}\n"
-                            f"  ⚔️ Урон: {unit.damage} | 🎯 Дальность: {unit.range}\n"
+                            f"  ⚔️ Урон: {unit.damage} | 🛡️ Защита: {unit.defense} | 🎯 Дальность: {unit.range}\n"
                             f"  ❤️ HP: {unit.health} | 🏃 Скорость: {unit.speed}\n"
                         )
             else:

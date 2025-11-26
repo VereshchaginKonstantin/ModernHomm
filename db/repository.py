@@ -591,6 +591,7 @@ class Database:
                     'name': 'Пехота',
                     'price': 100,
                     'damage': 10,
+                    'defense': 5,        # Средняя защита
                     'range': 1,
                     'health': 50,
                     'speed': 3,          # Средняя скорость
@@ -601,6 +602,7 @@ class Database:
                     'name': 'Снайпер',
                     'price': 500,
                     'damage': 50,
+                    'defense': 2,        # Низкая защита
                     'range': 3,
                     'health': 50,
                     'speed': 2,          # Медленный
@@ -632,6 +634,7 @@ class Database:
                 _ = unit.name
                 _ = unit.price
                 _ = unit.damage
+                _ = unit.defense
                 _ = unit.range
                 _ = unit.health
                 _ = unit.speed
@@ -660,6 +663,7 @@ class Database:
                 _ = unit.name
                 _ = unit.price
                 _ = unit.damage
+                _ = unit.defense
                 _ = unit.range
                 _ = unit.health
                 _ = unit.speed
@@ -689,6 +693,7 @@ class Database:
                 _ = unit.name
                 _ = unit.price
                 _ = unit.damage
+                _ = unit.defense
                 _ = unit.range
                 _ = unit.health
                 _ = unit.speed
