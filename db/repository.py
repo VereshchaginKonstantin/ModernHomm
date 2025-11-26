@@ -9,7 +9,7 @@ from contextlib import contextmanager
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, Session
 
-from .models import Base, User, Message, GameUser, Unit, UserUnit
+from .models import Base, User, Message, GameUser, Unit, UserUnit, Game, GameStatus, Field, BattleUnit
 
 
 class Database:
@@ -760,3 +760,122 @@ class Database:
             session.flush()
 
             return True, f"Успешно куплено {quantity} x {unit.name} за ${total_cost:.2f}"
+
+    # ===== CRUD методы для Game =====
+
+    def get_game_by_id(self, game_id: int) -> Game:
+        """
+        Получение игры по ID
+
+        Args:
+            game_id: ID игры
+
+        Returns:
+            Game: Объект игры или None
+        """
+        with self.get_session() as session:
+            game = session.query(Game).filter_by(id=game_id).first()
+
+            if game:
+                # Загружаем все атрибуты
+                _ = game.id
+                _ = game.player1_id
+                _ = game.player2_id
+                _ = game.field_id
+                _ = game.status
+                _ = game.current_player_id
+                _ = game.winner_id
+                _ = game.created_at
+                _ = game.started_at
+                _ = game.completed_at
+                _ = game.last_move_at
+
+                session.expunge_all()
+
+            return game
+
+    def get_user_games(self, telegram_id: int, status: GameStatus = None) -> list:
+        """
+        Получение всех игр пользователя
+
+        Args:
+            telegram_id: ID пользователя в Telegram
+            status: Фильтр по статусу (опционально)
+
+        Returns:
+            list: Список игр
+        """
+        with self.get_session() as session:
+            # Получаем игрового пользователя
+            game_user = session.query(GameUser).filter_by(telegram_id=telegram_id).first()
+
+            if not game_user:
+                return []
+
+            # Формируем запрос
+            query = session.query(Game).filter(
+                (Game.player1_id == game_user.id) | (Game.player2_id == game_user.id)
+            )
+
+            if status:
+                query = query.filter(Game.status == status)
+
+            games = query.order_by(Game.created_at.desc()).all()
+
+            # Загружаем все атрибуты
+            for game in games:
+                _ = game.id
+                _ = game.player1_id
+                _ = game.player2_id
+                _ = game.field_id
+                _ = game.status
+                _ = game.current_player_id
+                _ = game.winner_id
+                _ = game.created_at
+                _ = game.started_at
+                _ = game.completed_at
+                _ = game.last_move_at
+
+            session.expunge_all()
+            return games
+
+    def get_active_game(self, telegram_id: int) -> Game:
+        """
+        Получение активной игры пользователя (ожидание или в процессе)
+
+        Args:
+            telegram_id: ID пользователя в Telegram
+
+        Returns:
+            Game: Активная игра или None
+        """
+        with self.get_session() as session:
+            # Получаем игрового пользователя
+            game_user = session.query(GameUser).filter_by(telegram_id=telegram_id).first()
+
+            if not game_user:
+                return None
+
+            # Ищем активную игру
+            game = session.query(Game).filter(
+                ((Game.player1_id == game_user.id) | (Game.player2_id == game_user.id)),
+                Game.status.in_([GameStatus.WAITING, GameStatus.IN_PROGRESS])
+            ).first()
+
+            if game:
+                # Загружаем все атрибуты
+                _ = game.id
+                _ = game.player1_id
+                _ = game.player2_id
+                _ = game.field_id
+                _ = game.status
+                _ = game.current_player_id
+                _ = game.winner_id
+                _ = game.created_at
+                _ = game.started_at
+                _ = game.completed_at
+                _ = game.last_move_at
+
+                session.expunge_all()
+
+            return game
