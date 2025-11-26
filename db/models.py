@@ -67,6 +67,7 @@ class Unit(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     name = Column(String(255), nullable=False, unique=True)
+    icon = Column(String(10), nullable=False, default='🎮')  # Иконка для отображения на поле
     price = Column(Numeric(12, 2), nullable=False)
     damage = Column(Integer, nullable=False)
     defense = Column(Integer, nullable=False, default=0)  # Показатель защиты
