@@ -78,6 +78,33 @@ All migrations support both `up` (apply) and `down` (rollback) operations.
 - This separation allows for better version control and cleaner rollback scenarios
 
 ### Running the Bot
+
+#### Option 1: Using Docker (Recommended for Production)
+
+```bash
+# Initialize containers (first time only)
+./init.sh
+
+# Start containers
+./start.sh
+
+# Apply migrations to database
+goose -dir migrations postgres "user=postgres password=postgres host=localhost port=5434 dbname=telegram_bot sslmode=disable" up
+
+# View logs
+docker compose logs -f app
+
+# Stop containers
+./stop.sh
+
+# Clean up everything (removes containers and data)
+./cleanup.sh
+```
+
+See [DOCKER_README.md](DOCKER_README.md) for detailed Docker management instructions.
+
+#### Option 2: Direct Python Execution (Development)
+
 ```bash
 python bot.py
 # or

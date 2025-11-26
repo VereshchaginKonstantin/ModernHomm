@@ -47,3 +47,4 @@ htmlcov/
 
 # Logs
 *.log
+postgres_data/

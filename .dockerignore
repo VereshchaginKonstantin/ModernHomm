@@ -1,0 +1,53 @@
+# Git files
+.git
+.gitignore
+
+# Python cache
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+*.egg
+*.egg-info
+dist
+build
+venv/
+env/
+
+# Docker files
+Dockerfile
+docker-compose*.yml
+.dockerignore
+
+# Database data files (not the db Python module!)
+*.db
+*.sqlite3
+db/data/
+
+# Migration files (migrations are run separately)
+migrations/
+
+# Test files
+tests/
+pytest.ini
+.pytest_cache
+conftest.py
+test_*.py
+
+# Scripts
+*.sh
+
+# Documentation
+*.md
+CLAUDE.md
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Logs
+*.log
