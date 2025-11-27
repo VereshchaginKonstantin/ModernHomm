@@ -79,6 +79,7 @@ class SimpleBot:
             "/challenge &lt;username&gt; - Вызвать игрока на бой\n"
             "/accept - Принять вызов на бой\n"
             "/game - Показать текущую игру\n"
+            "/activegames - Просмотр активных игр\n"
             "/mygames - История игр\n\n"
             "<b>Другое:</b>\n"
             "/search &lt;username&gt; - Поиск сообщений пользователя\n"
@@ -1066,7 +1067,7 @@ class SimpleBot:
             response = "📋 <b>Ваши игры:</b>\n\n"
             for game in games[:10]:  # Показываем последние 10
                 opponent_id = game.player2_id if game.player1_id == game_user.id else game.player1_id
-                opponent = self.db.get_game_user(opponent_id) if opponent_id else None
+                opponent = self.db.get_game_user_by_id(opponent_id) if opponent_id else None
                 opponent_name = opponent.name if opponent else "Unknown"
 
                 status_emoji = {"waiting": "⏳", "in_progress": "⚔️", "completed": "✅"}
@@ -1085,6 +1086,73 @@ class SimpleBot:
 
         except Exception as e:
             logger.error(f"Ошибка при получении истории игр: {e}")
+            await update.message.reply_text(
+                f"❌ Произошла ошибка: {e}",
+                parse_mode=self.parse_mode
+            )
+
+    async def activegames_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Обработчик команды /activegames - просмотр активных игр"""
+        user = update.effective_user
+        logger.info(f"Команда /activegames от пользователя {user.id}")
+
+        try:
+            # Проверка игрового профиля
+            game_user = self.db.get_game_user(user.id)
+            if not game_user:
+                await update.message.reply_text(
+                    "❌ У вас еще нет игрового профиля. Используйте /play",
+                    parse_mode=self.parse_mode
+                )
+                return
+
+            # Получение активных игр
+            active_games = self.db.get_active_games(user.id)
+
+            if not active_games:
+                await update.message.reply_text(
+                    "🎮 У вас нет активных игр.\nИспользуйте /challenge для вызова на бой!",
+                    parse_mode=self.parse_mode
+                )
+                return
+
+            response = "🎮 <b>Ваши активные игры:</b>\n\n"
+            keyboard = []
+
+            for game in active_games:
+                opponent_id = game.player2_id if game.player1_id == game_user.id else game.player1_id
+                opponent = self.db.get_game_user_by_id(opponent_id) if opponent_id else None
+                opponent_name = opponent.name if opponent else "Unknown"
+
+                status_emoji = {"waiting": "⏳", "in_progress": "⚔️"}
+                status_text = status_emoji.get(game.status.value, "❓")
+
+                # Определить, чей ход
+                turn_info = ""
+                if game.status.value == "in_progress":
+                    if game.current_player_id == game_user.id:
+                        turn_info = " - 🟢 Ваш ход"
+                    else:
+                        turn_info = " - 🔴 Ход противника"
+
+                response += f"{status_text} Игра #{game.id} vs {opponent_name}{turn_info}\n"
+
+                # Создать кнопку для каждой игры
+                keyboard.append([
+                    InlineKeyboardButton(
+                        f"📋 Игра #{game.id} vs {opponent_name}",
+                        callback_data=f"show_game:{game.id}"
+                    )
+                ])
+
+            await update.message.reply_text(
+                response,
+                parse_mode=self.parse_mode,
+                reply_markup=InlineKeyboardMarkup(keyboard)
+            )
+
+        except Exception as e:
+            logger.error(f"Ошибка при получении активных игр: {e}")
             await update.message.reply_text(
                 f"❌ Произошла ошибка: {e}",
                 parse_mode=self.parse_mode
@@ -1407,6 +1475,187 @@ class SimpleBot:
                 parse_mode=self.parse_mode
             )
 
+    async def show_game_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Обработчик callback для показа деталей игры"""
+        query = update.callback_query
+        await query.answer()
+
+        # Парсим данные из callback (формат: show_game:game_id)
+        data = query.data.split(':')
+        if len(data) != 2 or data[0] != 'show_game':
+            return
+
+        game_id = int(data[1])
+        user = update.effective_user
+
+        try:
+            game_user = self.db.get_game_user(user.id)
+            if not game_user:
+                await query.edit_message_text("❌ Игровой профиль не найден")
+                return
+
+            game = self.db.get_game_by_id(game_id)
+            if not game:
+                await query.edit_message_text("❌ Игра не найдена")
+                return
+
+            # Проверить, что игрок участвует в игре
+            if game.player1_id != game_user.id and game.player2_id != game_user.id:
+                await query.edit_message_text("❌ Вы не участвуете в этой игре")
+                return
+
+            # Получить информацию об игре
+            opponent_id = game.player2_id if game.player1_id == game_user.id else game.player1_id
+            opponent = self.db.get_game_user_by_id(opponent_id)
+            opponent_name = opponent.name if opponent else "Unknown"
+
+            # Отобразить поле
+            with self.db.get_session() as session:
+                engine = GameEngine(session)
+                field_display = engine.render_field(game_id)
+                actions = engine.get_available_actions(game_id, game_user.id)
+
+            # Создать клавиатуру
+            keyboard = self._create_game_keyboard(game_id, game_user.id, actions)
+
+            # Добавить кнопку "Выйти из схватки"
+            keyboard.append([
+                InlineKeyboardButton("🏃 Выйти из схватки", callback_data=f"surrender:{game_id}")
+            ])
+            keyboard.append([
+                InlineKeyboardButton("🔙 К списку игр", callback_data="back_to_activegames")
+            ])
+
+            await query.edit_message_text(
+                field_display,
+                parse_mode=self.parse_mode,
+                reply_markup=InlineKeyboardMarkup(keyboard)
+            )
+
+        except Exception as e:
+            logger.error(f"Ошибка при показе игры: {e}")
+            await query.edit_message_text(f"❌ Ошибка: {e}")
+
+    async def surrender_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Обработчик callback для выхода из игры"""
+        query = update.callback_query
+        await query.answer()
+
+        # Парсим данные из callback (формат: surrender:game_id)
+        data = query.data.split(':')
+        if len(data) != 2 or data[0] != 'surrender':
+            return
+
+        game_id = int(data[1])
+        user = update.effective_user
+
+        try:
+            game_user = self.db.get_game_user(user.id)
+            if not game_user:
+                await query.edit_message_text("❌ Игровой профиль не найден")
+                return
+
+            # Получить информацию об игре для уведомления
+            game = self.db.get_game_by_id(game_id)
+            if not game:
+                await query.edit_message_text("❌ Игра не найдена")
+                return
+
+            opponent_id = game.player2_id if game.player1_id == game_user.id else game.player1_id
+            opponent = self.db.get_game_user_by_id(opponent_id)
+
+            # Выполнить surrender через игровой движок
+            with self.db.get_session() as session:
+                engine = GameEngine(session)
+                success, message, opponent_telegram_id = engine.surrender_game(game_id, game_user.id)
+
+            if success:
+                response = f"✅ {message}"
+                await query.edit_message_text(response, parse_mode=self.parse_mode)
+
+                # Отправить уведомление противнику
+                if opponent_telegram_id:
+                    try:
+                        notification = (
+                            f"🏃 Игрок {game_user.name} сбежал из игры #{game_id}!\n"
+                            f"Вы победили в этой игре!"
+                        )
+                        await context.bot.send_message(
+                            chat_id=opponent_telegram_id,
+                            text=notification,
+                            parse_mode=self.parse_mode
+                        )
+                    except Exception as e:
+                        logger.error(f"Ошибка при отправке уведомления противнику: {e}")
+            else:
+                await query.edit_message_text(f"❌ {message}", parse_mode=self.parse_mode)
+
+        except Exception as e:
+            logger.error(f"Ошибка при выходе из игры: {e}")
+            await query.edit_message_text(f"❌ Ошибка: {e}")
+
+    async def back_to_activegames_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Обработчик callback для возврата к списку активных игр"""
+        query = update.callback_query
+        await query.answer()
+
+        user = update.effective_user
+
+        try:
+            game_user = self.db.get_game_user(user.id)
+            if not game_user:
+                await query.edit_message_text("❌ Игровой профиль не найден")
+                return
+
+            # Получение активных игр
+            active_games = self.db.get_active_games(user.id)
+
+            if not active_games:
+                await query.edit_message_text(
+                    "🎮 У вас нет активных игр.\nИспользуйте /challenge для вызова на бой!",
+                    parse_mode=self.parse_mode
+                )
+                return
+
+            response = "🎮 <b>Ваши активные игры:</b>\n\n"
+            keyboard = []
+
+            for game in active_games:
+                opponent_id = game.player2_id if game.player1_id == game_user.id else game.player1_id
+                opponent = self.db.get_game_user_by_id(opponent_id) if opponent_id else None
+                opponent_name = opponent.name if opponent else "Unknown"
+
+                status_emoji = {"waiting": "⏳", "in_progress": "⚔️"}
+                status_text = status_emoji.get(game.status.value, "❓")
+
+                # Определить, чей ход
+                turn_info = ""
+                if game.status.value == "in_progress":
+                    if game.current_player_id == game_user.id:
+                        turn_info = " - 🟢 Ваш ход"
+                    else:
+                        turn_info = " - 🔴 Ход противника"
+
+                response += f"{status_text} Игра #{game.id} vs {opponent_name}{turn_info}\n"
+
+                # Создать кнопку для каждой игры
+                keyboard.append([
+                    InlineKeyboardButton(
+                        f"📋 Игра #{game.id} vs {opponent_name}",
+                        callback_data=f"show_game:{game.id}"
+                    )
+                ])
+
+            await query.edit_message_text(
+                response,
+                parse_mode=self.parse_mode,
+                reply_markup=InlineKeyboardMarkup(keyboard)
+            )
+
+        except Exception as e:
+            logger.error(f"Ошибка при возврате к списку игр: {e}")
+            await query.edit_message_text(f"❌ Ошибка: {e}")
+
     async def handle_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Обработчик всех текстовых сообщений"""
         user_message = update.message.text
@@ -1467,6 +1716,7 @@ class SimpleBot:
         application.add_handler(CommandHandler("challenge", self.challenge_command))
         application.add_handler(CommandHandler("accept", self.accept_command))
         application.add_handler(CommandHandler("game", self.game_command))
+        application.add_handler(CommandHandler("activegames", self.activegames_command))
         application.add_handler(CommandHandler("mygames", self.mygames_command))
 
         # Регистрация обработчиков callback (порядок важен для правильной маршрутизации)
@@ -1480,6 +1730,9 @@ class SimpleBot:
 
         # Игровые callback обработчики
         application.add_handler(CallbackQueryHandler(self.challenge_user_callback, pattern=r'^challenge_user:'))
+        application.add_handler(CallbackQueryHandler(self.show_game_callback, pattern=r'^show_game:'))
+        application.add_handler(CallbackQueryHandler(self.surrender_callback, pattern=r'^surrender:'))
+        application.add_handler(CallbackQueryHandler(self.back_to_activegames_callback, pattern=r'^back_to_activegames$'))
         application.add_handler(CallbackQueryHandler(self.game_unit_callback, pattern=r'^game_unit:'))
         application.add_handler(CallbackQueryHandler(self.game_move_callback, pattern=r'^game_move:'))
         application.add_handler(CallbackQueryHandler(self.game_attack_callback, pattern=r'^game_attack:'))

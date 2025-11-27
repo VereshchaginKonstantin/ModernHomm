@@ -699,6 +699,73 @@ class GameEngine:
 
         return None
 
+    def surrender_game(self, game_id: int, player_id: int) -> Tuple[bool, str, Optional[int]]:
+        """
+        Выход из игры (сдаться)
+
+        Args:
+            game_id: ID игры
+            player_id: ID игрока, который сдается
+
+        Returns:
+            Tuple[bool, str, int]: Успех, сообщение, telegram_id противника
+        """
+        game = self.db.query(Game).filter_by(id=game_id).first()
+        if not game:
+            return False, "Игра не найдена", None
+
+        if game.status not in [GameStatus.WAITING, GameStatus.IN_PROGRESS]:
+            return False, "Игра уже завершена", None
+
+        # Проверить, что игрок участвует в игре
+        if game.player1_id != player_id and game.player2_id != player_id:
+            return False, "Вы не участвуете в этой игре", None
+
+        # Определить победителя и проигравшего
+        loser_id = player_id
+        winner_id = game.player1_id if loser_id == game.player2_id else game.player2_id
+
+        # Сохранить текущее состояние юнитов (фиксация урона)
+        self._save_battle_units_damage(game)
+
+        # Завершить игру
+        game.status = GameStatus.COMPLETED
+        game.winner_id = winner_id
+        game.completed_at = datetime.utcnow()
+
+        # Обновить статистику (победа не засчитывается при сдаче противника)
+        loser = self.db.query(GameUser).filter_by(id=loser_id).first()
+        loser.losses += 1
+
+        # Получить telegram_id противника для уведомления
+        winner = self.db.query(GameUser).filter_by(id=winner_id).first()
+        opponent_telegram_id = winner.telegram_id if winner else None
+
+        # Получить имя сдавшегося игрока
+        loser_name = loser.name if loser else "Unknown"
+
+        self.db.commit()
+
+        message = f"Вы сдались в игре #{game_id}. Урон юнитов зафиксирован."
+        return True, message, opponent_telegram_id
+
+    def _save_battle_units_damage(self, game: Game):
+        """
+        Сохранить урон юнитов после завершения игры
+
+        Args:
+            game: Игра
+        """
+        for battle_unit in game.battle_units:
+            # Подсчитать живых юнитов
+            alive_count = self._count_alive_units(battle_unit)
+
+            # Обновить количество юнитов у игрока
+            user_unit = battle_unit.user_unit
+            user_unit.count = alive_count
+
+        self.db.flush()
+
     def _complete_game(self, game: Game, winner_id: int):
         """
         Завершить игру
@@ -710,6 +777,9 @@ class GameEngine:
         game.status = GameStatus.COMPLETED
         game.winner_id = winner_id
         game.completed_at = datetime.utcnow()
+
+        # Сохранить урон юнитов
+        self._save_battle_units_damage(game)
 
         # Обновить статистику игроков
         winner = self.db.query(GameUser).filter_by(id=winner_id).first()

@@ -916,3 +916,71 @@ class Database:
                 session.expunge_all()
 
             return game
+
+    def get_active_games(self, telegram_id: int) -> list:
+        """
+        Получение всех активных игр пользователя (ожидание или в процессе)
+
+        Args:
+            telegram_id: ID пользователя в Telegram
+
+        Returns:
+            list: Список активных игр
+        """
+        with self.get_session() as session:
+            # Получаем игрового пользователя
+            game_user = session.query(GameUser).filter_by(telegram_id=telegram_id).first()
+
+            if not game_user:
+                return []
+
+            # Ищем все активные игры
+            games = session.query(Game).filter(
+                ((Game.player1_id == game_user.id) | (Game.player2_id == game_user.id)),
+                Game.status.in_([GameStatus.WAITING, GameStatus.IN_PROGRESS])
+            ).order_by(Game.created_at.desc()).all()
+
+            # Загружаем все атрибуты для каждой игры
+            for game in games:
+                _ = game.id
+                _ = game.player1_id
+                _ = game.player2_id
+                _ = game.field_id
+                _ = game.status
+                _ = game.current_player_id
+                _ = game.winner_id
+                _ = game.created_at
+                _ = game.started_at
+                _ = game.completed_at
+                _ = game.last_move_at
+
+            session.expunge_all()
+            return games
+
+    def get_game_user_by_id(self, game_user_id: int) -> GameUser:
+        """
+        Получение игрового пользователя по внутреннему ID
+
+        Args:
+            game_user_id: Внутренний ID игрового пользователя
+
+        Returns:
+            GameUser: Объект игрового пользователя или None
+        """
+        with self.get_session() as session:
+            game_user = session.query(GameUser).filter_by(id=game_user_id).first()
+
+            if game_user:
+                # Загружаем все атрибуты
+                _ = game_user.id
+                _ = game_user.telegram_id
+                _ = game_user.name
+                _ = game_user.balance
+                _ = game_user.wins
+                _ = game_user.losses
+                _ = game_user.created_at
+                _ = game_user.updated_at
+
+                session.expunge_all()
+
+            return game_user
