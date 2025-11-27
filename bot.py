@@ -7,6 +7,7 @@
 import json
 import logging
 import os
+import html
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, CallbackQueryHandler
 from db import Database
@@ -827,7 +828,7 @@ class SimpleBot:
                 if not random_users:
                     await update.message.reply_text(
                         "❌ Нет доступных игроков для вызова.\n"
-                        "Или используйте: /challenge <username>",
+                        "Или используйте: /challenge username",
                         parse_mode=self.parse_mode
                     )
                     return
@@ -842,8 +843,11 @@ class SimpleBot:
                     if opponent.wins + opponent.losses > 0:
                         win_rate = (opponent.wins / (opponent.wins + opponent.losses)) * 100
 
+                    # Экранируем HTML-символы в имени
+                    safe_name = html.escape(opponent.name)
+
                     response += (
-                        f"{i}. {opponent.name}\n"
+                        f"{i}. {safe_name}\n"
                         f"   🏆 {opponent.wins} | 💔 {opponent.losses} | "
                         f"📊 {win_rate:.0f}% побед\n\n"
                     )
@@ -1325,10 +1329,11 @@ class SimpleBot:
                 game, message = engine.create_game(game_user.id, opponent.name)
 
             if game:
+                safe_opponent_name = html.escape(opponent.name)
                 response = (
                     f"✅ {message}\n\n"
                     f"Игра #{game.id} создана!\n"
-                    f"Ожидание принятия игроком {opponent.name}"
+                    f"Ожидание принятия игроком {safe_opponent_name}"
                 )
             else:
                 response = f"❌ {message}"
