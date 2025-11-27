@@ -809,26 +809,70 @@ class SimpleBot:
         user = update.effective_user
         logger.info(f"Команда /challenge от пользователя {user.id}")
 
-        if not context.args:
+        # Проверка игрового профиля
+        game_user = self.db.get_game_user(user.id)
+        if not game_user:
             await update.message.reply_text(
-                "Использование: /challenge <username>\n\n"
-                "Например: /challenge john",
+                "❌ У вас еще нет игрового профиля. Используйте /play",
                 parse_mode=self.parse_mode
             )
             return
 
-        opponent_username = context.args[0].lstrip('@')
+        # Если не указан username, показываем список случайных пользователей
+        if not context.args:
+            try:
+                # Получаем случайных пользователей (исключая текущего)
+                random_users = self.db.get_random_game_users(limit=10, exclude_telegram_id=user.id)
 
-        try:
-            # Проверка игрового профиля
-            game_user = self.db.get_game_user(user.id)
-            if not game_user:
+                if not random_users:
+                    await update.message.reply_text(
+                        "❌ Нет доступных игроков для вызова.\n"
+                        "Или используйте: /challenge <username>",
+                        parse_mode=self.parse_mode
+                    )
+                    return
+
+                # Формируем сообщение со списком пользователей
+                response = "⚔️ <b>Выберите противника для боя:</b>\n\n"
+
+                # Создаем кнопки для каждого пользователя
+                keyboard = []
+                for i, opponent in enumerate(random_users, 1):
+                    win_rate = 0
+                    if opponent.wins + opponent.losses > 0:
+                        win_rate = (opponent.wins / (opponent.wins + opponent.losses)) * 100
+
+                    response += (
+                        f"{i}. {opponent.name}\n"
+                        f"   🏆 {opponent.wins} | 💔 {opponent.losses} | "
+                        f"📊 {win_rate:.0f}% побед\n\n"
+                    )
+
+                    keyboard.append([
+                        InlineKeyboardButton(
+                            f"⚔️ Вызвать {opponent.name}",
+                            callback_data=f"challenge_user:{opponent.telegram_id}"
+                        )
+                    ])
+
                 await update.message.reply_text(
-                    "❌ У вас еще нет игрового профиля. Используйте /play",
+                    response,
+                    parse_mode=self.parse_mode,
+                    reply_markup=InlineKeyboardMarkup(keyboard)
+                )
+                return
+
+            except Exception as e:
+                logger.error(f"Ошибка при получении списка игроков: {e}")
+                await update.message.reply_text(
+                    "❌ Произошла ошибка при получении списка игроков",
                     parse_mode=self.parse_mode
                 )
                 return
 
+        opponent_username = context.args[0].lstrip('@')
+
+        try:
             # Проверка активной игры
             active_game = self.db.get_active_game(user.id)
             if active_game:
@@ -1234,6 +1278,70 @@ class SimpleBot:
             logger.error(f"Ошибка при обновлении игры: {e}")
             await query.answer(f"❌ Ошибка: {e}", show_alert=True)
 
+    async def challenge_user_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Обработчик callback для вызова пользователя на бой из списка"""
+        query = update.callback_query
+        await query.answer()
+
+        # Парсим данные из callback (формат: challenge_user:telegram_id)
+        data = query.data.split(':')
+        if len(data) != 2 or data[0] != 'challenge_user':
+            return
+
+        opponent_telegram_id = int(data[1])
+        user = update.effective_user
+
+        try:
+            # Получаем игрового пользователя
+            game_user = self.db.get_game_user(user.id)
+            if not game_user:
+                await query.edit_message_text(
+                    "❌ Игровой профиль не найден.",
+                    parse_mode=self.parse_mode
+                )
+                return
+
+            # Получаем информацию о противнике
+            opponent = self.db.get_game_user(opponent_telegram_id)
+            if not opponent:
+                await query.edit_message_text(
+                    "❌ Игрок не найден.",
+                    parse_mode=self.parse_mode
+                )
+                return
+
+            # Проверка активной игры
+            active_game = self.db.get_active_game(user.id)
+            if active_game:
+                await query.edit_message_text(
+                    "❌ У вас уже есть активная игра. Завершите её сначала.",
+                    parse_mode=self.parse_mode
+                )
+                return
+
+            # Создание игры через игровой движок (по имени)
+            with self.db.get_session() as session:
+                engine = GameEngine(session)
+                game, message = engine.create_game(game_user.id, opponent.name)
+
+            if game:
+                response = (
+                    f"✅ {message}\n\n"
+                    f"Игра #{game.id} создана!\n"
+                    f"Ожидание принятия игроком {opponent.name}"
+                )
+            else:
+                response = f"❌ {message}"
+
+            await query.edit_message_text(response, parse_mode=self.parse_mode)
+
+        except Exception as e:
+            logger.error(f"Ошибка при вызове игрока: {e}")
+            await query.edit_message_text(
+                f"❌ Произошла ошибка: {e}",
+                parse_mode=self.parse_mode
+            )
+
     async def handle_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Обработчик всех текстовых сообщений"""
         user_message = update.message.text
@@ -1333,6 +1441,7 @@ class SimpleBot:
         application.add_handler(CallbackQueryHandler(self.user_messages_callback, pattern=r'^user_msgs:'))
 
         # Игровые callback обработчики
+        application.add_handler(CallbackQueryHandler(self.challenge_user_callback, pattern=r'^challenge_user:'))
         application.add_handler(CallbackQueryHandler(self.game_unit_callback, pattern=r'^game_unit:'))
         application.add_handler(CallbackQueryHandler(self.game_move_callback, pattern=r'^game_move:'))
         application.add_handler(CallbackQueryHandler(self.game_attack_callback, pattern=r'^game_attack:'))

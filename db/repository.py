@@ -417,6 +417,43 @@ class Database:
         game_user = self.create_game_user(telegram_id, name, initial_balance)
         return game_user, True
 
+    def get_random_game_users(self, limit: int = 10, exclude_telegram_id: int = None) -> list:
+        """
+        Получение случайных игровых пользователей
+
+        Args:
+            limit: Максимальное количество пользователей (по умолчанию 10)
+            exclude_telegram_id: ID пользователя, которого нужно исключить из выборки
+
+        Returns:
+            list: Список объектов GameUser
+        """
+        from sqlalchemy import func
+
+        with self.get_session() as session:
+            query = session.query(GameUser)
+
+            # Исключаем указанного пользователя
+            if exclude_telegram_id:
+                query = query.filter(GameUser.telegram_id != exclude_telegram_id)
+
+            # Сортируем случайным образом и ограничиваем количество
+            game_users = query.order_by(func.random()).limit(limit).all()
+
+            # Загружаем все атрибуты для каждого пользователя
+            for game_user in game_users:
+                _ = game_user.id
+                _ = game_user.telegram_id
+                _ = game_user.name
+                _ = game_user.balance
+                _ = game_user.wins
+                _ = game_user.losses
+                _ = game_user.created_at
+                _ = game_user.updated_at
+
+            session.expunge_all()
+            return game_users
+
     # ===== CRUD методы для UserUnit =====
 
     def add_unit(self, telegram_id: int, unit_type_id: int, count: int = 1) -> UserUnit:
