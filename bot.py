@@ -1135,9 +1135,15 @@ class SimpleBot:
                 status_emoji = {"waiting": "⏳", "in_progress": "⚔️"}
                 status_text = status_emoji.get(game.status.value, "❓")
 
-                # Определить, чей ход
+                # Определить статус игры
                 turn_info = ""
-                if game.status.value == "in_progress":
+                if game.status.value == "waiting":
+                    # Определяем, кто создал игру (player1) и кто должен принять (player2)
+                    if game.player1_id == game_user.id:
+                        turn_info = " - Ожидание принятия"
+                    else:
+                        turn_info = " - Нужно принять вызов"
+                elif game.status.value == "in_progress":
                     if game.current_player_id == game_user.id:
                         turn_info = " - 🟢 Ваш ход"
                     else:
@@ -1464,13 +1470,17 @@ class SimpleBot:
                 engine = GameEngine(session)
                 game, message = engine.create_game(game_user.id, opponent.name)
 
-            if game:
+                # Сохраняем ID игры внутри сессии
+                game_id = game.id if game else None
+
+            if game_id:
                 safe_opponent_name = html.escape(opponent.name)
                 safe_challenger_name = html.escape(game_user.name)
+                safe_message = html.escape(message)
 
                 response = (
-                    f"✅ {message}\n\n"
-                    f"Игра #{game.id} создана!\n"
+                    f"✅ {safe_message}\n\n"
+                    f"Игра #{game_id} создана!\n"
                     f"Ожидание принятия игроком {safe_opponent_name}"
                 )
                 await query.edit_message_text(response, parse_mode=self.parse_mode)
@@ -1478,8 +1488,8 @@ class SimpleBot:
                 # Отправить уведомление противнику
                 try:
                     challenge_keyboard = InlineKeyboardMarkup([
-                        [InlineKeyboardButton("✅ Принять бой", callback_data=f"accept_challenge:{game.id}")],
-                        [InlineKeyboardButton("❌ Отклонить", callback_data=f"decline_challenge:{game.id}")]
+                        [InlineKeyboardButton("✅ Принять бой", callback_data=f"accept_challenge:{game_id}")],
+                        [InlineKeyboardButton("❌ Отклонить", callback_data=f"decline_challenge:{game_id}")]
                     ])
 
                     await context.bot.send_message(
@@ -1487,7 +1497,7 @@ class SimpleBot:
                         text=(
                             f"⚔️ <b>Вызов на бой!</b>\n\n"
                             f"Игрок {safe_challenger_name} вызывает вас на бой!\n"
-                            f"Игра #{game.id}\n\n"
+                            f"Игра #{game_id}\n\n"
                             f"Будете сражаться?"
                         ),
                         parse_mode=self.parse_mode,
@@ -1497,7 +1507,8 @@ class SimpleBot:
                 except Exception as e:
                     logger.error(f"Ошибка при отправке уведомления противнику: {e}")
             else:
-                response = f"❌ {message}"
+                safe_message = html.escape(message)
+                response = f"❌ {safe_message}"
                 await query.edit_message_text(response, parse_mode=self.parse_mode)
 
         except Exception as e:
@@ -1660,9 +1671,15 @@ class SimpleBot:
                 status_emoji = {"waiting": "⏳", "in_progress": "⚔️"}
                 status_text = status_emoji.get(game.status.value, "❓")
 
-                # Определить, чей ход
+                # Определить статус игры
                 turn_info = ""
-                if game.status.value == "in_progress":
+                if game.status.value == "waiting":
+                    # Определяем, кто создал игру (player1) и кто должен принять (player2)
+                    if game.player1_id == game_user.id:
+                        turn_info = " - Ожидание принятия"
+                    else:
+                        turn_info = " - Нужно принять вызов"
+                elif game.status.value == "in_progress":
                     if game.current_player_id == game_user.id:
                         turn_info = " - 🟢 Ваш ход"
                     else:
