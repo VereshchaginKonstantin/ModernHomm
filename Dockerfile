@@ -18,7 +18,7 @@ COPY game_engine.py .
 COPY config.json .
 
 # Копирование Python модуля db (модели и репозиторий)
-COPY db/__init__.py db/models.py db/repository.py ./db/
+COPY db/ ./db/
 
 # Создание непривилегированного пользователя
 RUN useradd -m -u 1000 appuser && chown -R appuser:appuser /app
