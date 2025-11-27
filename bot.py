@@ -1026,6 +1026,11 @@ class SimpleBot:
 
             keyboard = self._create_game_keyboard(active_game.id, game_user.id, actions)
 
+            # Добавить кнопку "Выйти из схватки"
+            keyboard.append([
+                InlineKeyboardButton("🏃 Выйти из схватки", callback_data=f"surrender:{active_game.id}")
+            ])
+
             await update.message.reply_text(
                 field_display,
                 parse_mode=self.parse_mode,
