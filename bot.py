@@ -11,6 +11,7 @@ import html
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, CallbackQueryHandler
 from db import Database
+from db.models import GameUser
 from game_engine import GameEngine
 
 
@@ -946,14 +947,13 @@ class SimpleBot:
                 success, message = engine.accept_game(active_game.id, game_user.id)
 
             if success:
-                # Показать поле
+                # Показать поле обоим игрокам
                 with self.db.get_session() as session:
                     engine = GameEngine(session)
                     field_display = engine.render_field(active_game.id)
 
+                # Отправить уведомление и поле player2 (тому, кто принял)
                 response = f"✅ {message}\n\n{field_display}"
-
-                # Получить доступные действия
                 actions = engine.get_available_actions(active_game.id, game_user.id)
                 keyboard = self._create_game_keyboard(active_game.id, game_user.id, actions)
 
@@ -962,6 +962,24 @@ class SimpleBot:
                     parse_mode=self.parse_mode,
                     reply_markup=InlineKeyboardMarkup(keyboard) if keyboard else None
                 )
+
+                # Отправить уведомление и поле player1 (тому, кто создал игру)
+                player1_id = active_game.player1_id if active_game.player2_id == game_user.id else active_game.player2_id
+                player1 = self.db.query(GameUser).filter_by(id=player1_id).first()
+
+                if player1 and player1.telegram_id:
+                    try:
+                        player1_actions = engine.get_available_actions(active_game.id, player1_id)
+                        player1_keyboard = self._create_game_keyboard(active_game.id, player1_id, player1_actions)
+
+                        await context.bot.send_message(
+                            chat_id=player1.telegram_id,
+                            text=f"🎮 Игра началась!\n\n{field_display}",
+                            parse_mode=self.parse_mode,
+                            reply_markup=InlineKeyboardMarkup(player1_keyboard) if player1_keyboard else None
+                        )
+                    except Exception as e:
+                        logger.error(f"Ошибка при отправке уведомления player1: {e}")
             else:
                 await update.message.reply_text(
                     f"❌ {message}",
@@ -1207,12 +1225,54 @@ class SimpleBot:
                 logger.error(f"Ошибка при перемещении: {e}")
                 await query.answer(f"❌ Ошибка: {e}", show_alert=True)
         else:
-            # Показать доступные позиции
-            await query.edit_message_text(
-                "🏃 Выберите позицию для перемещения\n\n"
-                "Используйте команду: /move <unit_id> <x> <y>",
-                parse_mode=self.parse_mode
-            )
+            # Показать доступные позиции для перемещения
+            try:
+                user = update.effective_user
+                game_user = self.db.get_game_user(user.id)
+
+                with self.db.get_session() as session:
+                    engine = GameEngine(session)
+
+                    # Получить доступные клетки для перемещения
+                    available_cells = engine.get_available_movement_cells(game_id, unit_id)
+
+                    if not available_cells:
+                        await query.edit_message_text(
+                            "❌ Нет доступных позиций для перемещения!\n"
+                            "Юнит заблокирован или уже походил.",
+                            parse_mode=self.parse_mode
+                        )
+                        return
+
+                    # Создать кнопки для каждой доступной позиции
+                    keyboard = []
+                    for x, y in available_cells:
+                        keyboard.append([
+                            InlineKeyboardButton(
+                                f"📍 Клетка ({x}, {y})",
+                                callback_data=f"game_move:{game_id}:{unit_id}:{x}:{y}"
+                            )
+                        ])
+
+                    # Добавить кнопку "Назад"
+                    keyboard.append([
+                        InlineKeyboardButton("◀️ Назад", callback_data=f"game_unit:{game_id}:{unit_id}")
+                    ])
+
+                    field_display = engine.render_field(game_id)
+                    await query.edit_message_text(
+                        f"🏃 Выберите позицию для перемещения:\n\n{field_display}\n\n"
+                        f"Доступно позиций: {len(available_cells)}",
+                        parse_mode=self.parse_mode,
+                        reply_markup=InlineKeyboardMarkup(keyboard)
+                    )
+
+            except Exception as e:
+                logger.error(f"Ошибка при показе доступных позиций: {e}")
+                await query.edit_message_text(
+                    f"❌ Ошибка при получении доступных позиций: {e}",
+                    parse_mode=self.parse_mode
+                )
 
     async def game_attack_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Обработчик callback для атаки"""
@@ -1355,23 +1415,6 @@ class SimpleBot:
         logger.info(f"Сообщение от {user.id} (@{user.username}): {user_message}")
 
         try:
-            # Сохраняем пользователя в базу данных
-            self.db.save_user(
-                telegram_id=user.id,
-                username=user.username,
-                first_name=user.first_name,
-                last_name=user.last_name
-            )
-
-            # Сохраняем сообщение в базу данных
-            self.db.save_message(
-                telegram_user_id=user.id,
-                message_text=user_message,
-                username=user.username
-            )
-
-            logger.info(f"Сообщение от пользователя {user.id} сохранено в БД")
-
             # Проверяем, есть ли у пользователя игровой профиль, и создаем его при необходимости
             game_user = self.db.get_game_user(user.id)
             if not game_user:
@@ -1393,22 +1436,12 @@ class SimpleBot:
                     f"💔 Поражений: {game_user.losses}\n\n"
                     "Используйте /profile для просмотра профиля!"
                 )
-            else:
-                # Формируем стандартный ответ с упоминанием username
-                username_display = f"@{user.username}" if user.username else user.first_name or "пользователь"
-                response = f"{username_display}, я сохранила твое сообщение!\n\n{self.default_response}"
-
-            await update.message.reply_text(
-                response,
-                parse_mode=self.parse_mode
-            )
+                await update.message.reply_text(
+                    response,
+                    parse_mode=self.parse_mode
+                )
         except Exception as e:
-            logger.error(f"Ошибка при сохранении сообщения: {e}")
-            # Отправляем стандартный ответ даже если не удалось сохранить
-            await update.message.reply_text(
-                self.default_response,
-                parse_mode=self.parse_mode
-            )
+            logger.error(f"Ошибка при обработке сообщения: {e}")
 
     async def error_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Обработчик ошибок"""

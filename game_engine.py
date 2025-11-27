@@ -181,6 +181,85 @@ class GameEngine:
 
         return True, f"Юнит перемещен с {old_pos} на ({target_x}, {target_y})"
 
+    def get_available_movement_cells(self, game_id: int, battle_unit_id: int) -> List[Tuple[int, int]]:
+        """
+        Получить список доступных для перемещения клеток для юнита.
+        Использует BFS для поиска всех достижимых клеток с учетом:
+        - Скорости юнита (максимальное расстояние)
+        - Занятых клеток (нельзя проходить через другие юниты)
+        - Направлений движения (только вверх, вниз, влево, вправо - без диагоналей)
+
+        Args:
+            game_id: ID игры
+            battle_unit_id: ID юнита на поле боя
+
+        Returns:
+            List[Tuple[int, int]]: Список координат (x, y) доступных клеток
+        """
+        from collections import deque
+
+        game = self.db.query(Game).filter_by(id=game_id).first()
+        if not game:
+            return []
+
+        battle_unit = self.db.query(BattleUnit).filter_by(id=battle_unit_id, game_id=game_id).first()
+        if not battle_unit:
+            return []
+
+        # Получить характеристики юнита
+        unit = battle_unit.user_unit.unit
+        speed = unit.speed
+        start_x, start_y = battle_unit.position_x, battle_unit.position_y
+
+        # Получить размеры поля
+        field_width = game.field.width
+        field_height = game.field.height
+
+        # Получить все занятые позиции (кроме текущей позиции юнита)
+        occupied_positions = set()
+        for bu in game.battle_units:
+            if bu.id != battle_unit_id:
+                alive_count = self._count_alive_units(bu)
+                if alive_count > 0:
+                    occupied_positions.add((bu.position_x, bu.position_y))
+
+        # BFS для поиска всех достижимых клеток
+        available_cells = []
+        visited = {(start_x, start_y): 0}  # позиция -> расстояние от старта
+        queue = deque([(start_x, start_y, 0)])  # (x, y, distance)
+
+        # Направления движения: вверх, вниз, влево, вправо (без диагоналей)
+        directions = [(0, -1), (0, 1), (-1, 0), (1, 0)]
+
+        while queue:
+            current_x, current_y, distance = queue.popleft()
+
+            # Проверяем все соседние клетки
+            for dx, dy in directions:
+                next_x = current_x + dx
+                next_y = current_y + dy
+                next_distance = distance + 1
+
+                # Проверка границ поля
+                if not (0 <= next_x < field_width and 0 <= next_y < field_height):
+                    continue
+
+                # Проверка, что не превышена скорость
+                if next_distance > speed:
+                    continue
+
+                # Проверка, что клетка не занята
+                if (next_x, next_y) in occupied_positions:
+                    continue
+
+                # Проверка, что клетка еще не посещена или найден более короткий путь
+                if (next_x, next_y) not in visited:
+                    visited[(next_x, next_y)] = next_distance
+                    available_cells.append((next_x, next_y))
+                    queue.append((next_x, next_y, next_distance))
+
+        return available_cells
+
     def attack(self, game_id: int, player_id: int, attacker_id: int, target_id: int) -> Tuple[bool, str]:
         """
         Атака юнита
