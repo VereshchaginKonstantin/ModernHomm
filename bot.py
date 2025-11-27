@@ -1024,12 +1024,15 @@ class SimpleBot:
                 field_display = engine.render_field(active_game.id)
                 actions = engine.get_available_actions(active_game.id, game_user.id)
 
+            logger.info(f"Actions для игрока {game_user.id}: {actions}")
             keyboard = self._create_game_keyboard(active_game.id, game_user.id, actions)
+            logger.info(f"Клавиатура после _create_game_keyboard: {len(keyboard)} кнопок")
 
             # Добавить кнопку "Выйти из схватки"
             keyboard.append([
                 InlineKeyboardButton("🏃 Выйти из схватки", callback_data=f"surrender:{active_game.id}")
             ])
+            logger.info(f"Клавиатура после добавления surrender: {len(keyboard)} кнопок")
 
             await update.message.reply_text(
                 field_display,
@@ -1463,15 +1466,39 @@ class SimpleBot:
 
             if game:
                 safe_opponent_name = html.escape(opponent.name)
+                safe_challenger_name = html.escape(game_user.name)
+
                 response = (
                     f"✅ {message}\n\n"
                     f"Игра #{game.id} создана!\n"
                     f"Ожидание принятия игроком {safe_opponent_name}"
                 )
+                await query.edit_message_text(response, parse_mode=self.parse_mode)
+
+                # Отправить уведомление противнику
+                try:
+                    challenge_keyboard = InlineKeyboardMarkup([
+                        [InlineKeyboardButton("✅ Принять бой", callback_data=f"accept_challenge:{game.id}")],
+                        [InlineKeyboardButton("❌ Отклонить", callback_data=f"decline_challenge:{game.id}")]
+                    ])
+
+                    await context.bot.send_message(
+                        chat_id=opponent.telegram_id,
+                        text=(
+                            f"⚔️ <b>Вызов на бой!</b>\n\n"
+                            f"Игрок {safe_challenger_name} вызывает вас на бой!\n"
+                            f"Игра #{game.id}\n\n"
+                            f"Будете сражаться?"
+                        ),
+                        parse_mode=self.parse_mode,
+                        reply_markup=challenge_keyboard
+                    )
+                    logger.info(f"Уведомление о вызове отправлено игроку {opponent.telegram_id}")
+                except Exception as e:
+                    logger.error(f"Ошибка при отправке уведомления противнику: {e}")
             else:
                 response = f"❌ {message}"
-
-            await query.edit_message_text(response, parse_mode=self.parse_mode)
+                await query.edit_message_text(response, parse_mode=self.parse_mode)
 
         except Exception as e:
             logger.error(f"Ошибка при вызове игрока: {e}")
@@ -1661,6 +1688,136 @@ class SimpleBot:
             logger.error(f"Ошибка при возврате к списку игр: {e}")
             await query.edit_message_text(f"❌ Ошибка: {e}")
 
+    async def accept_challenge_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Обработчик callback для принятия вызова на бой"""
+        query = update.callback_query
+        await query.answer()
+
+        # Парсим данные из callback (формат: accept_challenge:game_id)
+        data = query.data.split(':')
+        if len(data) != 2 or data[0] != 'accept_challenge':
+            return
+
+        game_id = int(data[1])
+        user = update.effective_user
+
+        try:
+            game_user = self.db.get_game_user(user.id)
+            if not game_user:
+                await query.edit_message_text("❌ Игровой профиль не найден")
+                return
+
+            game = self.db.get_game_by_id(game_id)
+            if not game:
+                await query.edit_message_text("❌ Игра не найдена")
+                return
+
+            # Принятие игры через игровой движок
+            with self.db.get_session() as session:
+                engine = GameEngine(session)
+                success, message = engine.accept_game(game_id, game_user.id)
+
+            if success:
+                # Показать поле принявшему игрок
+                with self.db.get_session() as session:
+                    engine = GameEngine(session)
+                    field_display = engine.render_field(game_id)
+                    actions = engine.get_available_actions(game_id, game_user.id)
+
+                keyboard = self._create_game_keyboard(game_id, game_user.id, actions)
+                keyboard.append([
+                    InlineKeyboardButton("🏃 Выйти из схватки", callback_data=f"surrender:{game_id}")
+                ])
+
+                response = f"✅ {message}\n\n{field_display}"
+                await query.edit_message_text(
+                    response,
+                    parse_mode=self.parse_mode,
+                    reply_markup=InlineKeyboardMarkup(keyboard)
+                )
+
+                # Отправить уведомление и поле игроку, создавшему вызов
+                opponent_id = game.player1_id if game.player2_id == game_user.id else game.player2_id
+                opponent = self.db.get_game_user_by_id(opponent_id)
+
+                if opponent and opponent.telegram_id:
+                    try:
+                        opponent_actions = engine.get_available_actions(game_id, opponent_id)
+                        opponent_keyboard = self._create_game_keyboard(game_id, opponent_id, opponent_actions)
+                        opponent_keyboard.append([
+                            InlineKeyboardButton("🏃 Выйти из схватки", callback_data=f"surrender:{game_id}")
+                        ])
+
+                        await context.bot.send_message(
+                            chat_id=opponent.telegram_id,
+                            text=f"🎮 Игра началась!\n\n{field_display}",
+                            parse_mode=self.parse_mode,
+                            reply_markup=InlineKeyboardMarkup(opponent_keyboard)
+                        )
+                    except Exception as e:
+                        logger.error(f"Ошибка при отправке уведомления о начале игры: {e}")
+            else:
+                await query.edit_message_text(f"❌ {message}", parse_mode=self.parse_mode)
+
+        except Exception as e:
+            logger.error(f"Ошибка при принятии вызова: {e}")
+            await query.edit_message_text(f"❌ Ошибка: {e}")
+
+    async def decline_challenge_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Обработчик callback для отклонения вызова на бой"""
+        query = update.callback_query
+        await query.answer()
+
+        # Парсим данные из callback (формат: decline_challenge:game_id)
+        data = query.data.split(':')
+        if len(data) != 2 or data[0] != 'decline_challenge':
+            return
+
+        game_id = int(data[1])
+        user = update.effective_user
+
+        try:
+            game_user = self.db.get_game_user(user.id)
+            if not game_user:
+                await query.edit_message_text("❌ Игровой профиль не найден")
+                return
+
+            game = self.db.get_game_by_id(game_id)
+            if not game:
+                await query.edit_message_text("❌ Игра не найдена")
+                return
+
+            # Отклонение вызова - удаляем игру
+            with self.db.get_session() as session:
+                engine = GameEngine(session)
+                success, msg, opponent_telegram_id = engine.surrender_game(game_id, game_user.id)
+
+            if success:
+                await query.edit_message_text(
+                    "❌ Вы отклонили вызов на бой",
+                    parse_mode=self.parse_mode
+                )
+
+                # Уведомить вызывавшего игрока
+                opponent_id = game.player1_id if game.player2_id == game_user.id else game.player2_id
+                opponent = self.db.get_game_user_by_id(opponent_id)
+
+                if opponent and opponent.telegram_id:
+                    try:
+                        await context.bot.send_message(
+                            chat_id=opponent.telegram_id,
+                            text=f"❌ Игрок {html.escape(game_user.name)} отклонил ваш вызов на бой (Игра #{game_id})",
+                            parse_mode=self.parse_mode
+                        )
+                    except Exception as e:
+                        logger.error(f"Ошибка при отправке уведомления об отклонении: {e}")
+            else:
+                await query.edit_message_text(f"❌ Ошибка: {msg}", parse_mode=self.parse_mode)
+
+        except Exception as e:
+            logger.error(f"Ошибка при отклонении вызова: {e}")
+            await query.edit_message_text(f"❌ Ошибка: {e}")
+
     async def handle_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Обработчик всех текстовых сообщений"""
         user_message = update.message.text
@@ -1735,6 +1892,8 @@ class SimpleBot:
 
         # Игровые callback обработчики
         application.add_handler(CallbackQueryHandler(self.challenge_user_callback, pattern=r'^challenge_user:'))
+        application.add_handler(CallbackQueryHandler(self.accept_challenge_callback, pattern=r'^accept_challenge:'))
+        application.add_handler(CallbackQueryHandler(self.decline_challenge_callback, pattern=r'^decline_challenge:'))
         application.add_handler(CallbackQueryHandler(self.show_game_callback, pattern=r'^show_game:'))
         application.add_handler(CallbackQueryHandler(self.surrender_callback, pattern=r'^surrender:'))
         application.add_handler(CallbackQueryHandler(self.back_to_activegames_callback, pattern=r'^back_to_activegames$'))
