@@ -15,11 +15,16 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Копирование приложения
 COPY bot.py .
 COPY game_engine.py .
+COPY field_renderer.py .
+COPY admin_app.py .
 COPY config.json .
 COPY VERSION .
 
 # Копирование Python модуля db (модели и репозиторий)
 COPY db/ ./db/
+
+# Создание директории для статических файлов (картинки юнитов)
+RUN mkdir -p static/unit_images
 
 # Создание непривилегированного пользователя
 RUN useradd -m -u 1000 appuser && chown -R appuser:appuser /app
