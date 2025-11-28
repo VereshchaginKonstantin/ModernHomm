@@ -7,7 +7,7 @@
     "default_response": "Спасибо за ваше сообщение! Я простой бот и отвечаю всем одинаково."
   },
   "game": {
-    "initial_balance": 100
+    "initial_balance": 10000
   },
   "database": {
     "url": "postgresql://postgres:postgres@localhost:5432/telegram_bot"
