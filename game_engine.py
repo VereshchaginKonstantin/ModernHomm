@@ -656,7 +656,13 @@ class GameEngine:
                 damage -= target.remaining_hp
                 target.total_count -= 1
                 units_killed += 1
-                target.remaining_hp = target_unit.health
+
+                # Если все юниты убиты, remaining_hp = 0
+                # Иначе восстанавливаем HP для следующего юнита
+                if target.total_count > 0:
+                    target.remaining_hp = target_unit.health
+                else:
+                    target.remaining_hp = 0
             else:
                 # Уменьшить HP текущего юнита
                 target.remaining_hp -= damage
@@ -771,17 +777,26 @@ class GameEngine:
         # Проверить живых юнитов каждого игрока
         player1_alive = False
         player2_alive = False
+        player1_units_count = 0
+        player2_units_count = 0
 
         for battle_unit in game.battle_units:
-            if self._count_alive_units(battle_unit) > 0:
+            alive_count = self._count_alive_units(battle_unit)
+            if alive_count > 0:
                 if battle_unit.player_id == game.player1_id:
                     player1_alive = True
+                    player1_units_count += alive_count
                 else:
                     player2_alive = True
+                    player2_units_count += alive_count
+
+        logger.info(f"Проверка окончания игры #{game.id}: Player1 alive={player1_alive} ({player1_units_count} units), Player2 alive={player2_alive} ({player2_units_count} units)")
 
         if not player1_alive and player2_alive:
+            logger.info(f"Игра #{game.id} окончена! Победитель: Player2 (ID: {game.player2_id})")
             return game.player2_id
         elif not player2_alive and player1_alive:
+            logger.info(f"Игра #{game.id} окончена! Победитель: Player1 (ID: {game.player1_id})")
             return game.player1_id
 
         return None
@@ -861,6 +876,8 @@ class GameEngine:
             game: Игра
             winner_id: ID победителя
         """
+        logger.info(f"🏆 Завершение игры #{game.id}, победитель ID: {winner_id}")
+
         game.status = GameStatus.COMPLETED
         game.winner_id = winner_id
         game.completed_at = datetime.utcnow()
@@ -873,19 +890,41 @@ class GameEngine:
         loser_id = game.player1_id if winner_id == game.player2_id else game.player2_id
         loser = self.db.query(GameUser).filter_by(id=loser_id).first()
 
+        logger.info(f"Победитель: {winner.name} (ID: {winner_id}), Проигравший: {loser.name} (ID: {loser_id})")
+
+        # Обновляем статистику
+        old_winner_wins = winner.wins
+        old_loser_losses = loser.losses
+        old_winner_balance = float(winner.balance)
+
         winner.wins += 1
         loser.losses += 1
 
         # Рассчитать награду (стоимость побежденных юнитов)
         reward = 0
+        killed_units_details = []
+
         for battle_unit in game.battle_units:
             if battle_unit.player_id == loser_id:
                 unit_price = battle_unit.user_unit.unit.price
-                # Награда за убитых юнитов
-                original_count = battle_unit.user_unit.count
-                killed_count = original_count - self._count_alive_units(battle_unit)
-                reward += float(unit_price) * killed_count
+                unit_name = battle_unit.user_unit.unit.name
+                # Награда за убитых юнитов - учитываем начальное количество в бою
+                initial_count = battle_unit.total_count + (battle_unit.user_unit.count - self._count_alive_units(battle_unit))
+                alive_count = self._count_alive_units(battle_unit)
+                killed_count = initial_count - alive_count
+                unit_reward = float(unit_price) * killed_count
+                reward += unit_reward
+
+                if killed_count > 0:
+                    killed_units_details.append(f"{unit_name} x{killed_count} = ${unit_reward:.2f}")
 
         winner.balance += reward
 
+        logger.info(f"📊 Статистика обновлена:")
+        logger.info(f"  • {winner.name}: Побед {old_winner_wins} → {winner.wins}, Баланс ${old_winner_balance:.2f} → ${float(winner.balance):.2f} (+${reward:.2f})")
+        logger.info(f"  • {loser.name}: Поражений {old_loser_losses} → {loser.losses}")
+        if killed_units_details:
+            logger.info(f"💰 Награда за убитых юнитов: {', '.join(killed_units_details)}")
+
         self.db.commit()
+        logger.info(f"✅ Игра #{game.id} успешно завершена")
