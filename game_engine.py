@@ -3,11 +3,14 @@
 Игровой движок для обработки игровой логики
 """
 
+import logging
 import random
 from datetime import datetime, timedelta
 from typing import List, Tuple, Optional, Dict
 from sqlalchemy.orm import Session
 from db.models import Game, GameStatus, BattleUnit, GameUser, UserUnit, Field, Unit, UnitCustomIcon
+
+logger = logging.getLogger(__name__)
 
 
 def coords_to_chess(x: int, y: int) -> str:
