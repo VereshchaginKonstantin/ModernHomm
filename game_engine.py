@@ -861,6 +861,7 @@ class GameEngine:
         Args:
             game: Игра
         """
+        units_to_delete = []
         for battle_unit in game.battle_units:
             # Подсчитать живых юнитов
             alive_count = self._count_alive_units(battle_unit)
@@ -868,6 +869,14 @@ class GameEngine:
             # Обновить количество юнитов у игрока
             user_unit = battle_unit.user_unit
             user_unit.count = alive_count
+
+            # Помечаем записи с count=0 для удаления
+            if alive_count == 0:
+                units_to_delete.append(user_unit)
+
+        # Удаляем записи о юнитах с количеством 0
+        for user_unit in units_to_delete:
+            self.db.delete(user_unit)
 
         self.db.flush()
 
