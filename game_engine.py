@@ -879,14 +879,13 @@ class GameEngine:
             game: Игра
             winner_id: ID победителя
         """
+        from decimal import Decimal
+
         logger.info(f"🏆 Завершение игры #{game.id}, победитель ID: {winner_id}")
 
         game.status = GameStatus.COMPLETED
         game.winner_id = winner_id
         game.completed_at = datetime.utcnow()
-
-        # Сохранить урон юнитов
-        self._save_battle_units_damage(game)
 
         # Обновить статистику игроков
         winner = self.db.query(GameUser).filter_by(id=winner_id).first()
@@ -903,28 +902,36 @@ class GameEngine:
         winner.wins += 1
         loser.losses += 1
 
-        # Рассчитать награду (стоимость побежденных юнитов)
-        reward = 0
+        # Рассчитать награду (стоимость побежденных юнитов) ДО сохранения урона
+        reward = Decimal('0')
         killed_units_details = []
 
+        # Сохраним информацию о начальном и текущем количестве юнитов проигравшего
+        initial_units_data = {}
         for battle_unit in game.battle_units:
             if battle_unit.player_id == loser_id:
                 unit_price = battle_unit.user_unit.unit.price
                 unit_name = battle_unit.user_unit.unit.name
-                # Награда за убитых юнитов - учитываем начальное количество в бою
-                initial_count = battle_unit.total_count + (battle_unit.user_unit.count - self._count_alive_units(battle_unit))
+                user_unit_id = battle_unit.user_unit.id
+
+                # Получить начальное количество из user_unit
+                initial_count = battle_unit.user_unit.count
                 alive_count = self._count_alive_units(battle_unit)
                 killed_count = initial_count - alive_count
-                unit_reward = float(unit_price) * killed_count
+
+                unit_reward = Decimal(str(unit_price)) * killed_count
                 reward += unit_reward
 
                 if killed_count > 0:
-                    killed_units_details.append(f"{unit_name} x{killed_count} = ${unit_reward:.2f}")
+                    killed_units_details.append(f"{unit_name} x{killed_count} = ${float(unit_reward):.2f}")
 
         winner.balance += reward
 
+        # Сохранить урон юнитов ПОСЛЕ расчета награды
+        self._save_battle_units_damage(game)
+
         logger.info(f"📊 Статистика обновлена:")
-        logger.info(f"  • {winner.name}: Побед {old_winner_wins} → {winner.wins}, Баланс ${old_winner_balance:.2f} → ${float(winner.balance):.2f} (+${reward:.2f})")
+        logger.info(f"  • {winner.name}: Побед {old_winner_wins} → {winner.wins}, Баланс ${old_winner_balance:.2f} → ${float(winner.balance):.2f} (+${float(reward):.2f})")
         logger.info(f"  • {loser.name}: Поражений {old_loser_losses} → {loser.losses}")
         if killed_units_details:
             logger.info(f"💰 Награда за убитых юнитов: {', '.join(killed_units_details)}")
