@@ -1272,8 +1272,10 @@ class SimpleBot:
                     )
                 ])
 
-        keyboard.append([InlineKeyboardButton("🔄 Обновить", callback_data=f"game_refresh:{game_id}")])
-        keyboard.append([InlineKeyboardButton("🏃 Выйти из схватки", callback_data=f"surrender:{game_id}")])
+        # Не добавляем кнопки "Обновить" и "Выйти из схватки" когда игра завершена
+        if actions.get("action") != "none":
+            keyboard.append([InlineKeyboardButton("🔄 Обновить", callback_data=f"game_refresh:{game_id}")])
+            keyboard.append([InlineKeyboardButton("🏃 Выйти из схватки", callback_data=f"surrender:{game_id}")])
         return keyboard
 
     async def game_unit_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
