@@ -16,6 +16,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY bot.py .
 COPY game_engine.py .
 COPY config.json .
+COPY VERSION .
 
 # Копирование Python модуля db (модели и репозиторий)
 COPY db/ ./db/

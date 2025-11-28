@@ -48,3 +48,6 @@ htmlcov/
 # Logs
 *.log
 postgres_data/
+
+# Version tracking
+.last_version

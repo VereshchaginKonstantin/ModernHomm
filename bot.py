@@ -11,8 +11,9 @@ import html
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, CallbackQueryHandler
 from db import Database
-from db.models import GameUser
-from game_engine import GameEngine
+from db.models import GameUser, Unit, UnitCustomIcon
+from decimal import Decimal
+from game_engine import GameEngine, coords_to_chess, chess_to_coords
 
 
 # Настройка логирования
@@ -31,6 +32,7 @@ class SimpleBot:
         self.bot_token = self.config['telegram']['bot_token']
         self.parse_mode = self.config['telegram'].get('parse_mode', 'HTML')
         self.initial_balance = self.config.get('game', {}).get('initial_balance', 1000)
+        self.version = self.load_version()
 
         # Инициализация базы данных
         if db is None:
@@ -57,6 +59,76 @@ class SimpleBot:
             logger.error(f"Ошибка при парсинге файла конфигурации {config_path}")
             raise
 
+    def load_version(self):
+        """Загрузка версии из файла VERSION"""
+        try:
+            with open('VERSION', 'r', encoding='utf-8') as f:
+                return f.read().strip()
+        except FileNotFoundError:
+            logger.warning("Файл VERSION не найден, используется версия по умолчанию")
+            return "unknown"
+
+    def check_version_changed(self):
+        """Проверка, изменилась ли версия с прошлого запуска"""
+        try:
+            with open('.last_version', 'r', encoding='utf-8') as f:
+                last_version = f.read().strip()
+                return last_version != self.version
+        except FileNotFoundError:
+            # Первый запуск - версия "изменилась"
+            return True
+
+    def save_current_version(self):
+        """Сохранение текущей версии"""
+        try:
+            with open('.last_version', 'w', encoding='utf-8') as f:
+                f.write(self.version)
+            logger.info(f"Версия {self.version} сохранена")
+        except Exception as e:
+            logger.error(f"Ошибка при сохранении версии: {e}")
+
+    async def notify_all_users_about_update(self, application):
+        """Отправка уведомления всем пользователям о новой версии"""
+        try:
+            # Получаем всех игровых пользователей
+            game_users = self.db.get_all_game_users()
+
+            if not game_users:
+                logger.info("Нет зарегистрированных пользователей для уведомления")
+                return
+
+            notification_text = (
+                f"🔄 <b>Бот обновлен!</b>\n\n"
+                f"🤖 Новая версия: <code>{self.version}</code>\n\n"
+                f"✨ Что нового:\n"
+                f"• Исправления ошибок\n"
+                f"• Улучшения производительности\n"
+                f"• Новые функции\n\n"
+                f"Используйте /help для просмотра доступных команд."
+            )
+
+            success_count = 0
+            fail_count = 0
+
+            for user in game_users:
+                if user.telegram_id:
+                    try:
+                        await application.bot.send_message(
+                            chat_id=user.telegram_id,
+                            text=notification_text,
+                            parse_mode=self.parse_mode
+                        )
+                        success_count += 1
+                        logger.info(f"Уведомление отправлено пользователю {user.telegram_id}")
+                    except Exception as e:
+                        fail_count += 1
+                        logger.warning(f"Не удалось отправить уведомление пользователю {user.telegram_id}: {e}")
+
+            logger.info(f"Уведомления отправлены: успешно={success_count}, ошибок={fail_count}")
+
+        except Exception as e:
+            logger.error(f"Ошибка при отправке уведомлений: {e}")
+
     async def start_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Обработчик команды /start"""
         await update.message.reply_text(
@@ -72,6 +144,7 @@ class SimpleBot:
             "<b>Основные команды:</b>\n"
             "/start - Начать работу с ботом\n"
             "/help - Показать это сообщение\n"
+            "/version - Показать версию бота\n"
             "/play - Начать игру (инициализация игрового профиля)\n"
             "/profile - Посмотреть свой игровой профиль\n"
             "/shop - Магазин юнитов (покупка армии)\n\n"
@@ -87,6 +160,15 @@ class SimpleBot:
         )
         await update.message.reply_text(help_text, parse_mode=self.parse_mode)
         logger.info(f"Команда /help от пользователя {update.effective_user.id}")
+
+    async def version_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Обработчик команды /version"""
+        version_text = (
+            f"🤖 <b>Версия бота:</b> {self.version}\n\n"
+            f"Эта версия была собрана: {self.version}"
+        )
+        await update.message.reply_text(version_text, parse_mode=self.parse_mode)
+        logger.info(f"Команда /version от пользователя {update.effective_user.id}")
 
     async def play_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Обработчик команды /play - инициализация игрового профиля"""
@@ -1028,12 +1110,6 @@ class SimpleBot:
             keyboard = self._create_game_keyboard(active_game.id, game_user.id, actions)
             logger.info(f"Клавиатура после _create_game_keyboard: {len(keyboard)} кнопок")
 
-            # Добавить кнопку "Выйти из схватки"
-            keyboard.append([
-                InlineKeyboardButton("🏃 Выйти из схватки", callback_data=f"surrender:{active_game.id}")
-            ])
-            logger.info(f"Клавиатура после добавления surrender: {len(keyboard)} кнопок")
-
             await update.message.reply_text(
                 field_display,
                 parse_mode=self.parse_mode,
@@ -1179,7 +1255,8 @@ class SimpleBot:
         if actions.get("action") == "accept":
             keyboard.append([InlineKeyboardButton("✅ Принять игру", callback_data=f"game_accept:{game_id}")])
         elif actions.get("action") == "wait":
-            return []
+            # Не возвращаем пустой список, просто не добавляем кнопки действий
+            pass
         elif actions.get("action") == "play":
             # Кнопки для выбора юнита
             units = actions.get("units", [])
@@ -1187,14 +1264,16 @@ class SimpleBot:
                 unit_name = unit.get("unit_name", "Unit")
                 unit_id = unit.get("unit_id")
                 pos = unit.get("position", (0, 0))
+                chess_pos = coords_to_chess(pos[0], pos[1])
                 keyboard.append([
                     InlineKeyboardButton(
-                        f"⚔️ {unit_name} [{pos[0]},{pos[1]}]",
+                        f"⚔️ {unit_name} {chess_pos}",
                         callback_data=f"game_unit:{game_id}:{unit_id}"
                     )
                 ])
 
         keyboard.append([InlineKeyboardButton("🔄 Обновить", callback_data=f"game_refresh:{game_id}")])
+        keyboard.append([InlineKeyboardButton("🏃 Выйти из схватки", callback_data=f"surrender:{game_id}")])
         return keyboard
 
     async def game_unit_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1232,8 +1311,12 @@ class SimpleBot:
                 await query.edit_message_text("❌ Юнит не найден")
                 return
 
+            # Получаем позицию в шахматной нотации
+            pos = unit_data['position']
+            chess_pos = coords_to_chess(pos[0], pos[1])
+
             response = f"⚔️ <b>{unit_data['unit_name']}</b>\n"
-            response += f"Позиция: [{unit_data['position'][0]}, {unit_data['position'][1]}]\n\n"
+            response += f"Позиция: {chess_pos}\n\n"
 
             keyboard = []
 
@@ -1246,7 +1329,8 @@ class SimpleBot:
             if targets:
                 response += "🎯 <b>Доступные цели:</b>\n"
                 for target in targets[:3]:  # Показываем первые 3 цели
-                    response += f"- {target['unit_name']} [{target['position'][0]},{target['position'][1]}]\n"
+                    target_pos = coords_to_chess(target['position'][0], target['position'][1])
+                    response += f"- {target['unit_name']} {target_pos}\n"
                     keyboard.append([
                         InlineKeyboardButton(
                             f"⚔️ Атаковать {target['unit_name']}",
@@ -1255,6 +1339,7 @@ class SimpleBot:
                     ])
 
             keyboard.append([InlineKeyboardButton("◀️ Назад", callback_data=f"game_refresh:{game_id}")])
+            keyboard.append([InlineKeyboardButton("🏃 Выйти из схватки", callback_data=f"surrender:{game_id}")])
 
             await query.edit_message_text(
                 response,
@@ -1288,20 +1373,40 @@ class SimpleBot:
                 game_user = self.db.get_game_user(user.id)
                 with self.db.get_session() as session:
                     engine = GameEngine(session)
-                    success, message = engine.move_unit(game_id, game_user.id, unit_id, target_x, target_y)
+                    success, message, turn_switched = engine.move_unit(game_id, game_user.id, unit_id, target_x, target_y)
 
-                if success:
-                    field_display = engine.render_field(game_id)
-                    actions = engine.get_available_actions(game_id, game_user.id)
-                    keyboard = self._create_game_keyboard(game_id, game_user.id, actions)
+                    if success:
+                        field_display = engine.render_field(game_id)
+                        actions = engine.get_available_actions(game_id, game_user.id)
+                        keyboard = self._create_game_keyboard(game_id, game_user.id, actions)
 
-                    await query.edit_message_text(
-                        f"✅ {message}\n\n{field_display}",
-                        parse_mode=self.parse_mode,
-                        reply_markup=InlineKeyboardMarkup(keyboard) if keyboard else None
-                    )
-                else:
-                    await query.answer(f"❌ {message}", show_alert=True)
+                        await query.edit_message_text(
+                            f"✅ {message}\n\n{field_display}",
+                            parse_mode=self.parse_mode,
+                            reply_markup=InlineKeyboardMarkup(keyboard) if keyboard else None
+                        )
+
+                        # Если ход сменился, отправить уведомление противнику
+                        if turn_switched:
+                            game = self.db.get_game_by_id(game_id)
+                            opponent_id = game.player2_id if game.player1_id == game_user.id else game.player1_id
+                            opponent = self.db.get_game_user_by_id(opponent_id)
+
+                            if opponent and opponent.telegram_id:
+                                try:
+                                    opponent_actions = engine.get_available_actions(game_id, opponent_id)
+                                    opponent_keyboard = self._create_game_keyboard(game_id, opponent_id, opponent_actions)
+
+                                    await context.bot.send_message(
+                                        chat_id=opponent.telegram_id,
+                                        text=f"🎮 Теперь ваш ход!\n\n{field_display}",
+                                        parse_mode=self.parse_mode,
+                                        reply_markup=InlineKeyboardMarkup(opponent_keyboard)
+                                    )
+                                except Exception as e:
+                                    logger.error(f"Ошибка при отправке уведомления противнику: {e}")
+                    else:
+                        await query.answer(f"❌ {message}", show_alert=True)
 
             except Exception as e:
                 logger.error(f"Ошибка при перемещении: {e}")
@@ -1329,9 +1434,10 @@ class SimpleBot:
                     # Создать кнопки для каждой доступной позиции
                     keyboard = []
                     for x, y in available_cells:
+                        chess_notation = coords_to_chess(x, y)
                         keyboard.append([
                             InlineKeyboardButton(
-                                f"📍 Клетка ({x}, {y})",
+                                f"📍 {chess_notation}",
                                 callback_data=f"game_move:{game_id}:{unit_id}:{x}:{y}"
                             )
                         ])
@@ -1339,6 +1445,9 @@ class SimpleBot:
                     # Добавить кнопку "Назад"
                     keyboard.append([
                         InlineKeyboardButton("◀️ Назад", callback_data=f"game_unit:{game_id}:{unit_id}")
+                    ])
+                    keyboard.append([
+                        InlineKeyboardButton("🏃 Выйти из схватки", callback_data=f"surrender:{game_id}")
                     ])
 
                     field_display = engine.render_field(game_id)
@@ -1374,20 +1483,40 @@ class SimpleBot:
             game_user = self.db.get_game_user(user.id)
             with self.db.get_session() as session:
                 engine = GameEngine(session)
-                success, message = engine.attack(game_id, game_user.id, attacker_id, target_id)
+                success, message, turn_switched = engine.attack(game_id, game_user.id, attacker_id, target_id)
 
-            if success:
-                field_display = engine.render_field(game_id)
-                actions = engine.get_available_actions(game_id, game_user.id)
-                keyboard = self._create_game_keyboard(game_id, game_user.id, actions)
+                if success:
+                    field_display = engine.render_field(game_id)
+                    actions = engine.get_available_actions(game_id, game_user.id)
+                    keyboard = self._create_game_keyboard(game_id, game_user.id, actions)
 
-                await query.edit_message_text(
-                    f"{message}\n\n{field_display}",
-                    parse_mode=self.parse_mode,
-                    reply_markup=InlineKeyboardMarkup(keyboard) if keyboard else None
-                )
-            else:
-                await query.answer(f"❌ {message}", show_alert=True)
+                    await query.edit_message_text(
+                        f"{message}\n\n{field_display}",
+                        parse_mode=self.parse_mode,
+                        reply_markup=InlineKeyboardMarkup(keyboard) if keyboard else None
+                    )
+
+                    # Если ход сменился, отправить уведомление противнику
+                    if turn_switched:
+                        game = self.db.get_game_by_id(game_id)
+                        opponent_id = game.player2_id if game.player1_id == game_user.id else game.player1_id
+                        opponent = self.db.get_game_user_by_id(opponent_id)
+
+                        if opponent and opponent.telegram_id:
+                            try:
+                                opponent_actions = engine.get_available_actions(game_id, opponent_id)
+                                opponent_keyboard = self._create_game_keyboard(game_id, opponent_id, opponent_actions)
+
+                                await context.bot.send_message(
+                                    chat_id=opponent.telegram_id,
+                                    text=f"🎮 Теперь ваш ход!\n\n{field_display}",
+                                    parse_mode=self.parse_mode,
+                                    reply_markup=InlineKeyboardMarkup(opponent_keyboard)
+                                )
+                            except Exception as e:
+                                logger.error(f"Ошибка при отправке уведомления противнику: {e}")
+                else:
+                    await query.answer(f"❌ {message}", show_alert=True)
 
         except Exception as e:
             logger.error(f"Ошибка при атаке: {e}")
@@ -1561,10 +1690,7 @@ class SimpleBot:
             # Создать клавиатуру
             keyboard = self._create_game_keyboard(game_id, game_user.id, actions)
 
-            # Добавить кнопку "Выйти из схватки"
-            keyboard.append([
-                InlineKeyboardButton("🏃 Выйти из схватки", callback_data=f"surrender:{game_id}")
-            ])
+            # Добавить кнопку "Назад к списку игр"
             keyboard.append([
                 InlineKeyboardButton("🔙 К списку игр", callback_data="back_to_activegames")
             ])
@@ -1742,9 +1868,6 @@ class SimpleBot:
                     actions = engine.get_available_actions(game_id, game_user.id)
 
                 keyboard = self._create_game_keyboard(game_id, game_user.id, actions)
-                keyboard.append([
-                    InlineKeyboardButton("🏃 Выйти из схватки", callback_data=f"surrender:{game_id}")
-                ])
 
                 response = f"✅ {message}\n\n{field_display}"
                 await query.edit_message_text(
@@ -1761,9 +1884,6 @@ class SimpleBot:
                     try:
                         opponent_actions = engine.get_available_actions(game_id, opponent_id)
                         opponent_keyboard = self._create_game_keyboard(game_id, opponent_id, opponent_actions)
-                        opponent_keyboard.append([
-                            InlineKeyboardButton("🏃 Выйти из схватки", callback_data=f"surrender:{game_id}")
-                        ])
 
                         await context.bot.send_message(
                             chat_id=opponent.telegram_id,
@@ -1843,6 +1963,112 @@ class SimpleBot:
         logger.info(f"Сообщение от {user.id} (@{user.username}): {user_message}")
 
         try:
+            # === ADMIN FUNCTIONS ===
+            # Обработка изменения эмодзи юнита
+            if 'editing_icon_unit_id' in context.user_data and self.is_admin(user.username):
+                unit_id = context.user_data['editing_icon_unit_id']
+                new_icon = user_message.strip()
+
+                with self.db.get_session() as session:
+                    unit = session.query(Unit).filter_by(id=unit_id).first()
+                    if not unit:
+                        await update.message.reply_text("Юнит не найден.")
+                        del context.user_data['editing_icon_unit_id']
+                        return
+
+                    # Проверяем, существует ли уже кастомная иконка
+                    custom_icon = session.query(UnitCustomIcon).filter_by(unit_id=unit.id).first()
+
+                    if custom_icon:
+                        # Обновляем существующую иконку
+                        custom_icon.custom_icon = new_icon
+                    else:
+                        # Создаем новую кастомную иконку
+                        custom_icon = UnitCustomIcon(
+                            unit_id=unit.id,
+                            custom_icon=new_icon
+                        )
+                        session.add(custom_icon)
+
+                    session.commit()
+
+                await update.message.reply_text(
+                    f"Эмодзи для {unit.name} успешно обновлен на {new_icon}"
+                )
+                del context.user_data['editing_icon_unit_id']
+                return
+
+            # Обработка создания нового юнита
+            if 'creating_unit' in context.user_data and self.is_admin(user.username):
+                unit_data = context.user_data['creating_unit']
+                step = unit_data['step']
+
+                steps_info = {
+                    'name': ('icon', 'Шаг 2/10: Введите эмодзи для юнита:'),
+                    'icon': ('price', 'Шаг 3/10: Введите цену юнита:'),
+                    'price': ('damage', 'Шаг 4/10: Введите урон юнита:'),
+                    'damage': ('defense', 'Шаг 5/10: Введите защиту юнита:'),
+                    'defense': ('range', 'Шаг 6/10: Введите дальность атаки:'),
+                    'range': ('health', 'Шаг 7/10: Введите здоровье юнита:'),
+                    'health': ('speed', 'Шаг 8/10: Введите скорость юнита:'),
+                    'speed': ('luck', 'Шаг 9/10: Введите удачу (0.0-1.0):'),
+                    'luck': ('crit_chance', 'Шаг 10/10: Введите шанс крита (0.0-1.0):'),
+                    'crit_chance': ('complete', None)
+                }
+
+                # Сохраняем текущее значение
+                unit_data[step] = user_message.strip()
+
+                # Переходим к следующему шагу
+                next_step, next_message = steps_info.get(step, ('complete', None))
+
+                if next_step == 'complete':
+                    # Создаем юнита
+                    try:
+                        with self.db.get_session() as session:
+                            new_unit = Unit(
+                                name=unit_data['name'],
+                                icon=unit_data['icon'],
+                                price=Decimal(unit_data['price']),
+                                damage=int(unit_data['damage']),
+                                defense=int(unit_data['defense']),
+                                range=int(unit_data['range']),
+                                health=int(unit_data['health']),
+                                speed=int(unit_data['speed']),
+                                luck=Decimal(unit_data['luck']),
+                                crit_chance=Decimal(unit_data['crit_chance'])
+                            )
+                            session.add(new_unit)
+                            session.commit()
+
+                        await update.message.reply_text(
+                            f"Новый тип юнита '{unit_data['name']}' успешно создан!\n\n"
+                            f"Характеристики:\n"
+                            f"Эмодзи: {unit_data['icon']}\n"
+                            f"Цена: ${unit_data['price']}\n"
+                            f"Урон: {unit_data['damage']}\n"
+                            f"Защита: {unit_data['defense']}\n"
+                            f"Дальность: {unit_data['range']}\n"
+                            f"Здоровье: {unit_data['health']}\n"
+                            f"Скорость: {unit_data['speed']}\n"
+                            f"Удача: {unit_data['luck']}\n"
+                            f"Шанс крита: {unit_data['crit_chance']}"
+                        )
+                        del context.user_data['creating_unit']
+                        return
+                    except Exception as e:
+                        await update.message.reply_text(
+                            f"Ошибка при создании юнита: {e}\n"
+                            "Проверьте правильность введенных данных."
+                        )
+                        del context.user_data['creating_unit']
+                        return
+                else:
+                    unit_data['step'] = next_step
+                    await update.message.reply_text(next_message)
+                    return
+
+            # === REGULAR USER PROCESSING ===
             # Проверяем, есть ли у пользователя игровой профиль, и создаем его при необходимости
             game_user = self.db.get_game_user(user.id)
             if not game_user:
@@ -1871,6 +2097,138 @@ class SimpleBot:
         except Exception as e:
             logger.error(f"Ошибка при обработке сообщения: {e}")
 
+    # === ADMIN COMMANDS ===
+
+    def is_admin(self, username: str) -> bool:
+        """Проверка, является ли пользователь администратором"""
+        ADMIN_USERNAMES = ['okarien']
+        return username in ADMIN_USERNAMES
+
+    async def admin_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Панель администратора"""
+        username = update.effective_user.username
+
+        if not self.is_admin(username):
+            await update.message.reply_text("У вас нет доступа к этой команде.")
+            return
+
+        keyboard = [
+            [InlineKeyboardButton("Настроить эмодзи юнитов", callback_data='admin_unit_icons')],
+            [InlineKeyboardButton("Создать новый тип юнита", callback_data='admin_create_unit')],
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+
+        await update.message.reply_text(
+            "Панель администратора:",
+            reply_markup=reply_markup
+        )
+
+    async def admin_unit_icons_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Показать список юнитов для настройки эмодзи"""
+        query = update.callback_query
+        await query.answer()
+
+        username = update.effective_user.username
+        if not self.is_admin(username):
+            await query.edit_message_text("У вас нет доступа к этой функции.")
+            return
+
+        with self.db.get_session() as session:
+            units = session.query(Unit).all()
+
+            if not units:
+                await query.edit_message_text("Нет доступных юнитов.")
+                return
+
+            keyboard = []
+            for unit in units:
+                custom_icon = session.query(UnitCustomIcon).filter_by(unit_id=unit.id).first()
+                current_icon = custom_icon.custom_icon if custom_icon else unit.icon
+                keyboard.append([
+                    InlineKeyboardButton(
+                        f"{current_icon} {unit.name}",
+                        callback_data=f'admin_edit_icon:{unit.id}'
+                    )
+                ])
+
+            keyboard.append([InlineKeyboardButton("Назад", callback_data='admin_back')])
+            reply_markup = InlineKeyboardMarkup(keyboard)
+
+            await query.edit_message_text(
+                "Выберите юнита для изменения эмодзи:",
+                reply_markup=reply_markup
+            )
+
+    async def admin_edit_icon_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Запросить новый эмодзи для юнита"""
+        query = update.callback_query
+        await query.answer()
+
+        username = update.effective_user.username
+        if not self.is_admin(username):
+            await query.edit_message_text("У вас нет доступа к этой функции.")
+            return
+
+        unit_id = int(query.data.split(':')[1])
+
+        with self.db.get_session() as session:
+            unit = session.query(Unit).filter_by(id=unit_id).first()
+            if not unit:
+                await query.edit_message_text("Юнит не найден.")
+                return
+
+            custom_icon = session.query(UnitCustomIcon).filter_by(unit_id=unit.id).first()
+            current_icon = custom_icon.custom_icon if custom_icon else unit.icon
+
+        # Сохраняем unit_id в user_data для последующего использования
+        context.user_data['editing_icon_unit_id'] = unit_id
+
+        await query.edit_message_text(
+            f"Текущий эмодзи для {unit.name}: {current_icon}\n\n"
+            f"Отправьте новый эмодзи для юнита {unit.name}:",
+        )
+
+    async def admin_create_unit_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Начать процесс создания нового юнита"""
+        query = update.callback_query
+        await query.answer()
+
+        username = update.effective_user.username
+        if not self.is_admin(username):
+            await query.edit_message_text("У вас нет доступа к этой функции.")
+            return
+
+        # Инициализируем данные для создания юнита
+        context.user_data['creating_unit'] = {
+            'step': 'name'
+        }
+
+        await query.edit_message_text(
+            "Создание нового типа юнита\n\n"
+            "Шаг 1/10: Введите название юнита:"
+        )
+
+    async def admin_back_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Вернуться в панель администратора"""
+        query = update.callback_query
+        await query.answer()
+
+        username = update.effective_user.username
+        if not self.is_admin(username):
+            await query.edit_message_text("У вас нет доступа к этой функции.")
+            return
+
+        keyboard = [
+            [InlineKeyboardButton("Настроить эмодзи юнитов", callback_data='admin_unit_icons')],
+            [InlineKeyboardButton("Создать новый тип юнита", callback_data='admin_create_unit')],
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+
+        await query.edit_message_text(
+            "Панель администратора:",
+            reply_markup=reply_markup
+        )
+
     async def error_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Обработчик ошибок"""
         logger.error(f"Ошибка при обработке обновления: {context.error}")
@@ -1885,6 +2243,7 @@ class SimpleBot:
         # Регистрация обработчиков команд
         application.add_handler(CommandHandler("start", self.start_command))
         application.add_handler(CommandHandler("help", self.help_command))
+        application.add_handler(CommandHandler("version", self.version_command))
         application.add_handler(CommandHandler("play", self.play_command))
         application.add_handler(CommandHandler("profile", self.profile_command))
         application.add_handler(CommandHandler("shop", self.shop_command))
@@ -1897,6 +2256,16 @@ class SimpleBot:
         application.add_handler(CommandHandler("game", self.game_command))
         application.add_handler(CommandHandler("activegames", self.activegames_command))
         application.add_handler(CommandHandler("mygames", self.mygames_command))
+
+        # Админские команды
+        application.add_handler(CommandHandler("admin", self.admin_command))
+
+        # Регистрация обработчиков callback (порядок важен для правильной маршрутизации)
+        # Админские callback обработчики
+        application.add_handler(CallbackQueryHandler(self.admin_unit_icons_callback, pattern=r'^admin_unit_icons$'))
+        application.add_handler(CallbackQueryHandler(self.admin_edit_icon_callback, pattern=r'^admin_edit_icon:'))
+        application.add_handler(CallbackQueryHandler(self.admin_create_unit_callback, pattern=r'^admin_create_unit$'))
+        application.add_handler(CallbackQueryHandler(self.admin_back_callback, pattern=r'^admin_back$'))
 
         # Регистрация обработчиков callback (порядок важен для правильной маршрутизации)
         application.add_handler(CallbackQueryHandler(self.buy_unit_callback, pattern=r'^buy_unit:'))
@@ -1924,6 +2293,18 @@ class SimpleBot:
 
         # Регистрация обработчика ошибок
         application.add_error_handler(self.error_handler)
+
+        # Проверка версии и отправка уведомлений
+        async def post_init(app):
+            """Callback после инициализации приложения"""
+            if self.check_version_changed():
+                logger.info(f"Обнаружена новая версия: {self.version}")
+                await self.notify_all_users_about_update(app)
+                self.save_current_version()
+            else:
+                logger.info(f"Версия не изменилась: {self.version}")
+
+        application.post_init = post_init
 
         # Запуск бота
         logger.info("Бот запущен и ожидает сообщения...")

@@ -78,8 +78,28 @@ class Unit(Base):
     luck = Column(Numeric(5, 4), nullable=False, default=0)  # Вероятность максимального урона (0-1)
     crit_chance = Column(Numeric(5, 4), nullable=False, default=0)  # Вероятность критического удара (0-1)
 
+    # Связь с пользовательской иконкой
+    custom_icon = relationship("UnitCustomIcon", back_populates="unit", uselist=False)
+
     def __repr__(self):
         return f"<Unit(id={self.id}, name={self.name}, price={self.price})>"
+
+
+class UnitCustomIcon(Base):
+    """Модель для хранения пользовательских иконок юнитов"""
+    __tablename__ = 'unit_custom_icons'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    unit_id = Column(Integer, ForeignKey('units.id', ondelete='CASCADE'), nullable=False, unique=True, index=True)
+    custom_icon = Column(String(10), nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    # Связь с юнитом
+    unit = relationship("Unit", back_populates="custom_icon")
+
+    def __repr__(self):
+        return f"<UnitCustomIcon(unit_id={self.unit_id}, custom_icon={self.custom_icon})>"
 
 
 class UserUnit(Base):
@@ -182,7 +202,7 @@ class BattleUnit(Base):
     __table_args__ = (
         CheckConstraint('position_x >= 0', name='positive_x'),
         CheckConstraint('position_y >= 0', name='positive_y'),
-        CheckConstraint('total_count > 0', name='positive_count'),
+        CheckConstraint('total_count >= 0', name='positive_count'),
         CheckConstraint('remaining_hp >= 0', name='non_negative_hp'),
     )
 

@@ -7,7 +7,39 @@ import random
 from datetime import datetime, timedelta
 from typing import List, Tuple, Optional, Dict
 from sqlalchemy.orm import Session
-from db.models import Game, GameStatus, BattleUnit, GameUser, UserUnit, Field, Unit
+from db.models import Game, GameStatus, BattleUnit, GameUser, UserUnit, Field, Unit, UnitCustomIcon
+
+
+def coords_to_chess(x: int, y: int) -> str:
+    """
+    Преобразование координат (x, y) в шахматную нотацию (A1, B3, etc.)
+
+    Args:
+        x: Координата по горизонтали (столбец)
+        y: Координата по вертикали (строка)
+
+    Returns:
+        str: Шахматная нотация, например "A1", "B3"
+    """
+    column = chr(ord('A') + x)  # 0->A, 1->B, 2->C, ...
+    row = str(y + 1)  # 0->1, 1->2, 2->3, ...
+    return f"{column}{row}"
+
+
+def chess_to_coords(chess_notation: str) -> Tuple[int, int]:
+    """
+    Преобразование шахматной нотации (A1, B3, etc.) в координаты (x, y)
+
+    Args:
+        chess_notation: Шахматная нотация, например "A1", "B3"
+
+    Returns:
+        Tuple[int, int]: Координаты (x, y)
+    """
+    chess_notation = chess_notation.upper().strip()
+    column = ord(chess_notation[0]) - ord('A')  # A->0, B->1, C->2, ...
+    row = int(chess_notation[1:]) - 1  # 1->0, 2->1, 3->2, ...
+    return (column, row)
 
 
 class GameEngine:
@@ -111,7 +143,7 @@ class GameEngine:
         self.db.commit()
         return True, "Игра начата! Ходит первый игрок"
 
-    def move_unit(self, game_id: int, player_id: int, battle_unit_id: int, target_x: int, target_y: int) -> Tuple[bool, str]:
+    def move_unit(self, game_id: int, player_id: int, battle_unit_id: int, target_x: int, target_y: int) -> Tuple[bool, str, bool]:
         """
         Перемещение юнита
 
@@ -123,31 +155,31 @@ class GameEngine:
             target_y: Целевая координата Y
 
         Returns:
-            Tuple[bool, str]: Успех и сообщение
+            Tuple[bool, str, bool]: Успех, сообщение, сменился ли ход
         """
         game = self.db.query(Game).filter_by(id=game_id).first()
         if not game:
-            return False, "Игра не найдена"
+            return False, "Игра не найдена", False
 
         if game.status != GameStatus.IN_PROGRESS:
-            return False, "Игра не в процессе"
+            return False, "Игра не в процессе", False
 
         if game.current_player_id != player_id:
-            return False, "Сейчас не ваш ход"
+            return False, "Сейчас не ваш ход", False
 
         battle_unit = self.db.query(BattleUnit).filter_by(id=battle_unit_id, game_id=game_id).first()
         if not battle_unit:
-            return False, "Юнит не найден"
+            return False, "Юнит не найден", False
 
         if battle_unit.player_id != player_id:
-            return False, "Это не ваш юнит"
+            return False, "Это не ваш юнит", False
 
         if battle_unit.has_moved:
-            return False, "Этот юнит уже совершил ход"
+            return False, "Этот юнит уже совершил ход", False
 
         # Проверить, что цель в пределах поля
         if target_x < 0 or target_x >= game.field.width or target_y < 0 or target_y >= game.field.height:
-            return False, "Цель за пределами поля"
+            return False, "Цель за пределами поля", False
 
         # Проверить, что цель свободна
         occupied = self.db.query(BattleUnit).filter(
@@ -156,7 +188,7 @@ class GameEngine:
             BattleUnit.position_y == target_y
         ).first()
         if occupied:
-            return False, "Эта позиция занята"
+            return False, "Эта позиция занята", False
 
         # Получить характеристики юнита
         unit = battle_unit.user_unit.unit
@@ -164,7 +196,7 @@ class GameEngine:
         # Проверить дистанцию (манхэттенское расстояние)
         distance = abs(battle_unit.position_x - target_x) + abs(battle_unit.position_y - target_y)
         if distance > unit.speed:
-            return False, f"Слишком далеко! Скорость юнита: {unit.speed}, расстояние: {distance}"
+            return False, f"Слишком далеко! Скорость юнита: {unit.speed}, расстояние: {distance}", False
 
         # Переместить юнита
         old_pos = (battle_unit.position_x, battle_unit.position_y)
@@ -173,13 +205,15 @@ class GameEngine:
         battle_unit.has_moved = 1
 
         # Проверить, все ли юниты текущего игрока походили
+        turn_switched = False
         if self._all_units_moved(game, player_id):
             self._switch_turn(game)
+            turn_switched = True
 
         game.last_move_at = datetime.utcnow()
         self.db.commit()
 
-        return True, f"Юнит перемещен с {old_pos} на ({target_x}, {target_y})"
+        return True, f"Юнит перемещен с {old_pos} на ({target_x}, {target_y})", turn_switched
 
     def get_available_movement_cells(self, game_id: int, battle_unit_id: int) -> List[Tuple[int, int]]:
         """
@@ -260,7 +294,7 @@ class GameEngine:
 
         return available_cells
 
-    def attack(self, game_id: int, player_id: int, attacker_id: int, target_id: int) -> Tuple[bool, str]:
+    def attack(self, game_id: int, player_id: int, attacker_id: int, target_id: int) -> Tuple[bool, str, bool]:
         """
         Атака юнита
 
@@ -271,40 +305,40 @@ class GameEngine:
             target_id: ID цели
 
         Returns:
-            Tuple[bool, str]: Успех и сообщение с подробностями атаки
+            Tuple[bool, str, bool]: Успех, сообщение с подробностями атаки, сменился ли ход
         """
         game = self.db.query(Game).filter_by(id=game_id).first()
         if not game:
-            return False, "Игра не найдена"
+            return False, "Игра не найдена", False
 
         if game.status != GameStatus.IN_PROGRESS:
-            return False, "Игра не в процессе"
+            return False, "Игра не в процессе", False
 
         if game.current_player_id != player_id:
-            return False, "Сейчас не ваш ход"
+            return False, "Сейчас не ваш ход", False
 
         attacker = self.db.query(BattleUnit).filter_by(id=attacker_id, game_id=game_id).first()
         if not attacker:
-            return False, "Атакующий юнит не найден"
+            return False, "Атакующий юнит не найден", False
 
         if attacker.player_id != player_id:
-            return False, "Это не ваш юнит"
+            return False, "Это не ваш юнит", False
 
         if attacker.has_moved:
-            return False, "Этот юнит уже совершил ход"
+            return False, "Этот юнит уже совершил ход", False
 
         target = self.db.query(BattleUnit).filter_by(id=target_id, game_id=game_id).first()
         if not target:
-            return False, "Цель не найдена"
+            return False, "Цель не найдена", False
 
         if target.player_id == player_id:
-            return False, "Нельзя атаковать своих юнитов"
+            return False, "Нельзя атаковать своих юнитов", False
 
         # Проверить дистанцию
         attacker_unit = attacker.user_unit.unit
         distance = abs(attacker.position_x - target.position_x) + abs(attacker.position_y - target.position_y)
         if distance > attacker_unit.range:
-            return False, f"Цель слишком далеко! Дальность атаки: {attacker_unit.range}, расстояние: {distance}"
+            return False, f"Цель слишком далеко! Дальность атаки: {attacker_unit.range}, расстояние: {distance}", False
 
         # Рассчитать урон
         damage, is_crit, combat_log = self._calculate_damage(attacker, target)
@@ -323,6 +357,7 @@ class GameEngine:
         attacker.has_moved = 1
 
         # Проверить, все ли юниты игрока мертвы
+        turn_switched = False
         winner_id = self._check_game_over(game)
         if winner_id:
             self._complete_game(game, winner_id)
@@ -332,12 +367,13 @@ class GameEngine:
             # Проверить, все ли юниты текущего игрока походили
             if self._all_units_moved(game, player_id):
                 self._switch_turn(game)
+                turn_switched = True
 
         game.last_move_at = datetime.utcnow()
         self.db.commit()
 
         result_msg = f"Атака выполнена!\n{combat_log}\nУбито юнитов: {units_killed}"
-        return True, result_msg
+        return True, result_msg, turn_switched
 
     def render_field(self, game_id: int) -> str:
         """
@@ -368,7 +404,9 @@ class GameEngine:
             alive_count = self._count_alive_units(battle_unit)
 
             if alive_count > 0:
-                icon = unit.icon
+                # Проверить, есть ли кастомная иконка для этого юнита
+                custom_icon = self.db.query(UnitCustomIcon).filter_by(unit_id=unit.id).first()
+                icon = custom_icon.custom_icon if custom_icon else unit.icon
                 grid[y][x] = f"[{icon}{alive_count}]"
 
         # Собрать поле в строку
@@ -381,8 +419,14 @@ class GameEngine:
 
         result += "\n"
 
+        # Добавить заголовок с буквами столбцов (A B C D...)
+        column_labels = "   " + "  ".join([chr(ord('A') + x) for x in range(width)]) + "\n"
+        result += column_labels
+
+        # Добавить строки с номерами
         for y in range(height):
-            result += "".join(grid[y]) + "\n"
+            row_label = f"{y + 1} "  # Номер строки (1, 2, 3...)
+            result += row_label + "".join(grid[y]) + "\n"
 
         return result
 
@@ -491,7 +535,7 @@ class GameEngine:
 
     def _calculate_damage(self, attacker: BattleUnit, target: BattleUnit) -> Tuple[int, bool, str]:
         """
-        Рассчитать урон
+        Рассчитать урон с учетом случайности и всех модификаторов
 
         Args:
             attacker: Атакующий юнит
@@ -503,24 +547,43 @@ class GameEngine:
         attacker_unit = attacker.user_unit.unit
         target_unit = target.user_unit.unit
 
-        # Базовый урон
+        # Подсчет количества атакующих юнитов
+        alive_attackers = self._count_alive_units(attacker)
+
+        # Базовый урон с небольшой случайностью (±10%)
         base_damage = attacker_unit.damage
+        damage_variance = random.uniform(0.9, 1.1)
+        base_damage_with_variance = int(base_damage * damage_variance)
+
+        # Модификатор усталости на базовый урон (усталость снижает урон до -30%)
+        fatigue_penalty = float(attacker.fatigue) / 100 * 0.3
+        fatigue_modifier = 1.0 - fatigue_penalty
+
+        # Модификатор морали на базовый урон (мораль увеличивает урон до +20%)
+        morale_bonus = float(attacker.morale) / 100 * 0.2
+        morale_modifier = 1.0 + morale_bonus
+
+        # Применяем модификаторы к базовому урону
+        damage = int(base_damage_with_variance * fatigue_modifier * morale_modifier)
 
         # Модификатор критического шанса (кураж увеличивает, усталость уменьшает)
-        crit_modifier = float(attacker_unit.crit_chance)
+        base_crit_chance = float(attacker_unit.crit_chance)
+        crit_modifier = base_crit_chance
         crit_modifier += float(attacker.morale) / 100 * 0.2  # До +20% от куража
         crit_modifier -= float(attacker.fatigue) / 100 * 0.2  # До -20% от усталости
         crit_modifier = max(0, min(1, crit_modifier))
 
         # Проверка критического удара
-        is_crit = random.random() < crit_modifier
+        crit_roll = random.random()
+        is_crit = crit_roll < crit_modifier
 
         # Модификатор удачи (максимальный урон)
         luck_modifier = float(attacker_unit.luck)
-        is_lucky = random.random() < luck_modifier
+        luck_roll = random.random()
+        is_lucky = luck_roll < luck_modifier
 
-        # Рассчитать итоговый урон
-        damage = base_damage
+        # Хранение урона до модификаторов для лога
+        damage_before_modifiers = damage
 
         if is_crit:
             damage = int(damage * 2)  # Критический удар удваивает урон
@@ -530,22 +593,46 @@ class GameEngine:
 
         # Применить защиту
         defense_reduction = target_unit.defense
-        damage = max(1, damage - defense_reduction)  # Минимум 1 урона
+        damage_after_defense = max(1, damage - defense_reduction)  # Минимум 1 урона
 
         # Умножить на количество атакующих юнитов
-        alive_attackers = self._count_alive_units(attacker)
-        total_damage = damage * alive_attackers
+        total_damage = damage_after_defense * alive_attackers
 
-        # Создать лог
+        # Создать детальный лог с формулой расчета
         log = f"⚔️ {attacker_unit.name} (x{alive_attackers}) атакует {target_unit.name}\n"
-        log += f"Базовый урон: {base_damage}, Защита цели: {defense_reduction}\n"
+        log += f"\n📊 Расчет урона:\n"
+        log += f"1️⃣ Базовый урон: {base_damage}\n"
+        log += f"   Случайность (±10%): x{damage_variance:.2f} = {base_damage_with_variance}\n"
+
+        if attacker.fatigue > 0:
+            log += f"2️⃣ Усталость: {float(attacker.fatigue):.1f}% → штраф -{fatigue_penalty*100:.1f}% (x{fatigue_modifier:.2f})\n"
+
+        if attacker.morale > 0:
+            log += f"3️⃣ Мораль: {float(attacker.morale):.1f}% → бонус +{morale_bonus*100:.1f}% (x{morale_modifier:.2f})\n"
+
+        log += f"   = {damage_before_modifiers} урона\n"
+
+        # Информация о критическом ударе
+        log += f"\n4️⃣ Шанс крита: {base_crit_chance*100:.1f}%"
+        if attacker.morale > 0 or attacker.fatigue > 0:
+            log += f" → {crit_modifier*100:.1f}%"
+        log += f" (бросок: {crit_roll*100:.1f}%)\n"
 
         if is_crit:
-            log += "💥 КРИТИЧЕСКИЙ УДАР!\n"
-        if is_lucky:
-            log += "🍀 УДАЧА!\n"
+            log += f"   💥 КРИТИЧЕСКИЙ УДАР! x2 = {damage} урона\n"
 
-        log += f"Итоговый урон: {total_damage}"
+        # Информация об удаче
+        log += f"5️⃣ Шанс удачи: {luck_modifier*100:.1f}% (бросок: {luck_roll*100:.1f}%)\n"
+        if is_lucky:
+            log += f"   🍀 УДАЧА! x1.5 = {damage} урона\n"
+
+        # Защита
+        log += f"\n6️⃣ Защита цели: -{defense_reduction}\n"
+        log += f"   Урон после защиты: {damage_after_defense} (мин. 1)\n"
+
+        # Итоговый урон
+        log += f"\n7️⃣ Количество атакующих: x{alive_attackers}\n"
+        log += f"   ⚡ ИТОГОВЫЙ УРОН: {total_damage}"
 
         return total_damage, is_crit, log
 

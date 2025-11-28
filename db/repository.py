@@ -397,6 +397,30 @@ class Database:
 
             return False
 
+    def get_all_game_users(self) -> list:
+        """
+        Получение всех игровых пользователей
+
+        Returns:
+            list: Список всех игровых пользователей
+        """
+        with self.get_session() as session:
+            game_users = session.query(GameUser).all()
+
+            # Загружаем все атрибуты перед закрытием сессии
+            for user in game_users:
+                _ = user.id
+                _ = user.telegram_id
+                _ = user.name
+                _ = user.balance
+                _ = user.wins
+                _ = user.losses
+                _ = user.created_at
+                _ = user.updated_at
+
+            session.expunge_all()
+            return game_users
+
     def get_or_create_game_user(self, telegram_id: int, name: str, initial_balance: float = 1000) -> tuple:
         """
         Получение или создание игрового пользователя
