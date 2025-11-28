@@ -14,6 +14,8 @@ from db import Database
 from db.models import GameUser, Unit, UnitCustomIcon
 from decimal import Decimal
 from game_engine import GameEngine, coords_to_chess, chess_to_coords
+from field_renderer import FieldRenderer
+import io
 
 
 # Настройка логирования
@@ -1038,17 +1040,16 @@ class SimpleBot:
                 # Показать поле обоим игрокам
                 with self.db.get_session() as session:
                     engine = GameEngine(session)
-                    field_display = engine.render_field(active_game.id)
+                    actions = engine.get_available_actions(active_game.id, game_user.id)
 
                 # Отправить уведомление и поле player2 (тому, кто принял)
-                response = f"✅ {message}\n\n{field_display}"
-                actions = engine.get_available_actions(active_game.id, game_user.id)
                 keyboard = self._create_game_keyboard(active_game.id, game_user.id, actions)
-
-                await update.message.reply_text(
-                    response,
-                    parse_mode=self.parse_mode,
-                    reply_markup=InlineKeyboardMarkup(keyboard) if keyboard else None
+                await self._send_field_image(
+                    chat_id=update.effective_chat.id,
+                    game_id=active_game.id,
+                    caption=f"✅ {message}",
+                    context=context,
+                    keyboard=keyboard
                 )
 
                 # Отправить уведомление и поле player1 (тому, кто создал игру)
@@ -1060,11 +1061,12 @@ class SimpleBot:
                         player1_actions = engine.get_available_actions(active_game.id, player1_id)
                         player1_keyboard = self._create_game_keyboard(active_game.id, player1_id, player1_actions)
 
-                        await context.bot.send_message(
+                        await self._send_field_image(
                             chat_id=player1.telegram_id,
-                            text=f"🎮 Игра началась!\n\n{field_display}",
-                            parse_mode=self.parse_mode,
-                            reply_markup=InlineKeyboardMarkup(player1_keyboard) if player1_keyboard else None
+                            game_id=active_game.id,
+                            caption="🎮 Игра началась!",
+                            context=context,
+                            keyboard=player1_keyboard
                         )
                     except Exception as e:
                         logger.error(f"Ошибка при отправке уведомления player1: {e}")
@@ -1108,17 +1110,18 @@ class SimpleBot:
             # Отображение игры
             with self.db.get_session() as session:
                 engine = GameEngine(session)
-                field_display = engine.render_field(active_game.id)
                 actions = engine.get_available_actions(active_game.id, game_user.id)
 
             logger.info(f"Actions для игрока {game_user.id}: {actions}")
             keyboard = self._create_game_keyboard(active_game.id, game_user.id, actions)
             logger.info(f"Клавиатура после _create_game_keyboard: {len(keyboard)} кнопок")
 
-            await update.message.reply_text(
-                field_display,
-                parse_mode=self.parse_mode,
-                reply_markup=InlineKeyboardMarkup(keyboard) if keyboard else None
+            await self._send_field_image(
+                chat_id=update.effective_chat.id,
+                game_id=active_game.id,
+                caption="",
+                context=context,
+                keyboard=keyboard
             )
 
         except Exception as e:
@@ -1252,6 +1255,42 @@ class SimpleBot:
                 f"❌ Произошла ошибка: {e}",
                 parse_mode=self.parse_mode
             )
+
+    async def _send_field_image(self, chat_id: int, game_id: int, caption: str, context: ContextTypes.DEFAULT_TYPE, keyboard=None):
+        """
+        Отправить изображение игрового поля
+
+        Args:
+            chat_id: ID чата
+            game_id: ID игры
+            caption: Подпись к изображению
+            context: Контекст бота
+            keyboard: Клавиатура (опционально)
+        """
+        with self.db.get_session() as session:
+            renderer = FieldRenderer(session)
+            image_bytes = renderer.render_field(game_id)
+
+            if image_bytes:
+                # Отправить изображение
+                await context.bot.send_photo(
+                    chat_id=chat_id,
+                    photo=io.BytesIO(image_bytes),
+                    caption=caption,
+                    parse_mode=self.parse_mode,
+                    reply_markup=InlineKeyboardMarkup(keyboard) if keyboard else None
+                )
+            else:
+                # Fallback на текстовое отображение если не удалось создать изображение
+                with self.db.get_session() as session:
+                    engine = GameEngine(session)
+                    field_display = engine.render_field(game_id)
+                    await context.bot.send_message(
+                        chat_id=chat_id,
+                        text=f"{caption}\n\n{field_display}",
+                        parse_mode=self.parse_mode,
+                        reply_markup=InlineKeyboardMarkup(keyboard) if keyboard else None
+                    )
 
     def _create_game_keyboard(self, game_id: int, player_id: int, actions: dict) -> list:
         """Создание клавиатуры для игровых действий"""

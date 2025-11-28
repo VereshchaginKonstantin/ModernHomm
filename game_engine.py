@@ -63,6 +63,17 @@ class GameEngine:
         Returns:
             Tuple[Game, str]: Созданная игра и сообщение
         """
+        # Проверить, что у всех юнитов загружены картинки
+        import os
+        units = self.db.query(Unit).all()
+        missing_images = []
+        for unit in units:
+            if not unit.image_path or not os.path.exists(unit.image_path):
+                missing_images.append(unit.name)
+
+        if missing_images:
+            return None, f"⚠️ Невозможно начать игру!\n\nНе загружены картинки для следующих юнитов:\n" + "\n".join([f"• {name}" for name in missing_images]) + "\n\nОбратитесь к администратору для загрузки картинок через админку."
+
         # Найти игроков
         player1 = self.db.query(GameUser).filter_by(id=player1_id).first()
         if not player1:
