@@ -230,16 +230,21 @@ class SimpleBot:
 
             units_text = ""
             if user_units:
-                units_text = "\n\n🔰 Ваши юниты:\n"
-                for user_unit in user_units:
-                    # Получаем детали юнита
-                    unit = self.db.get_unit_by_id(user_unit.unit_type_id)
-                    if unit:
-                        units_text += (
-                            f"\n{unit.name} x{user_unit.count}\n"
-                            f"  ⚔️ Урон: {unit.damage} | 🛡️ Защита: {unit.defense} | 🎯 Дальность: {unit.range}\n"
-                            f"  ❤️ HP: {unit.health} | 🏃 Скорость: {unit.speed}\n"
-                        )
+                # Фильтруем юнитов с количеством > 0
+                active_units = [u for u in user_units if u.count > 0]
+                if active_units:
+                    units_text = "\n\n🔰 Ваши юниты:\n"
+                    for user_unit in active_units:
+                        # Получаем детали юнита
+                        unit = self.db.get_unit_by_id(user_unit.unit_type_id)
+                        if unit:
+                            units_text += (
+                                f"\n{unit.name} x{user_unit.count}\n"
+                                f"  ⚔️ Урон: {unit.damage} | 🛡️ Защита: {unit.defense} | 🎯 Дальность: {unit.range}\n"
+                                f"  ❤️ HP: {unit.health} | 🏃 Скорость: {unit.speed}\n"
+                            )
+                else:
+                    units_text = "\n\n🔰 У вас пока нет юнитов. Посетите /shop для покупки!"
             else:
                 units_text = "\n\n🔰 У вас пока нет юнитов. Посетите /shop для покупки!"
 
