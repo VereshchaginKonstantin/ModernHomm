@@ -2102,7 +2102,9 @@ class SimpleBot:
     def is_admin(self, username: str) -> bool:
         """Проверка, является ли пользователь администратором"""
         ADMIN_USERNAMES = ['okarien']
-        return username in ADMIN_USERNAMES
+        # Убираем @ если есть
+        clean_username = username.lstrip('@') if username else None
+        return clean_username in ADMIN_USERNAMES
 
     async def admin_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Панель администратора"""
