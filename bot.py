@@ -1967,21 +1967,29 @@ class SimpleBot:
             # Обработка изменения эмодзи юнита
             if 'editing_icon_unit_id' in context.user_data and self.is_admin(user.username):
                 unit_id = context.user_data['editing_icon_unit_id']
+                unit_name = context.user_data.get('editing_icon_unit_name', 'Юнит')
                 new_icon = user_message.strip()
+
+                logger.info(f"Получен новый эмодзи '{new_icon}' для юнита {unit_name} (ID: {unit_id})")
 
                 with self.db.get_session() as session:
                     unit = session.query(Unit).filter_by(id=unit_id).first()
                     if not unit:
-                        await update.message.reply_text("Юнит не найден.")
+                        await update.message.reply_text("❌ Юнит не найден.")
                         del context.user_data['editing_icon_unit_id']
+                        if 'editing_icon_unit_name' in context.user_data:
+                            del context.user_data['editing_icon_unit_name']
                         return
 
                     # Проверяем, существует ли уже кастомная иконка
                     custom_icon = session.query(UnitCustomIcon).filter_by(unit_id=unit.id).first()
 
+                    old_icon = custom_icon.custom_icon if custom_icon else unit.icon
+
                     if custom_icon:
                         # Обновляем существующую иконку
                         custom_icon.custom_icon = new_icon
+                        logger.info(f"Обновлена кастомная иконка для {unit.name}: {old_icon} → {new_icon}")
                     else:
                         # Создаем новую кастомную иконку
                         custom_icon = UnitCustomIcon(
@@ -1989,13 +1997,24 @@ class SimpleBot:
                             custom_icon=new_icon
                         )
                         session.add(custom_icon)
+                        logger.info(f"Создана новая кастомная иконка для {unit.name}: {unit.icon} → {new_icon}")
 
                     session.commit()
 
                 await update.message.reply_text(
-                    f"Эмодзи для {unit.name} успешно обновлен на {new_icon}"
+                    f"✅ <b>Эмодзи обновлен!</b>\n\n"
+                    f"🎮 Юнит: <b>{unit.name}</b>\n"
+                    f"Старый эмодзи: {old_icon}\n"
+                    f"Новый эмодзи: {new_icon}\n\n"
+                    f"Изменения вступят в силу в новых играх.",
+                    parse_mode='HTML'
                 )
+
                 del context.user_data['editing_icon_unit_id']
+                if 'editing_icon_unit_name' in context.user_data:
+                    del context.user_data['editing_icon_unit_name']
+
+                logger.info(f"Эмодзи для {unit.name} успешно обновлен на {new_icon}")
                 return
 
             # Обработка создания нового юнита
@@ -2167,11 +2186,17 @@ class SimpleBot:
         await query.answer()
 
         username = update.effective_user.username
+        logger.info(f"Admin edit icon callback от {username}")
+
         if not self.is_admin(username):
             await query.edit_message_text("У вас нет доступа к этой функции.")
             return
 
         unit_id = int(query.data.split(':')[1])
+        logger.info(f"Редактирование иконки для юнита ID: {unit_id}")
+
+        unit_name = None
+        current_icon = None
 
         with self.db.get_session() as session:
             unit = session.query(Unit).filter_by(id=unit_id).first()
@@ -2179,15 +2204,22 @@ class SimpleBot:
                 await query.edit_message_text("Юнит не найден.")
                 return
 
+            unit_name = unit.name
             custom_icon = session.query(UnitCustomIcon).filter_by(unit_id=unit.id).first()
             current_icon = custom_icon.custom_icon if custom_icon else unit.icon
 
-        # Сохраняем unit_id в user_data для последующего использования
+        # Сохраняем unit_id и unit_name в user_data для последующего использования
         context.user_data['editing_icon_unit_id'] = unit_id
+        context.user_data['editing_icon_unit_name'] = unit_name
+
+        logger.info(f"Запрос на ввод нового эмодзи для {unit_name}, текущий: {current_icon}")
 
         await query.edit_message_text(
-            f"Текущий эмодзи для {unit.name}: {current_icon}\n\n"
-            f"Отправьте новый эмодзи для юнита {unit.name}:",
+            f"📝 Изменение эмодзи для юнита\n\n"
+            f"🎮 Юнит: <b>{unit_name}</b>\n"
+            f"Текущий эмодзи: {current_icon}\n\n"
+            f"👉 Отправьте новый эмодзи в чат:",
+            parse_mode='HTML'
         )
 
     async def admin_create_unit_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
