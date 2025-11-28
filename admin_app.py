@@ -291,6 +291,8 @@ def delete_image(unit_id):
 
 
 if __name__ == '__main__':
-    print("Запуск админки на http://localhost:5000")
+    # Получить порт из переменной окружения или использовать 80 по умолчанию
+    port = int(os.getenv('PORT', 80))
+    print(f"Запуск админки на http://0.0.0.0:{port}")
     print("Используйте Ctrl+C для остановки")
-    app.run(host='0.0.0.0', port=5000, debug=True)
+    app.run(host='0.0.0.0', port=port, debug=False)

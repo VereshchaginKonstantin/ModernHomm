@@ -33,6 +33,24 @@ services:
     networks:
       - modernhomm_network
 
+  admin:
+    build:
+      context: .
+      dockerfile: Dockerfile.admin
+    container_name: modernhomm_admin
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/telegram_bot
+    ports:
+      - "80:80"
+    volumes:
+      - ./static:/app/static
+    restart: unless-stopped
+    networks:
+      - modernhomm_network
+
 networks:
   modernhomm_network:
     driver: bridge
