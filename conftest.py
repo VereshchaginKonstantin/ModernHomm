@@ -35,3 +35,15 @@ def db(test_db_url):
 
     # Очистка после теста
     database.drop_tables()
+
+
+@pytest.fixture(scope="function")
+def db_session(db):
+    """
+    Фикстура для создания сессии базы данных для теста
+
+    Yields:
+        Session: Объект сессии SQLAlchemy
+    """
+    with db.get_session() as session:
+        yield session
