@@ -1292,6 +1292,91 @@ class SimpleBot:
                         reply_markup=InlineKeyboardMarkup(keyboard) if keyboard else None
                     )
 
+    async def _handle_game_completion(self, query, game, attack_message: str, context):
+        """
+        Обработка завершения игры - отправка результатов обоим игрокам и очистка кнопок
+
+        Args:
+            query: CallbackQuery объект
+            game: Объект игры
+            attack_message: Сообщение об атаке
+            context: Контекст бота
+        """
+        try:
+            # Получить информацию об игроках
+            winner = self.db.get_game_user_by_id(game.winner_id)
+            loser_id = game.player1_id if game.winner_id == game.player2_id else game.player2_id
+            loser = self.db.get_game_user_by_id(loser_id)
+
+            # Собрать детальную информацию о результатах
+            result_message = self._build_game_result_message(game, winner, loser, attack_message)
+
+            # Обновить поле атакующего (убрать кнопки)
+            await self._edit_field(query, game.id, result_message, keyboard=[])
+
+            # Отправить результаты противнику
+            opponent_id = loser_id if query.from_user.id == winner.telegram_id else winner.telegram_id
+            opponent = self.db.get_game_user_by_id(loser_id if opponent_id == loser.telegram_id else game.winner_id)
+
+            if opponent and opponent.telegram_id:
+                try:
+                    await context.bot.send_message(
+                        chat_id=opponent.telegram_id,
+                        text=result_message,
+                        parse_mode=self.parse_mode
+                    )
+                except Exception as e:
+                    logger.error(f"Ошибка при отправке результатов противнику: {e}")
+
+        except Exception as e:
+            logger.error(f"Ошибка при обработке завершения игры: {e}")
+            raise
+
+    def _build_game_result_message(self, game, winner, loser, attack_message: str) -> str:
+        """
+        Формирование сообщения с результатами игры
+
+        Args:
+            game: Объект игры
+            winner: Победитель
+            loser: Проигравший
+            attack_message: Сообщение об атаке
+
+        Returns:
+            str: Форматированное сообщение с результатами
+        """
+        # Основное сообщение
+        result = f"{attack_message}\n\n"
+        result += "🏆 " + "=" * 30 + "\n"
+        result += f"          ИГРА ЗАВЕРШЕНА!\n"
+        result += "=" * 30 + "\n\n"
+
+        # Информация о победителе и проигравшем
+        result += f"👑 <b>Победитель:</b> {html.escape(winner.name)}\n"
+        result += f"💔 <b>Проигравший:</b> {html.escape(loser.name)}\n\n"
+
+        # Статистика победителя
+        result += f"📊 <b>Статистика {html.escape(winner.name)}:</b>\n"
+        result += f"   💰 Баланс: ${winner.balance}\n"
+        result += f"   🏆 Побед: {winner.wins}\n"
+        result += f"   💔 Поражений: {winner.losses}\n\n"
+
+        # Статистика проигравшего
+        result += f"📊 <b>Статистика {html.escape(loser.name)}:</b>\n"
+        result += f"   💰 Баланс: ${loser.balance}\n"
+        result += f"   🏆 Побед: {loser.wins}\n"
+        result += f"   💔 Поражений: {loser.losses}\n\n"
+
+        # Информация об игре
+        if game.started_at and game.completed_at:
+            duration = game.completed_at - game.started_at
+            minutes = int(duration.total_seconds() / 60)
+            result += f"⏱️ <b>Длительность игры:</b> {minutes} мин.\n"
+
+        result += f"🎮 <b>ID игры:</b> #{game.id}\n"
+
+        return result
+
     def _create_game_keyboard(self, game_id: int, player_id: int, actions: dict) -> list:
         """Создание клавиатуры для игровых действий"""
         keyboard = []
@@ -1322,6 +1407,82 @@ class SimpleBot:
             keyboard.append([InlineKeyboardButton("🏃 Выйти из схватки", callback_data=f"surrender:{game_id}")])
         return keyboard
 
+    async def _edit_message_universal(self, query, text: str, reply_markup=None, parse_mode=None):
+        """
+        Универсальное редактирование сообщения (текст или caption для фото)
+
+        Args:
+            query: CallbackQuery объект
+            text: Текст или caption для редактирования
+            reply_markup: Клавиатура
+            parse_mode: Режим парсинга (HTML/Markdown)
+        """
+        try:
+            # Проверяем, есть ли фото в сообщении
+            if query.message.photo:
+                # Если есть фото, редактируем caption
+                await query.edit_message_caption(
+                    caption=text,
+                    reply_markup=reply_markup,
+                    parse_mode=parse_mode
+                )
+            else:
+                # Если нет фото, редактируем текст
+                await query.edit_message_text(
+                    text=text,
+                    reply_markup=reply_markup,
+                    parse_mode=parse_mode
+                )
+        except Exception as e:
+            logger.error(f"Ошибка при редактировании сообщения: {e}")
+            raise
+
+    async def _edit_field(self, query, game_id: int, caption: str, keyboard: list = None):
+        """
+        Редактировать сообщение с игровым полем (PNG или текст)
+
+        Args:
+            query: CallbackQuery объект
+            game_id: ID игры
+            caption: Подпись/текст для поля
+            keyboard: Клавиатура (опционально)
+        """
+        from telegram import InputMediaPhoto
+
+        with self.db.get_session() as session:
+            renderer = FieldRenderer(session)
+            image_bytes = renderer.render_field(game_id)
+
+            # Проверяем, было ли сообщение с фото
+            has_photo = bool(query.message.photo)
+
+            if image_bytes and has_photo:
+                # Редактируем фото и caption
+                try:
+                    await query.edit_message_media(
+                        media=InputMediaPhoto(media=io.BytesIO(image_bytes), caption=caption, parse_mode=self.parse_mode),
+                        reply_markup=InlineKeyboardMarkup(keyboard) if keyboard else None
+                    )
+                except Exception as e:
+                    logger.error(f"Ошибка при редактировании медиа: {e}")
+                    # Fallback: редактируем только caption
+                    await query.edit_message_caption(
+                        caption=caption,
+                        parse_mode=self.parse_mode,
+                        reply_markup=InlineKeyboardMarkup(keyboard) if keyboard else None
+                    )
+            else:
+                # Текстовое отображение
+                with self.db.get_session() as session:
+                    engine = GameEngine(session)
+                    field_display = engine.render_field(game_id)
+                    await query.edit_message_text(
+                        text=f"{caption}\n\n{field_display}",
+                        parse_mode=self.parse_mode,
+                        reply_markup=InlineKeyboardMarkup(keyboard) if keyboard else None
+                    )
+
+
     async def game_unit_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Обработчик callback для выбора юнита"""
         query = update.callback_query
@@ -1338,7 +1499,7 @@ class SimpleBot:
         try:
             game_user = self.db.get_game_user(user.id)
             if not game_user:
-                await query.edit_message_text("❌ Игровой профиль не найден")
+                await self._edit_message_universal(query, "❌ Игровой профиль не найден", parse_mode=self.parse_mode)
                 return
 
             # Показать действия для юнита
@@ -1354,7 +1515,7 @@ class SimpleBot:
                     break
 
             if not unit_data:
-                await query.edit_message_text("❌ Юнит не найден")
+                await self._edit_message_universal(query, "❌ Юнит не найден", parse_mode=self.parse_mode)
                 return
 
             # Получаем позицию в шахматной нотации
@@ -1387,15 +1548,16 @@ class SimpleBot:
             keyboard.append([InlineKeyboardButton("◀️ Назад", callback_data=f"game_refresh:{game_id}")])
             keyboard.append([InlineKeyboardButton("🏃 Выйти из схватки", callback_data=f"surrender:{game_id}")])
 
-            await query.edit_message_text(
+            await self._edit_message_universal(
+                query,
                 response,
-                parse_mode=self.parse_mode,
-                reply_markup=InlineKeyboardMarkup(keyboard)
+                reply_markup=InlineKeyboardMarkup(keyboard),
+                parse_mode=self.parse_mode
             )
 
         except Exception as e:
             logger.error(f"Ошибка при выборе юнита: {e}")
-            await query.edit_message_text(f"❌ Ошибка: {e}")
+            await self._edit_message_universal(query, f"❌ Ошибка: {e}", parse_mode=self.parse_mode)
 
     async def game_move_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Обработчик callback для перемещения юнита"""
@@ -1403,7 +1565,10 @@ class SimpleBot:
         await query.answer()
 
         data = query.data.split(':')
+        logger.info(f"game_move_callback: data={query.data}, len={len(data)}")
+
         if len(data) < 3:
+            logger.warning(f"game_move_callback: недостаточно данных, data={data}")
             return
 
         game_id = int(data[1])
@@ -1411,26 +1576,26 @@ class SimpleBot:
 
         # Если есть координаты
         if len(data) == 5:
+            logger.info(f"game_move_callback: перемещение юнита {unit_id} в игре {game_id}")
             target_x = int(data[3])
             target_y = int(data[4])
             user = update.effective_user
 
             try:
                 game_user = self.db.get_game_user(user.id)
+                logger.info(f"game_move: game_user={game_user.id if game_user else None}, target=({target_x}, {target_y})")
                 with self.db.get_session() as session:
                     engine = GameEngine(session)
                     success, message, turn_switched = engine.move_unit(game_id, game_user.id, unit_id, target_x, target_y)
+                    logger.info(f"game_move: success={success}, message={message}, turn_switched={turn_switched}")
 
                     if success:
-                        field_display = engine.render_field(game_id)
+                        logger.info(f"game_move: перемещение успешно, обновляем поле")
                         actions = engine.get_available_actions(game_id, game_user.id)
                         keyboard = self._create_game_keyboard(game_id, game_user.id, actions)
 
-                        await query.edit_message_text(
-                            f"✅ {message}\n\n{field_display}",
-                            parse_mode=self.parse_mode,
-                            reply_markup=InlineKeyboardMarkup(keyboard) if keyboard else None
-                        )
+                        # Используем _edit_field для обновления поля с PNG
+                        await self._edit_field(query, game_id, f"✅ {message}", keyboard)
 
                         # Если ход сменился, отправить уведомление противнику
                         if turn_switched:
@@ -1443,19 +1608,22 @@ class SimpleBot:
                                     opponent_actions = engine.get_available_actions(game_id, opponent_id)
                                     opponent_keyboard = self._create_game_keyboard(game_id, opponent_id, opponent_actions)
 
-                                    await context.bot.send_message(
+                                    # Отправляем PNG поле противнику
+                                    await self._send_field_image(
                                         chat_id=opponent.telegram_id,
-                                        text=f"🎮 Теперь ваш ход!\n\n{field_display}",
-                                        parse_mode=self.parse_mode,
-                                        reply_markup=InlineKeyboardMarkup(opponent_keyboard)
+                                        game_id=game_id,
+                                        caption="🎮 Теперь ваш ход!",
+                                        context=context,
+                                        keyboard=opponent_keyboard
                                     )
                                 except Exception as e:
                                     logger.error(f"Ошибка при отправке уведомления противнику: {e}")
                     else:
+                        logger.warning(f"game_move: перемещение не удалось: {message}")
                         await query.answer(f"❌ {message}", show_alert=True)
 
             except Exception as e:
-                logger.error(f"Ошибка при перемещении: {e}")
+                logger.error(f"Ошибка при перемещении: {e}", exc_info=True)
                 await query.answer(f"❌ Ошибка: {e}", show_alert=True)
         else:
             # Показать доступные позиции для перемещения
@@ -1470,7 +1638,8 @@ class SimpleBot:
                     available_cells = engine.get_available_movement_cells(game_id, unit_id)
 
                     if not available_cells:
-                        await query.edit_message_text(
+                        await self._edit_message_universal(
+                            query,
                             "❌ Нет доступных позиций для перемещения!\n"
                             "Юнит заблокирован или уже походил.",
                             parse_mode=self.parse_mode
@@ -1496,17 +1665,14 @@ class SimpleBot:
                         InlineKeyboardButton("🏃 Выйти из схватки", callback_data=f"surrender:{game_id}")
                     ])
 
-                    field_display = engine.render_field(game_id)
-                    await query.edit_message_text(
-                        f"🏃 Выберите позицию для перемещения:\n\n{field_display}\n\n"
-                        f"Доступно позиций: {len(available_cells)}",
-                        parse_mode=self.parse_mode,
-                        reply_markup=InlineKeyboardMarkup(keyboard)
-                    )
+                    # Используем _edit_field для показа поля с доступными позициями
+                    caption = f"🏃 Выберите позицию для перемещения\n\nДоступно позиций: {len(available_cells)}"
+                    await self._edit_field(query, game_id, caption, keyboard)
 
             except Exception as e:
                 logger.error(f"Ошибка при показе доступных позиций: {e}")
-                await query.edit_message_text(
+                await self._edit_message_universal(
+                    query,
                     f"❌ Ошибка при получении доступных позиций: {e}",
                     parse_mode=self.parse_mode
                 )
@@ -1532,35 +1698,41 @@ class SimpleBot:
                 success, message, turn_switched = engine.attack(game_id, game_user.id, attacker_id, target_id)
 
                 if success:
-                    field_display = engine.render_field(game_id)
-                    actions = engine.get_available_actions(game_id, game_user.id)
-                    keyboard = self._create_game_keyboard(game_id, game_user.id, actions)
+                    # Проверить, завершилась ли игра
+                    game = self.db.get_game_by_id(game_id)
+                    from db.models import GameStatus
 
-                    await query.edit_message_text(
-                        f"{message}\n\n{field_display}",
-                        parse_mode=self.parse_mode,
-                        reply_markup=InlineKeyboardMarkup(keyboard) if keyboard else None
-                    )
+                    if game.status == GameStatus.COMPLETED:
+                        # Игра завершена - отправить результаты обоим игрокам
+                        await self._handle_game_completion(query, game, message, context)
+                    else:
+                        # Игра продолжается - обновить поле
+                        actions = engine.get_available_actions(game_id, game_user.id)
+                        keyboard = self._create_game_keyboard(game_id, game_user.id, actions)
 
-                    # Если ход сменился, отправить уведомление противнику
-                    if turn_switched:
-                        game = self.db.get_game_by_id(game_id)
-                        opponent_id = game.player2_id if game.player1_id == game_user.id else game.player1_id
-                        opponent = self.db.get_game_user_by_id(opponent_id)
+                        # Используем _edit_field для обновления поля с PNG
+                        await self._edit_field(query, game_id, message, keyboard)
 
-                        if opponent and opponent.telegram_id:
-                            try:
-                                opponent_actions = engine.get_available_actions(game_id, opponent_id)
-                                opponent_keyboard = self._create_game_keyboard(game_id, opponent_id, opponent_actions)
+                        # Если ход сменился, отправить уведомление противнику
+                        if turn_switched:
+                            opponent_id = game.player2_id if game.player1_id == game_user.id else game.player1_id
+                            opponent = self.db.get_game_user_by_id(opponent_id)
 
-                                await context.bot.send_message(
-                                    chat_id=opponent.telegram_id,
-                                    text=f"🎮 Теперь ваш ход!\n\n{field_display}",
-                                    parse_mode=self.parse_mode,
-                                    reply_markup=InlineKeyboardMarkup(opponent_keyboard)
-                                )
-                            except Exception as e:
-                                logger.error(f"Ошибка при отправке уведомления противнику: {e}")
+                            if opponent and opponent.telegram_id:
+                                try:
+                                    opponent_actions = engine.get_available_actions(game_id, opponent_id)
+                                    opponent_keyboard = self._create_game_keyboard(game_id, opponent_id, opponent_actions)
+
+                                    # Отправляем PNG поле противнику
+                                    await self._send_field_image(
+                                        chat_id=opponent.telegram_id,
+                                        game_id=game_id,
+                                        caption="🎮 Теперь ваш ход!",
+                                        context=context,
+                                        keyboard=opponent_keyboard
+                                    )
+                                except Exception as e:
+                                    logger.error(f"Ошибка при отправке уведомления противнику: {e}")
                 else:
                     await query.answer(f"❌ {message}", show_alert=True)
 
@@ -1584,16 +1756,12 @@ class SimpleBot:
             game_user = self.db.get_game_user(user.id)
             with self.db.get_session() as session:
                 engine = GameEngine(session)
-                field_display = engine.render_field(game_id)
                 actions = engine.get_available_actions(game_id, game_user.id)
 
             keyboard = self._create_game_keyboard(game_id, game_user.id, actions)
 
-            await query.edit_message_text(
-                field_display,
-                parse_mode=self.parse_mode,
-                reply_markup=InlineKeyboardMarkup(keyboard) if keyboard else None
-            )
+            # Используем _edit_field для обновления поля (с поддержкой PNG)
+            await self._edit_field(query, game_id, "🎮 Игровое поле", keyboard)
 
         except Exception as e:
             logger.error(f"Ошибка при обновлении игры: {e}")
@@ -1709,17 +1877,17 @@ class SimpleBot:
         try:
             game_user = self.db.get_game_user(user.id)
             if not game_user:
-                await query.edit_message_text("❌ Игровой профиль не найден")
+                await self._edit_message_universal(query, "❌ Игровой профиль не найден", parse_mode=self.parse_mode)
                 return
 
             game = self.db.get_game_by_id(game_id)
             if not game:
-                await query.edit_message_text("❌ Игра не найдена")
+                await self._edit_message_universal(query, "❌ Игра не найдена", parse_mode=self.parse_mode)
                 return
 
             # Проверить, что игрок участвует в игре
             if game.player1_id != game_user.id and game.player2_id != game_user.id:
-                await query.edit_message_text("❌ Вы не участвуете в этой игре")
+                await self._edit_message_universal(query, "❌ Вы не участвуете в этой игре", parse_mode=self.parse_mode)
                 return
 
             # Получить информацию об игре
@@ -1730,7 +1898,6 @@ class SimpleBot:
             # Отобразить поле
             with self.db.get_session() as session:
                 engine = GameEngine(session)
-                field_display = engine.render_field(game_id)
                 actions = engine.get_available_actions(game_id, game_user.id)
 
             # Создать клавиатуру
@@ -1741,15 +1908,12 @@ class SimpleBot:
                 InlineKeyboardButton("🔙 К списку игр", callback_data="back_to_activegames")
             ])
 
-            await query.edit_message_text(
-                field_display,
-                parse_mode=self.parse_mode,
-                reply_markup=InlineKeyboardMarkup(keyboard)
-            )
+            # Используем _edit_field для показа поля
+            await self._edit_field(query, game_id, "🎮 Игровое поле", keyboard)
 
         except Exception as e:
             logger.error(f"Ошибка при показе игры: {e}")
-            await query.edit_message_text(f"❌ Ошибка: {e}")
+            await self._edit_message_universal(query, f"❌ Ошибка: {e}", parse_mode=self.parse_mode)
 
     async def surrender_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Обработчик callback для выхода из игры"""
@@ -1767,13 +1931,13 @@ class SimpleBot:
         try:
             game_user = self.db.get_game_user(user.id)
             if not game_user:
-                await query.edit_message_text("❌ Игровой профиль не найден")
+                await self._edit_message_universal(query, "❌ Игровой профиль не найден", parse_mode=self.parse_mode)
                 return
 
             # Получить информацию об игре для уведомления
             game = self.db.get_game_by_id(game_id)
             if not game:
-                await query.edit_message_text("❌ Игра не найдена")
+                await self._edit_message_universal(query, "❌ Игра не найдена", parse_mode=self.parse_mode)
                 return
 
             opponent_id = game.player2_id if game.player1_id == game_user.id else game.player1_id
@@ -1786,7 +1950,7 @@ class SimpleBot:
 
             if success:
                 response = f"✅ {message}"
-                await query.edit_message_text(response, parse_mode=self.parse_mode)
+                await self._edit_message_universal(query, response, parse_mode=self.parse_mode)
 
                 # Отправить уведомление противнику
                 if opponent_telegram_id:
@@ -1803,11 +1967,11 @@ class SimpleBot:
                     except Exception as e:
                         logger.error(f"Ошибка при отправке уведомления противнику: {e}")
             else:
-                await query.edit_message_text(f"❌ {message}", parse_mode=self.parse_mode)
+                await self._edit_message_universal(query, f"❌ {message}", parse_mode=self.parse_mode)
 
         except Exception as e:
             logger.error(f"Ошибка при выходе из игры: {e}")
-            await query.edit_message_text(f"❌ Ошибка: {e}")
+            await self._edit_message_universal(query, f"❌ Ошибка: {e}", parse_mode=self.parse_mode)
 
     async def back_to_activegames_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Обработчик callback для возврата к списку активных игр"""
@@ -1867,15 +2031,16 @@ class SimpleBot:
                     )
                 ])
 
-            await query.edit_message_text(
+            await self._edit_message_universal(
+                query,
                 response,
-                parse_mode=self.parse_mode,
-                reply_markup=InlineKeyboardMarkup(keyboard)
+                reply_markup=InlineKeyboardMarkup(keyboard),
+                parse_mode=self.parse_mode
             )
 
         except Exception as e:
             logger.error(f"Ошибка при возврате к списку игр: {e}")
-            await query.edit_message_text(f"❌ Ошибка: {e}")
+            await self._edit_message_universal(query, f"❌ Ошибка: {e}", parse_mode=self.parse_mode)
 
     async def accept_challenge_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Обработчик callback для принятия вызова на бой"""
@@ -1893,12 +2058,12 @@ class SimpleBot:
         try:
             game_user = self.db.get_game_user(user.id)
             if not game_user:
-                await query.edit_message_text("❌ Игровой профиль не найден")
+                await self._edit_message_universal(query, "❌ Игровой профиль не найден", parse_mode=self.parse_mode)
                 return
 
             game = self.db.get_game_by_id(game_id)
             if not game:
-                await query.edit_message_text("❌ Игра не найдена")
+                await self._edit_message_universal(query, "❌ Игра не найдена", parse_mode=self.parse_mode)
                 return
 
             # Принятие игры через игровой движок
@@ -1910,17 +2075,12 @@ class SimpleBot:
                 # Показать поле принявшему игрок
                 with self.db.get_session() as session:
                     engine = GameEngine(session)
-                    field_display = engine.render_field(game_id)
                     actions = engine.get_available_actions(game_id, game_user.id)
 
                 keyboard = self._create_game_keyboard(game_id, game_user.id, actions)
 
-                response = f"✅ {message}\n\n{field_display}"
-                await query.edit_message_text(
-                    response,
-                    parse_mode=self.parse_mode,
-                    reply_markup=InlineKeyboardMarkup(keyboard)
-                )
+                # Используем _edit_field для показа поля
+                await self._edit_field(query, game_id, f"✅ {message}", keyboard)
 
                 # Отправить уведомление и поле игроку, создавшему вызов
                 opponent_id = game.player1_id if game.player2_id == game_user.id else game.player2_id
@@ -1929,22 +2089,24 @@ class SimpleBot:
                 if opponent and opponent.telegram_id:
                     try:
                         opponent_actions = engine.get_available_actions(game_id, opponent_id)
-                        opponent_keyboard = self._create_game_keyboard(game_id, opponent_id, opponent_actions)
+                        opponent_keyboard = self._create_game_keyboard(game_id, opponent_id, opponent_answers)
 
-                        await context.bot.send_message(
+                        # Отправляем PNG поле противнику
+                        await self._send_field_image(
                             chat_id=opponent.telegram_id,
-                            text=f"🎮 Игра началась!\n\n{field_display}",
-                            parse_mode=self.parse_mode,
-                            reply_markup=InlineKeyboardMarkup(opponent_keyboard)
+                            game_id=game_id,
+                            caption="🎮 Игра началась!",
+                            context=context,
+                            keyboard=opponent_keyboard
                         )
                     except Exception as e:
                         logger.error(f"Ошибка при отправке уведомления о начале игры: {e}")
             else:
-                await query.edit_message_text(f"❌ {message}", parse_mode=self.parse_mode)
+                await self._edit_message_universal(query, f"❌ {message}", parse_mode=self.parse_mode)
 
         except Exception as e:
             logger.error(f"Ошибка при принятии вызова: {e}")
-            await query.edit_message_text(f"❌ Ошибка: {e}")
+            await self._edit_message_universal(query, f"❌ Ошибка: {e}", parse_mode=self.parse_mode)
 
     async def decline_challenge_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Обработчик callback для отклонения вызова на бой"""
@@ -1962,12 +2124,12 @@ class SimpleBot:
         try:
             game_user = self.db.get_game_user(user.id)
             if not game_user:
-                await query.edit_message_text("❌ Игровой профиль не найден")
+                await self._edit_message_universal(query, "❌ Игровой профиль не найден", parse_mode=self.parse_mode)
                 return
 
             game = self.db.get_game_by_id(game_id)
             if not game:
-                await query.edit_message_text("❌ Игра не найдена")
+                await self._edit_message_universal(query, "❌ Игра не найдена", parse_mode=self.parse_mode)
                 return
 
             # Отклонение вызова - удаляем игру
@@ -1976,7 +2138,8 @@ class SimpleBot:
                 success, msg, opponent_telegram_id = engine.surrender_game(game_id, game_user.id)
 
             if success:
-                await query.edit_message_text(
+                await self._edit_message_universal(
+                    query,
                     "❌ Вы отклонили вызов на бой",
                     parse_mode=self.parse_mode
                 )
@@ -1995,11 +2158,11 @@ class SimpleBot:
                     except Exception as e:
                         logger.error(f"Ошибка при отправке уведомления об отклонении: {e}")
             else:
-                await query.edit_message_text(f"❌ Ошибка: {msg}", parse_mode=self.parse_mode)
+                await self._edit_message_universal(query, f"❌ Ошибка: {msg}", parse_mode=self.parse_mode)
 
         except Exception as e:
             logger.error(f"Ошибка при отклонении вызова: {e}")
-            await query.edit_message_text(f"❌ Ошибка: {e}")
+            await self._edit_message_universal(query, f"❌ Ошибка: {e}", parse_mode=self.parse_mode)
 
     async def handle_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Обработчик всех текстовых сообщений"""
