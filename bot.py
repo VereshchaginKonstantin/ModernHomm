@@ -1456,23 +1456,48 @@ class SimpleBot:
             # Проверяем, было ли сообщение с фото
             has_photo = bool(query.message.photo)
 
-            if image_bytes and has_photo:
-                # Редактируем фото и caption
-                try:
-                    await query.edit_message_media(
-                        media=InputMediaPhoto(media=io.BytesIO(image_bytes), caption=caption, parse_mode=self.parse_mode),
-                        reply_markup=InlineKeyboardMarkup(keyboard) if keyboard else None
-                    )
-                except Exception as e:
-                    logger.error(f"Ошибка при редактировании медиа: {e}")
-                    # Fallback: редактируем только caption
-                    await query.edit_message_caption(
-                        caption=caption,
-                        parse_mode=self.parse_mode,
-                        reply_markup=InlineKeyboardMarkup(keyboard) if keyboard else None
-                    )
+            if image_bytes:
+                if has_photo:
+                    # Редактируем фото и caption
+                    try:
+                        await query.edit_message_media(
+                            media=InputMediaPhoto(media=io.BytesIO(image_bytes), caption=caption, parse_mode=self.parse_mode),
+                            reply_markup=InlineKeyboardMarkup(keyboard) if keyboard else None
+                        )
+                    except Exception as e:
+                        logger.error(f"Ошибка при редактировании медиа: {e}")
+                        # Fallback: редактируем только caption
+                        await query.edit_message_caption(
+                            caption=caption,
+                            parse_mode=self.parse_mode,
+                            reply_markup=InlineKeyboardMarkup(keyboard) if keyboard else None
+                        )
+                else:
+                    # Было текстовое сообщение, но теперь есть изображение
+                    # Удаляем старое сообщение и отправляем новое с фото
+                    try:
+                        chat_id = query.message.chat_id
+                        await query.message.delete()
+                        await query.message.get_bot().send_photo(
+                            chat_id=chat_id,
+                            photo=io.BytesIO(image_bytes),
+                            caption=caption,
+                            parse_mode=self.parse_mode,
+                            reply_markup=InlineKeyboardMarkup(keyboard) if keyboard else None
+                        )
+                    except Exception as e:
+                        logger.error(f"Ошибка при замене текста на фото: {e}")
+                        # Fallback: оставляем текстовое сообщение
+                        with self.db.get_session() as session:
+                            engine = GameEngine(session)
+                            field_display = engine.render_field(game_id)
+                            await query.edit_message_text(
+                                text=f"{caption}\n\n{field_display}",
+                                parse_mode=self.parse_mode,
+                                reply_markup=InlineKeyboardMarkup(keyboard) if keyboard else None
+                            )
             else:
-                # Текстовое отображение
+                # Нет изображения - текстовое отображение
                 with self.db.get_session() as session:
                     engine = GameEngine(session)
                     field_display = engine.render_field(game_id)

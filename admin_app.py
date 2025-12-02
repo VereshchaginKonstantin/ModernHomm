@@ -20,6 +20,35 @@ app.secret_key = 'your-secret-key-change-in-production'
 app.config['UPLOAD_FOLDER'] = 'static/unit_images'
 app.config['MAX_CONTENT_LENGTH'] = 5 * 1024 * 1024  # 5 MB max file size
 
+def calculate_unit_price(damage: int, defense: int, health: int, unit_range: int, speed: int, luck: float, crit_chance: float) -> Decimal:
+    """
+    Автоматический расчет стоимости юнита по формуле:
+    Урон + Защита + Здоровье + 100*Дальность + 50*Скорость + 100*Удача + 100*Крит
+
+    Args:
+        damage: Урон юнита
+        defense: Защита юнита
+        health: Здоровье юнита
+        unit_range: Дальность атаки
+        speed: Скорость перемещения
+        luck: Вероятность удачи (0-1)
+        crit_chance: Вероятность критического удара (0-1)
+
+    Returns:
+        Decimal: Рассчитанная стоимость
+    """
+    price = (
+        damage +
+        defense +
+        health +
+        100 * unit_range +
+        50 * speed +
+        100 * luck +
+        100 * crit_chance
+    )
+    return Decimal(str(round(price, 2)))
+
+
 # Инициализировать базу данных
 config_path = 'config.json'
 try:
@@ -417,8 +446,9 @@ UNIT_FORM_TEMPLATE = """
                 </div>
 
                 <div class="form-group">
-                    <label>Цена *</label>
-                    <input type="number" name="price" class="form-control" value="{{ unit.price if unit else '100' }}" step="0.01" min="0" required>
+                    <label>Цена (автоматически рассчитывается)</label>
+                    <input type="text" class="form-control" value="{{ unit.price if unit else 'Рассчитается автоматически' }}" readonly disabled style="background-color: #e9ecef; cursor: not-allowed;">
+                    <small class="form-text text-muted">Формула: Урон + Защита + Здоровье + 100×Дальность + 50×Скорость + 100×Удача + 100×Крит</small>
                 </div>
 
                 <div class="form-group">
@@ -738,22 +768,34 @@ def create_unit():
     if request.method == 'POST':
         try:
             with db.get_session() as session:
+                # Получить параметры юнита
+                damage = int(request.form['damage'])
+                defense = int(request.form['defense'])
+                health = int(request.form['health'])
+                unit_range = int(request.form['range'])
+                speed = int(request.form['speed'])
+                luck = float(request.form['luck'])
+                crit_chance = float(request.form['crit_chance'])
+
+                # Автоматически рассчитать стоимость
+                price = calculate_unit_price(damage, defense, health, unit_range, speed, luck, crit_chance)
+
                 unit = Unit(
                     name=request.form['name'],
                     icon=request.form['icon'],
-                    price=Decimal(request.form['price']),
-                    damage=int(request.form['damage']),
-                    defense=int(request.form['defense']),
-                    health=int(request.form['health']),
-                    range=int(request.form['range']),
-                    speed=int(request.form['speed']),
-                    luck=Decimal(request.form['luck']),
-                    crit_chance=Decimal(request.form['crit_chance'])
+                    price=price,
+                    damage=damage,
+                    defense=defense,
+                    health=health,
+                    range=unit_range,
+                    speed=speed,
+                    luck=Decimal(str(luck)),
+                    crit_chance=Decimal(str(crit_chance))
                 )
                 session.add(unit)
                 session.flush()
 
-            flash(f'Юнит "{request.form["name"]}" успешно создан!', 'success')
+            flash(f'Юнит "{request.form["name"]}" успешно создан с автоматически рассчитанной стоимостью {price}!', 'success')
             return redirect(url_for('units_list'))
         except Exception as e:
             flash(f'Ошибка при создании юнита: {str(e)}', 'error')
@@ -772,19 +814,31 @@ def edit_unit(unit_id):
 
         if request.method == 'POST':
             try:
+                # Получить параметры юнита
+                damage = int(request.form['damage'])
+                defense = int(request.form['defense'])
+                health = int(request.form['health'])
+                unit_range = int(request.form['range'])
+                speed = int(request.form['speed'])
+                luck = float(request.form['luck'])
+                crit_chance = float(request.form['crit_chance'])
+
+                # Автоматически рассчитать стоимость
+                price = calculate_unit_price(damage, defense, health, unit_range, speed, luck, crit_chance)
+
                 unit.name = request.form['name']
                 unit.icon = request.form['icon']
-                unit.price = Decimal(request.form['price'])
-                unit.damage = int(request.form['damage'])
-                unit.defense = int(request.form['defense'])
-                unit.health = int(request.form['health'])
-                unit.range = int(request.form['range'])
-                unit.speed = int(request.form['speed'])
-                unit.luck = Decimal(request.form['luck'])
-                unit.crit_chance = Decimal(request.form['crit_chance'])
+                unit.price = price
+                unit.damage = damage
+                unit.defense = defense
+                unit.health = health
+                unit.range = unit_range
+                unit.speed = speed
+                unit.luck = Decimal(str(luck))
+                unit.crit_chance = Decimal(str(crit_chance))
                 session.flush()
 
-                flash(f'Юнит "{unit.name}" успешно обновлен!', 'success')
+                flash(f'Юнит "{unit.name}" успешно обновлен с автоматически рассчитанной стоимостью {price}!', 'success')
                 return redirect(url_for('units_list'))
             except Exception as e:
                 flash(f'Ошибка при обновлении юнита: {str(e)}', 'error')
