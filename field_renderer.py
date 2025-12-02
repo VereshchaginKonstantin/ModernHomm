@@ -149,19 +149,39 @@ class FieldRenderer:
                     text_y = cell_y + (self.CELL_SIZE - text_height) // 2 - 10
                     draw.text((text_x, text_y), text, fill=self.COLOR_TEXT, font=font)
 
-                # Нарисовать количество юнитов внизу клетки
+                # Нарисовать количество юнитов и индикатор куража внизу клетки
                 count_text = f"x{alive_count}"
-                bbox = draw.textbbox((0, 0), count_text, font=font)
-                count_width = bbox[2] - bbox[0]
-                count_x = cell_x + (self.CELL_SIZE - count_width) // 2
-                count_y = cell_y + self.CELL_SIZE - 25
+
+                # Добавить индикатор куража
+                morale_indicator = ""
+                morale_color = self.COLOR_TEXT
+                if battle_unit.morale > 100:
+                    morale_indicator = " +"
+                    morale_color = (0, 128, 0)  # Зеленый
+                elif battle_unit.morale < 100:
+                    morale_indicator = " -"
+                    morale_color = (255, 0, 0)  # Красный
+
+                full_text = count_text + morale_indicator
+                bbox = draw.textbbox((0, 0), full_text, font=font)
+                text_width = bbox[2] - bbox[0]
+                text_x = cell_x + (self.CELL_SIZE - text_width) // 2
+                text_y = cell_y + self.CELL_SIZE - 25
 
                 # Фон для текста
                 draw.rectangle(
-                    [count_x - 5, count_y - 2, count_x + count_width + 5, count_y + 20],
+                    [text_x - 5, text_y - 2, text_x + text_width + 5, text_y + 20],
                     fill=(255, 255, 255, 200)
                 )
-                draw.text((count_x, count_y), count_text, fill=self.COLOR_TEXT, font=font)
+
+                # Нарисовать количество юнитов
+                count_bbox = draw.textbbox((0, 0), count_text, font=font)
+                count_width = count_bbox[2] - count_bbox[0]
+                draw.text((text_x, text_y), count_text, fill=self.COLOR_TEXT, font=font)
+
+                # Нарисовать индикатор куража цветом
+                if morale_indicator:
+                    draw.text((text_x + count_width, text_y), morale_indicator, fill=morale_color, font=font)
 
         # Конвертировать изображение в байты
         output = io.BytesIO()

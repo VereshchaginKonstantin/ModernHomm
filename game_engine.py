@@ -380,18 +380,24 @@ class GameEngine:
         # Применить урон
         units_killed = self._apply_damage(target, damage)
 
+        # Обновить кураж (morale) в зависимости от результата атаки
+        if units_killed > 0:
+            # Атакующий убил юнитов - повышение куража
+            attacker.morale = 110  # Коэффициент 1.1 (бонус +10%)
+            # Защищающийся потерял юнитов - понижение куража
+            if target.total_count > 0:  # Если юнит еще жив
+                target.morale = 90  # Коэффициент 0.9 (штраф -10%)
+
+        # Обновить усталость
+        if is_crit or damage > 0:
+            attacker.fatigue = max(float(attacker.fatigue) - 5, 0)
+        else:
+            attacker.fatigue = min(float(attacker.fatigue) + 10, 100)
+
         # Удалить мёртвый юнит из базы (если все юниты убиты)
         if target.total_count == 0:
             logger.info(f"Удаление мёртвого юнита: id={target.id}, position=({target.position_x}, {target.position_y})")
             self.db.delete(target)
-
-        # Обновить мораль и усталость
-        if is_crit or damage > 0:
-            attacker.morale = min(float(attacker.morale) + 10, 100)
-            attacker.fatigue = max(float(attacker.fatigue) - 5, 0)
-        else:
-            attacker.fatigue = min(float(attacker.fatigue) + 10, 100)
-            attacker.morale = max(float(attacker.morale) - 5, 0)
 
         attacker.has_moved = 1
 
@@ -566,7 +572,7 @@ class GameEngine:
                 position_y=y,
                 total_count=user_unit.count,
                 remaining_hp=unit_type.health,
-                morale=0,
+                morale=100,  # Изначально 100 = коэффициент 1.0 (нейтральный)
                 fatigue=0,
                 has_moved=0
             )
@@ -726,9 +732,8 @@ class GameEngine:
         fatigue_penalty = float(attacker.fatigue) / 100 * 0.3
         fatigue_modifier = 1.0 - fatigue_penalty
 
-        # Модификатор морали на базовый урон (мораль увеличивает урон до +20%)
-        morale_bonus = float(attacker.morale) / 100 * 0.2
-        morale_modifier = 1.0 + morale_bonus
+        # Модификатор куража (morale: 100 = 1.0, 110 = 1.1, 90 = 0.9)
+        morale_modifier = float(attacker.morale) / 100
 
         # Применяем модификаторы к базовому урону
         damage = int(base_damage_with_variance * fatigue_modifier * morale_modifier)
@@ -780,8 +785,9 @@ class GameEngine:
         if attacker.fatigue > 0:
             log += f"2️⃣ Усталость: {float(attacker.fatigue):.1f}% → штраф -{fatigue_penalty*100:.1f}% (x{fatigue_modifier:.2f})\n"
 
-        if attacker.morale > 0:
-            log += f"3️⃣ Мораль: {float(attacker.morale):.1f}% → бонус +{morale_bonus*100:.1f}% (x{morale_modifier:.2f})\n"
+        if attacker.morale != 100:
+            morale_display = "повышен" if attacker.morale > 100 else "понижен"
+            log += f"3️⃣ Кураж: {morale_display} (x{morale_modifier:.2f})\n"
 
         log += f"   = {damage_before_modifiers} урона\n"
 
