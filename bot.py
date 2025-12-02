@@ -2391,12 +2391,65 @@ class SimpleBot:
             )
             return
 
-        # Проверить аргументы команды
+        # Если аргументов нет - показать список всех пользователей
+        if len(context.args) == 0:
+            try:
+                with self.db.get_session() as session:
+                    from db.models import GameUser
+
+                    # Получить всех пользователей
+                    all_users = session.query(GameUser).order_by(GameUser.name).all()
+
+                    if not all_users:
+                        await update.message.reply_text(
+                            "❌ В базе данных нет игроков.",
+                            parse_mode=self.parse_mode
+                        )
+                        return
+
+                    # Формируем сообщение со списком пользователей
+                    response = "💰 <b>Выберите игрока для добавления средств:</b>\n\n"
+
+                    # Создаем кнопки для каждого пользователя
+                    keyboard = []
+                    for i, player in enumerate(all_users, 1):
+                        safe_name = html.escape(player.name)
+
+                        response += (
+                            f"{i}. {safe_name}\n"
+                            f"   💵 Баланс: ${float(player.balance):.2f}\n"
+                            f"   🏆 {player.wins}W / 💔 {player.losses}L\n\n"
+                        )
+
+                        keyboard.append([
+                            InlineKeyboardButton(
+                                f"💰 {player.name} (${float(player.balance):.2f})",
+                                callback_data=f"addmoney_user:{player.telegram_id}"
+                            )
+                        ])
+
+                    await update.message.reply_text(
+                        response,
+                        parse_mode=self.parse_mode,
+                        reply_markup=InlineKeyboardMarkup(keyboard)
+                    )
+                    return
+
+            except Exception as e:
+                logger.error(f"Ошибка при получении списка игроков: {e}")
+                await update.message.reply_text(
+                    "❌ Произошла ошибка при получении списка игроков",
+                    parse_mode=self.parse_mode
+                )
+                return
+
+        # Проверить аргументы команды (старый формат)
         if len(context.args) != 2:
             await update.message.reply_text(
                 "❌ Неверный формат команды.\n"
                 "Использование: /addmoney <логин> <сумма>\n"
-                "Пример: /addmoney Player1 1000",
+                "Пример: /addmoney Player1 1000\n\n"
+                "Или используйте /addmoney без параметров для выбора из списка.",
                 parse_mode=self.parse_mode
             )
             return
@@ -2446,6 +2499,160 @@ class SimpleBot:
             )
 
             logger.info(f"Администратор {username} добавил ${amount} игроку {target_name} (ID: {target_user.telegram_id})")
+
+    async def addmoney_select_user_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Обработчик выбора пользователя для добавления денег"""
+        query = update.callback_query
+        await query.answer()
+
+        username = update.effective_user.username
+        if not self.is_admin(username):
+            await query.edit_message_text("❌ У вас нет доступа к этой функции.")
+            return
+
+        # Парсим данные из callback (формат: addmoney_user:telegram_id)
+        data = query.data.split(':')
+        if len(data) != 2 or data[0] != 'addmoney_user':
+            return
+
+        target_telegram_id = int(data[1])
+
+        # Получить информацию о пользователе
+        with self.db.get_session() as session:
+            from db.models import GameUser
+
+            target_user = session.query(GameUser).filter_by(telegram_id=target_telegram_id).first()
+
+            if not target_user:
+                await query.edit_message_text("❌ Игрок не найден.")
+                return
+
+            # Экранируем имя
+            safe_name = html.escape(target_user.name)
+
+            # Формируем кнопки с суммами
+            keyboard = [
+                [InlineKeyboardButton(
+                    "💵 +1,000",
+                    callback_data=f"addmoney_amount:{target_telegram_id}:1000"
+                )],
+                [InlineKeyboardButton(
+                    "💰 +5,000",
+                    callback_data=f"addmoney_amount:{target_telegram_id}:5000"
+                )],
+                [InlineKeyboardButton(
+                    "💎 +10,000",
+                    callback_data=f"addmoney_amount:{target_telegram_id}:10000"
+                )],
+                [InlineKeyboardButton(
+                    "🔙 Назад",
+                    callback_data="addmoney_back"
+                )]
+            ]
+
+            await query.edit_message_text(
+                f"💰 <b>Добавление средств игроку</b>\n\n"
+                f"Игрок: {safe_name}\n"
+                f"Текущий баланс: ${float(target_user.balance):.2f}\n\n"
+                f"Выберите сумму для добавления:",
+                parse_mode=self.parse_mode,
+                reply_markup=InlineKeyboardMarkup(keyboard)
+            )
+
+    async def addmoney_confirm_amount_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Обработчик подтверждения суммы и добавления денег"""
+        query = update.callback_query
+        await query.answer()
+
+        username = update.effective_user.username
+        if not self.is_admin(username):
+            await query.edit_message_text("❌ У вас нет доступа к этой функции.")
+            return
+
+        # Парсим данные из callback (формат: addmoney_amount:telegram_id:amount)
+        data = query.data.split(':')
+        if len(data) != 3 or data[0] != 'addmoney_amount':
+            return
+
+        target_telegram_id = int(data[1])
+        amount = float(data[2])
+
+        # Добавить деньги
+        with self.db.get_session() as session:
+            from db.models import GameUser
+            from decimal import Decimal
+
+            target_user = session.query(GameUser).filter_by(telegram_id=target_telegram_id).first()
+
+            if not target_user:
+                await query.edit_message_text("❌ Игрок не найден.")
+                return
+
+            # Добавить деньги
+            old_balance = float(target_user.balance)
+            target_user.balance += Decimal(str(amount))
+            new_balance = float(target_user.balance)
+
+            session.commit()
+
+            # Экранируем имя
+            safe_name = html.escape(target_user.name)
+
+            # Отправить подтверждение
+            await query.edit_message_text(
+                f"✅ <b>Средства успешно добавлены!</b>\n\n"
+                f"Игрок: {safe_name}\n"
+                f"Сумма: +${amount:.2f}\n"
+                f"Баланс: ${old_balance:.2f} → ${new_balance:.2f}",
+                parse_mode=self.parse_mode
+            )
+
+            logger.info(f"Администратор {username} добавил ${amount} игроку {target_user.name} (ID: {target_telegram_id})")
+
+    async def addmoney_back_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Обработчик кнопки 'Назад' в addmoney"""
+        query = update.callback_query
+        await query.answer()
+
+        username = update.effective_user.username
+        if not self.is_admin(username):
+            await query.edit_message_text("❌ У вас нет доступа к этой функции.")
+            return
+
+        # Показать список пользователей снова
+        with self.db.get_session() as session:
+            from db.models import GameUser
+
+            all_users = session.query(GameUser).order_by(GameUser.name).all()
+
+            if not all_users:
+                await query.edit_message_text("❌ В базе данных нет игроков.")
+                return
+
+            response = "💰 <b>Выберите игрока для добавления средств:</b>\n\n"
+
+            keyboard = []
+            for i, player in enumerate(all_users, 1):
+                safe_name = html.escape(player.name)
+
+                response += (
+                    f"{i}. {safe_name}\n"
+                    f"   💵 Баланс: ${float(player.balance):.2f}\n"
+                    f"   🏆 {player.wins}W / 💔 {player.losses}L\n\n"
+                )
+
+                keyboard.append([
+                    InlineKeyboardButton(
+                        f"💰 {player.name} (${float(player.balance):.2f})",
+                        callback_data=f"addmoney_user:{player.telegram_id}"
+                    )
+                ])
+
+            await query.edit_message_text(
+                response,
+                parse_mode=self.parse_mode,
+                reply_markup=InlineKeyboardMarkup(keyboard)
+            )
 
     async def admin_unit_icons_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Показать список юнитов для настройки эмодзи"""
@@ -2604,6 +2811,11 @@ class SimpleBot:
         application.add_handler(CallbackQueryHandler(self.admin_edit_icon_callback, pattern=r'^admin_edit_icon:'))
         application.add_handler(CallbackQueryHandler(self.admin_create_unit_callback, pattern=r'^admin_create_unit$'))
         application.add_handler(CallbackQueryHandler(self.admin_back_callback, pattern=r'^admin_back$'))
+
+        # AddMoney callback обработчики
+        application.add_handler(CallbackQueryHandler(self.addmoney_select_user_callback, pattern=r'^addmoney_user:'))
+        application.add_handler(CallbackQueryHandler(self.addmoney_confirm_amount_callback, pattern=r'^addmoney_amount:'))
+        application.add_handler(CallbackQueryHandler(self.addmoney_back_callback, pattern=r'^addmoney_back$'))
 
         # Регистрация обработчиков callback (порядок важен для правильной маршрутизации)
         application.add_handler(CallbackQueryHandler(self.buy_unit_callback, pattern=r'^buy_unit:'))

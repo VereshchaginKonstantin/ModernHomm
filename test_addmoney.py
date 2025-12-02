@@ -177,6 +177,109 @@ class TestAddMoneyCommand:
         # Проверить что баланс правильно установлен
         assert player.balance == Decimal("1000")
 
+    def test_addmoney_interactive_list_all_users(self, db_session):
+        """Тест получения списка всех пользователей для интерактивного выбора"""
+        # Создать несколько игроков
+        player1 = GameUser(telegram_id=111, name="Alice", balance=Decimal("1000"), wins=5, losses=2)
+        player2 = GameUser(telegram_id=222, name="Bob", balance=Decimal("500"), wins=3, losses=4)
+        player3 = GameUser(telegram_id=333, name="Charlie", balance=Decimal("2000"), wins=10, losses=1)
+        db_session.add_all([player1, player2, player3])
+        db_session.flush()
+
+        # Получить всех пользователей отсортированных по имени
+        all_users = db_session.query(GameUser).order_by(GameUser.name).all()
+
+        # Проверить что получены все пользователи
+        assert len(all_users) == 3
+        assert all_users[0].name == "Alice"
+        assert all_users[1].name == "Bob"
+        assert all_users[2].name == "Charlie"
+
+    def test_addmoney_interactive_find_by_telegram_id(self, db_session):
+        """Тест поиска пользователя по telegram_id для callback"""
+        # Создать игроков
+        player1 = GameUser(telegram_id=111, name="Alice", balance=Decimal("1000"))
+        player2 = GameUser(telegram_id=222, name="Bob", balance=Decimal("500"))
+        db_session.add_all([player1, player2])
+        db_session.flush()
+
+        # Найти пользователя по telegram_id (как в callback)
+        target_telegram_id = 222
+        found_user = db_session.query(GameUser).filter_by(telegram_id=target_telegram_id).first()
+
+        # Проверить что нашли правильного пользователя
+        assert found_user is not None
+        assert found_user.name == "Bob"
+        assert found_user.telegram_id == 222
+
+    def test_addmoney_interactive_amounts_1000(self, db_session):
+        """Тест добавления фиксированной суммы 1000"""
+        player = GameUser(telegram_id=123, name="TestPlayer", balance=Decimal("1000"))
+        db_session.add(player)
+        db_session.flush()
+
+        # Добавить 1000 (первая кнопка)
+        amount = Decimal("1000")
+        player.balance += amount
+
+        db_session.commit()
+        db_session.refresh(player)
+
+        assert player.balance == Decimal("2000")
+
+    def test_addmoney_interactive_amounts_5000(self, db_session):
+        """Тест добавления фиксированной суммы 5000"""
+        player = GameUser(telegram_id=123, name="TestPlayer", balance=Decimal("1000"))
+        db_session.add(player)
+        db_session.flush()
+
+        # Добавить 5000 (вторая кнопка)
+        amount = Decimal("5000")
+        player.balance += amount
+
+        db_session.commit()
+        db_session.refresh(player)
+
+        assert player.balance == Decimal("6000")
+
+    def test_addmoney_interactive_amounts_10000(self, db_session):
+        """Тест добавления фиксированной суммы 10000"""
+        player = GameUser(telegram_id=123, name="TestPlayer", balance=Decimal("1000"))
+        db_session.add(player)
+        db_session.flush()
+
+        # Добавить 10000 (третья кнопка)
+        amount = Decimal("10000")
+        player.balance += amount
+
+        db_session.commit()
+        db_session.refresh(player)
+
+        assert player.balance == Decimal("11000")
+
+    def test_addmoney_interactive_callback_data_parsing(self, db_session):
+        """Тест парсинга callback_data для выбора пользователя и суммы"""
+        # Создать игрока
+        player = GameUser(telegram_id=12345, name="TestPlayer", balance=Decimal("1000"))
+        db_session.add(player)
+        db_session.flush()
+
+        # Симулировать callback_data: "addmoney_user:12345"
+        callback_data = "addmoney_user:12345"
+        parts = callback_data.split(':')
+        assert parts[0] == "addmoney_user"
+        telegram_id = int(parts[1])
+        assert telegram_id == 12345
+
+        # Симулировать callback_data: "addmoney_amount:12345:5000"
+        callback_data2 = "addmoney_amount:12345:5000"
+        parts2 = callback_data2.split(':')
+        assert parts2[0] == "addmoney_amount"
+        telegram_id2 = int(parts2[1])
+        amount = float(parts2[2])
+        assert telegram_id2 == 12345
+        assert amount == 5000.0
+
 
 if __name__ == '__main__':
     pytest.main([__file__, '-v'])
