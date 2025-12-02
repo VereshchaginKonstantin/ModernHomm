@@ -733,6 +733,12 @@ class GameEngine:
         # Применяем модификаторы к базовому урону
         damage = int(base_damage_with_variance * fatigue_modifier * morale_modifier)
 
+        # Проверка эффективности против определенного типа юнита
+        is_effective = False
+        if attacker_unit.effective_against_unit_id == target_unit.id:
+            damage = int(damage * 1.5)
+            is_effective = True
+
         # Модификатор критического шанса (кураж увеличивает, усталость уменьшает)
         base_crit_chance = float(attacker_unit.crit_chance)
         crit_modifier = base_crit_chance
@@ -778,6 +784,10 @@ class GameEngine:
             log += f"3️⃣ Мораль: {float(attacker.morale):.1f}% → бонус +{morale_bonus*100:.1f}% (x{morale_modifier:.2f})\n"
 
         log += f"   = {damage_before_modifiers} урона\n"
+
+        # Информация об эффективности
+        if is_effective:
+            log += f"\n⚡ ЭФФЕКТИВНОСТЬ: {attacker_unit.name} эффективен против {target_unit.name}! x1.5 = {damage} урона\n"
 
         # Информация о критическом ударе
         log += f"\n4️⃣ Шанс крита: {base_crit_chance*100:.1f}%"
