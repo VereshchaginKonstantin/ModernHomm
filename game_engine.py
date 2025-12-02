@@ -6,9 +6,9 @@
 import logging
 import random
 from datetime import datetime, timedelta
-from typing import List, Tuple, Optional, Dict
+from typing import List, Tuple, Optional, Dict, Set
 from sqlalchemy.orm import Session
-from db.models import Game, GameStatus, BattleUnit, GameUser, UserUnit, Field, Unit, UnitCustomIcon
+from db.models import Game, GameStatus, BattleUnit, GameUser, UserUnit, Field, Unit, UnitCustomIcon, Obstacle
 
 logger = logging.getLogger(__name__)
 
@@ -124,6 +124,9 @@ class GameEngine:
         self._place_units(game, player1, player1_units, 1)
         self._place_units(game, player2, player2_units, 2)
 
+        # Сгенерировать препятствия
+        self._generate_obstacles(game)
+
         self.db.commit()
         return game, f"Игра создана! Ожидание принятия игроком {player2_username}"
 
@@ -204,6 +207,15 @@ class GameEngine:
         if occupied:
             return False, "Эта позиция занята", False
 
+        # Проверить, что на цели нет препятствия
+        obstacle = self.db.query(Obstacle).filter(
+            Obstacle.game_id == game_id,
+            Obstacle.position_x == target_x,
+            Obstacle.position_y == target_y
+        ).first()
+        if obstacle:
+            return False, "На этой позиции препятствие", False
+
         # Получить характеристики юнита
         unit = battle_unit.user_unit.unit
 
@@ -270,6 +282,10 @@ class GameEngine:
                 alive_count = self._count_alive_units(bu)
                 if alive_count > 0:
                     occupied_positions.add((bu.position_x, bu.position_y))
+
+        # Добавить препятствия
+        for obstacle in game.obstacles:
+            occupied_positions.add((obstacle.position_x, obstacle.position_y))
 
         # BFS для поиска всех достижимых клеток
         available_cells = []
@@ -354,11 +370,20 @@ class GameEngine:
         if distance > attacker_unit.range:
             return False, f"Цель слишком далеко! Дальность атаки: {attacker_unit.range}, расстояние: {distance}", False
 
+        # Проверить линию видимости
+        if not self._has_line_of_sight(attacker.position_x, attacker.position_y, target.position_x, target.position_y, game):
+            return False, "Нет линии видимости! Между вами и целью есть препятствие или другой юнит.", False
+
         # Рассчитать урон
         damage, is_crit, combat_log = self._calculate_damage(attacker, target)
 
         # Применить урон
         units_killed = self._apply_damage(target, damage)
+
+        # Удалить мёртвый юнит из базы (если все юниты убиты)
+        if target.total_count == 0:
+            logger.info(f"Удаление мёртвого юнита: id={target.id}, position=({target.position_x}, {target.position_y})")
+            self.db.delete(target)
 
         # Обновить мораль и усталость
         if is_crit or damage > 0:
@@ -546,6 +571,134 @@ class GameEngine:
                 has_moved=0
             )
             self.db.add(battle_unit)
+
+    def _generate_obstacles(self, game: Game):
+        """
+        Генерировать случайные препятствия на игровом поле
+
+        Args:
+            game: Игра
+        """
+        field = game.field
+
+        # Количество препятствий зависит от размера поля (примерно 10-15% клеток)
+        num_obstacles = random.randint(field.width * field.height // 10, field.width * field.height // 7)
+
+        # Получить занятые позиции (юниты)
+        occupied = set()
+        for battle_unit in game.battle_units:
+            occupied.add((battle_unit.position_x, battle_unit.position_y))
+
+        # Сгенерировать препятствия
+        obstacles_generated = 0
+        attempts = 0
+        max_attempts = num_obstacles * 3  # Максимум попыток
+
+        while obstacles_generated < num_obstacles and attempts < max_attempts:
+            x = random.randint(0, field.width - 1)
+            y = random.randint(0, field.height - 1)
+
+            # Проверить, что позиция не занята
+            if (x, y) not in occupied:
+                obstacle = Obstacle(
+                    game_id=game.id,
+                    position_x=x,
+                    position_y=y
+                )
+                self.db.add(obstacle)
+                occupied.add((x, y))
+                obstacles_generated += 1
+
+            attempts += 1
+
+    def _has_line_of_sight(self, start_x: int, start_y: int, end_x: int, end_y: int, game: Game) -> bool:
+        """
+        Проверить, есть ли линия видимости между двумя точками
+
+        Использует алгоритм Bresenham для проверки препятствий на линии между точками.
+        Диагональные атаки разрешены, если на пути нет препятствий или других юнитов.
+
+        Args:
+            start_x: Начальная координата X
+            start_y: Начальная координата Y
+            end_x: Конечная координата X
+            end_y: Конечная координата Y
+            game: Игра
+
+        Returns:
+            bool: True если линия видимости есть, False иначе
+        """
+        # Получить все занятые позиции (юниты и препятствия)
+        occupied = set()
+
+        # Добавить позиции юнитов
+        for battle_unit in game.battle_units:
+            alive_count = self._count_alive_units(battle_unit)
+            if alive_count > 0:
+                occupied.add((battle_unit.position_x, battle_unit.position_y))
+
+        # Добавить позиции препятствий
+        for obstacle in game.obstacles:
+            occupied.add((obstacle.position_x, obstacle.position_y))
+
+        # Убрать начальную и конечную точки из проверки
+        if (start_x, start_y) in occupied:
+            occupied.remove((start_x, start_y))
+        if (end_x, end_y) in occupied:
+            occupied.remove((end_x, end_y))
+
+        # Алгоритм Bresenham для проверки линии
+        dx = abs(end_x - start_x)
+        dy = abs(end_y - start_y)
+
+        x = start_x
+        y = start_y
+
+        x_inc = 1 if end_x > start_x else -1
+        y_inc = 1 if end_y > start_y else -1
+
+        # Если линия горизонтальная или вертикальная
+        if dx == 0:  # Вертикальная линия
+            for i in range(1, dy):
+                y += y_inc
+                if (x, y) in occupied:
+                    return False
+            return True
+
+        if dy == 0:  # Горизонтальная линия
+            for i in range(1, dx):
+                x += x_inc
+                if (x, y) in occupied:
+                    return False
+            return True
+
+        # Для диагональных линий используем Bresenham
+        if dx > dy:
+            error = dx / 2
+            while x != end_x:
+                x += x_inc
+                error -= dy
+                if error < 0:
+                    y += y_inc
+                    error += dx
+
+                # Не проверяем конечную точку
+                if x != end_x and (x, y) in occupied:
+                    return False
+        else:
+            error = dy / 2
+            while y != end_y:
+                y += y_inc
+                error -= dx
+                if error < 0:
+                    x += x_inc
+                    error += dy
+
+                # Не проверяем конечную точку
+                if y != end_y and (x, y) in occupied:
+                    return False
+
+        return True
 
     def _calculate_damage(self, attacker: BattleUnit, target: BattleUnit) -> Tuple[int, bool, str]:
         """

@@ -168,6 +168,7 @@ class Game(Base):
     current_player = relationship("GameUser", foreign_keys=[current_player_id])
     winner = relationship("GameUser", foreign_keys=[winner_id])
     battle_units = relationship("BattleUnit", back_populates="game", cascade="all, delete-orphan")
+    obstacles = relationship("Obstacle", back_populates="game", cascade="all, delete-orphan")
 
     def __repr__(self):
         return f"<Game(id={self.id}, status={self.status.value}, player1_id={self.player1_id}, player2_id={self.player2_id})>"
@@ -209,3 +210,24 @@ class BattleUnit(Base):
 
     def __repr__(self):
         return f"<BattleUnit(id={self.id}, game_id={self.game_id}, position=({self.position_x}, {self.position_y}), total_count={self.total_count})>"
+
+
+class Obstacle(Base):
+    """Модель препятствия на игровом поле"""
+    __tablename__ = 'obstacles'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    game_id = Column(Integer, ForeignKey('games.id', ondelete='CASCADE'), nullable=False, index=True)
+    position_x = Column(Integer, nullable=False)
+    position_y = Column(Integer, nullable=False)
+
+    # Связи
+    game = relationship("Game", back_populates="obstacles")
+
+    __table_args__ = (
+        CheckConstraint('position_x >= 0', name='obstacle_positive_x'),
+        CheckConstraint('position_y >= 0', name='obstacle_positive_y'),
+    )
+
+    def __repr__(self):
+        return f"<Obstacle(id={self.id}, game_id={self.game_id}, position=({self.position_x}, {self.position_y}))>"
