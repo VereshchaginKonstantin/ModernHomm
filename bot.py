@@ -2378,6 +2378,75 @@ class SimpleBot:
             reply_markup=reply_markup
         )
 
+    async def addmoney_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Команда для добавления денег игроку (только для okarien)"""
+        user = update.effective_user
+        username = user.username
+
+        # Проверить права доступа
+        if not self.is_admin(username):
+            await update.message.reply_text(
+                "❌ У вас нет доступа к этой команде.",
+                parse_mode=self.parse_mode
+            )
+            return
+
+        # Проверить аргументы команды
+        if len(context.args) != 2:
+            await update.message.reply_text(
+                "❌ Неверный формат команды.\n"
+                "Использование: /addmoney <логин> <сумма>\n"
+                "Пример: /addmoney Player1 1000",
+                parse_mode=self.parse_mode
+            )
+            return
+
+        target_name = context.args[0]
+        try:
+            amount = float(context.args[1])
+            if amount <= 0:
+                await update.message.reply_text(
+                    "❌ Сумма должна быть положительным числом.",
+                    parse_mode=self.parse_mode
+                )
+                return
+        except ValueError:
+            await update.message.reply_text(
+                "❌ Неверный формат суммы. Используйте число.",
+                parse_mode=self.parse_mode
+            )
+            return
+
+        # Найти пользователя по имени
+        with self.db.get_session() as session:
+            from db.models import GameUser
+            from decimal import Decimal
+
+            target_user = session.query(GameUser).filter(GameUser.name == target_name).first()
+
+            if not target_user:
+                await update.message.reply_text(
+                    f"❌ Игрок с логином '{target_name}' не найден.",
+                    parse_mode=self.parse_mode
+                )
+                return
+
+            # Добавить деньги
+            old_balance = float(target_user.balance)
+            target_user.balance += Decimal(str(amount))
+            new_balance = float(target_user.balance)
+
+            session.commit()
+
+            # Отправить подтверждение
+            await update.message.reply_text(
+                f"✅ Успешно добавлено ${amount:.2f} игроку {target_name}.\n"
+                f"Баланс: ${old_balance:.2f} → ${new_balance:.2f}",
+                parse_mode=self.parse_mode
+            )
+
+            logger.info(f"Администратор {username} добавил ${amount} игроку {target_name} (ID: {target_user.telegram_id})")
+
     async def admin_unit_icons_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Показать список юнитов для настройки эмодзи"""
         query = update.callback_query
@@ -2527,6 +2596,7 @@ class SimpleBot:
 
         # Админские команды
         application.add_handler(CommandHandler("admin", self.admin_command))
+        application.add_handler(CommandHandler("addmoney", self.addmoney_command))
 
         # Регистрация обработчиков callback (порядок важен для правильной маршрутизации)
         # Админские callback обработчики
