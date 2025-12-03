@@ -8,10 +8,11 @@ import json
 import logging
 import os
 import html
+import re
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, CallbackQueryHandler
 from db import Database
-from db.models import GameUser, Unit, UnitCustomIcon
+from db.models import GameUser, Unit, UnitCustomIcon, BattleUnit, Game
 from decimal import Decimal
 from game_engine import GameEngine, coords_to_chess, chess_to_coords
 from field_renderer import FieldRenderer
@@ -1751,13 +1752,50 @@ class SimpleBot:
 
                     if success:
                         logger.info(f"game_move: перемещение успешно, обновляем поле")
+
+                        # Получаем информацию о перемещенном юните
+                        battle_unit = session.query(BattleUnit).filter_by(id=unit_id).first()
+                        unit_name = battle_unit.user_unit.unit.name if battle_unit and battle_unit.user_unit else "Юнит"
+
+                        # Вычисляем старую позицию (берем из message, который содержит старую позицию)
+                        # message имеет формат: "Юнит перемещен с (x1, y1) на (x2, y2)"
+                        match = re.search(r'\((\d+),\s*(\d+)\)\s+на\s+\((\d+),\s*(\d+)\)', message)
+                        if match:
+                            old_x, old_y = int(match.group(1)), int(match.group(2))
+                            new_x, new_y = int(match.group(3)), int(match.group(4))
+                            from_cell = coords_to_chess(old_x, old_y)
+                            to_cell = coords_to_chess(new_x, new_y)
+                            movement_message = f"📍 {unit_name} переместился с {from_cell} на {to_cell}"
+                        else:
+                            from_cell = coords_to_chess(target_x - 1, target_y)  # Приблизительно
+                            to_cell = coords_to_chess(target_x, target_y)
+                            movement_message = f"📍 {unit_name} переместился на {to_cell}"
+
                         actions = engine.get_available_actions(game_id, game_user.id)
                         keyboard = self._create_game_keyboard(game_id, game_user.id, actions)
 
                         # Используем _edit_field для обновления поля с PNG
-                        await self._edit_field(query, game_id, f"✅ {message}", keyboard)
+                        await self._edit_field(query, game_id, f"✅ {movement_message}", keyboard)
 
-                        # Если ход сменился, отправить уведомление противнику
+                        # Отправить уведомление о перемещении противнику
+                        game = session.query(Game).filter_by(id=game_id).first()
+                        if game:
+                            opponent_id = game.player2_id if game.player1_id == game_user.id else game.player1_id
+                            opponent = session.query(GameUser).filter_by(id=opponent_id).first()
+
+                            if opponent and opponent.telegram_id:
+                                try:
+                                    # Отправляем уведомление о перемещении противнику
+                                    await context.bot.send_message(
+                                        chat_id=opponent.telegram_id,
+                                        text=f"👁️ Противник: {movement_message}",
+                                        parse_mode=self.parse_mode
+                                    )
+                                    logger.info(f"Уведомление о перемещении отправлено противнику {opponent.telegram_id}")
+                                except Exception as e:
+                                    logger.error(f"Ошибка при отправке уведомления о перемещении противнику: {e}")
+
+                        # Если ход сменился, отправить уведомление противнику с полем
                         if turn_switched:
                             game = self.db.get_game_by_id(game_id)
                             opponent_id = game.player2_id if game.player1_id == game_user.id else game.player1_id
