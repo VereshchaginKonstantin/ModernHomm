@@ -20,10 +20,10 @@ app.secret_key = 'your-secret-key-change-in-production'
 app.config['UPLOAD_FOLDER'] = 'static/unit_images'
 app.config['MAX_CONTENT_LENGTH'] = 5 * 1024 * 1024  # 5 MB max file size
 
-def calculate_unit_price(damage: int, defense: int, health: int, unit_range: int, speed: int, luck: float, crit_chance: float) -> Decimal:
+def calculate_unit_price(damage: int, defense: int, health: int, unit_range: int, speed: int, luck: float, crit_chance: float, dodge_chance: float) -> Decimal:
     """
     Автоматический расчет стоимости юнита по формуле:
-    Урон + Защита + Здоровье + 100*Дальность + 50*Скорость + 100*Удача + 100*Крит
+    Урон + Защита + Здоровье + 100*Дальность + 50*Скорость + 100*Удача + 100*Крит + 100*Уклонение
 
     Args:
         damage: Урон юнита
@@ -33,6 +33,7 @@ def calculate_unit_price(damage: int, defense: int, health: int, unit_range: int
         speed: Скорость перемещения
         luck: Вероятность удачи (0-1)
         crit_chance: Вероятность критического удара (0-1)
+        dodge_chance: Вероятность уклонения (0-0.9)
 
     Returns:
         Decimal: Рассчитанная стоимость
@@ -44,7 +45,8 @@ def calculate_unit_price(damage: int, defense: int, health: int, unit_range: int
         100 * unit_range +
         50 * speed +
         100 * luck +
-        100 * crit_chance
+        100 * crit_chance +
+        100 * dodge_chance
     )
     return Decimal(str(round(price, 2)))
 
@@ -487,9 +489,9 @@ UNIT_FORM_TEMPLATE = """
                 </div>
 
                 <div class="form-group">
-                    <label>Шанс уклонения (0-1, например 0.2 = 20%) *</label>
-                    <input type="number" name="dodge_chance" class="form-control" value="{{ unit.dodge_chance if unit else '0' }}" step="0.01" min="0" max="1" required>
-                    <small class="form-text text-muted">Вероятность полностью избежать урона от атаки</small>
+                    <label>Шанс уклонения (0-0.9, например 0.2 = 20%, максимум 90%) *</label>
+                    <input type="number" name="dodge_chance" class="form-control" value="{{ unit.dodge_chance if unit else '0' }}" step="0.01" min="0" max="0.9" required>
+                    <small class="form-text text-muted">Вероятность полностью избежать урона от атаки (максимум 90%)</small>
                 </div>
 
                 <div class="form-group form-check">
@@ -799,8 +801,13 @@ def create_unit():
                 is_kamikaze = 1 if request.form.get('is_kamikaze') else 0
                 counterattack_chance = float(request.form['counterattack_chance'])
 
+                # Валидация: dodge_chance не более 0.9
+                if dodge_chance > 0.9:
+                    flash('Ошибка: Шанс уклонения не может быть больше 90% (0.9)', 'error')
+                    return redirect(url_for('create_unit'))
+
                 # Автоматически рассчитать стоимость
-                price = calculate_unit_price(damage, defense, health, unit_range, speed, luck, crit_chance)
+                price = calculate_unit_price(damage, defense, health, unit_range, speed, luck, crit_chance, dodge_chance)
 
                 unit = Unit(
                     name=request.form['name'],
@@ -851,8 +858,13 @@ def edit_unit(unit_id):
                 is_kamikaze = 1 if request.form.get('is_kamikaze') else 0
                 counterattack_chance = float(request.form['counterattack_chance'])
 
+                # Валидация: dodge_chance не более 0.9
+                if dodge_chance > 0.9:
+                    flash('Ошибка: Шанс уклонения не может быть больше 90% (0.9)', 'error')
+                    return redirect(url_for('edit_unit', unit_id=unit_id))
+
                 # Автоматически рассчитать стоимость
-                price = calculate_unit_price(damage, defense, health, unit_range, speed, luck, crit_chance)
+                price = calculate_unit_price(damage, defense, health, unit_range, speed, luck, crit_chance, dodge_chance)
 
                 unit.name = request.form['name']
                 unit.icon = request.form['icon']
