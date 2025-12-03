@@ -719,6 +719,27 @@ class SimpleBot:
                 parse_mode=self.parse_mode
             )
 
+    def _calculate_army_cost(self, telegram_id: int) -> Decimal:
+        """
+        Вычисление стоимости армии игрока
+
+        Args:
+            telegram_id: ID игрока в Telegram
+
+        Returns:
+            Decimal: Общая стоимость всех юнитов игрока
+        """
+        user_units = self.db.get_user_units(telegram_id)
+        army_cost = Decimal('0')
+
+        for user_unit in user_units:
+            if user_unit.count > 0:
+                unit = self.db.get_unit_by_id(user_unit.unit_type_id)
+                if unit:
+                    army_cost += unit.price * user_unit.count
+
+        return army_cost
+
     def _format_search_results(self, username: str, messages: list, total_count: int, page: int) -> str:
         """Форматирование результатов поиска"""
         start_num = page * 10 + 1
@@ -1045,6 +1066,47 @@ class SimpleBot:
                     parse_mode=self.parse_mode
                 )
                 return
+
+            # Получаем противника для проверки стоимости армий
+            opponent_user = None
+            with self.db.get_session() as session:
+                from db.models import GameUser as GU
+                opponent_user = session.query(GU).filter_by(name=opponent_username).first()
+
+            if not opponent_user:
+                await update.message.reply_text(
+                    f"❌ Игрок {opponent_username} не найден.",
+                    parse_mode=self.parse_mode
+                )
+                return
+
+            # Проверка разницы в стоимости армий (±50%)
+            challenger_army_cost = self._calculate_army_cost(user.id)
+            opponent_army_cost = self._calculate_army_cost(opponent_user.telegram_id)
+
+            # Если хотя бы у одного игрока есть армия, проверяем разницу
+            if challenger_army_cost > 0 or opponent_army_cost > 0:
+                # Вычисляем максимальную допустимую разницу (50%)
+                max_cost = max(challenger_army_cost, opponent_army_cost)
+                min_cost = min(challenger_army_cost, opponent_army_cost)
+
+                # Если одна из армий нулевая, считаем разницу 100%
+                if min_cost == 0:
+                    difference_percent = 100
+                else:
+                    difference_percent = ((max_cost - min_cost) / min_cost) * 100
+
+                if difference_percent > 50:
+                    await update.message.reply_text(
+                        f"❌ <b>Невозможно начать бой!</b>\n\n"
+                        f"Разница в стоимости армий слишком большая ({difference_percent:.0f}%).\n\n"
+                        f"💰 Ваша армия: <code>${challenger_army_cost}</code>\n"
+                        f"💰 Армия противника: <code>${opponent_army_cost}</code>\n\n"
+                        f"Максимально допустимая разница: 50%\n"
+                        f"Купите или продайте юнитов, чтобы уравнять армии.",
+                        parse_mode=self.parse_mode
+                    )
+                    return
 
             # Создание игры через игровой движок
             with self.db.get_session() as session:
@@ -1983,6 +2045,35 @@ class SimpleBot:
                     parse_mode=self.parse_mode
                 )
                 return
+
+            # Проверка разницы в стоимости армий (±50%)
+            challenger_army_cost = self._calculate_army_cost(user.id)
+            opponent_army_cost = self._calculate_army_cost(opponent.telegram_id)
+
+            # Если хотя бы у одного игрока есть армия, проверяем разницу
+            if challenger_army_cost > 0 or opponent_army_cost > 0:
+                # Вычисляем максимальную допустимую разницу (50%)
+                max_cost = max(challenger_army_cost, opponent_army_cost)
+                min_cost = min(challenger_army_cost, opponent_army_cost)
+
+                # Если одна из армий нулевая, считаем разницу 100%
+                if min_cost == 0:
+                    difference_percent = 100
+                else:
+                    difference_percent = ((max_cost - min_cost) / min_cost) * 100
+
+                if difference_percent > 50:
+                    safe_opponent_name = html.escape(opponent.name)
+                    await query.edit_message_text(
+                        f"❌ <b>Невозможно начать бой с {safe_opponent_name}!</b>\n\n"
+                        f"Разница в стоимости армий слишком большая ({difference_percent:.0f}%).\n\n"
+                        f"💰 Ваша армия: <code>${challenger_army_cost}</code>\n"
+                        f"💰 Армия противника: <code>${opponent_army_cost}</code>\n\n"
+                        f"Максимально допустимая разница: 50%\n"
+                        f"Купите или продайте юнитов, чтобы уравнять армии.",
+                        parse_mode=self.parse_mode
+                    )
+                    return
 
             # Создание игры через игровой движок (по имени)
             with self.db.get_session() as session:
