@@ -2196,7 +2196,7 @@ class SimpleBot:
                 if opponent and opponent.telegram_id:
                     try:
                         opponent_actions = engine.get_available_actions(game_id, opponent_id)
-                        opponent_keyboard = self._create_game_keyboard(game_id, opponent_id, opponent_answers)
+                        opponent_keyboard = self._create_game_keyboard(game_id, opponent_id, opponent_actions)
 
                         # Отправляем PNG поле противнику
                         await self._send_field_image(
