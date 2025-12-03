@@ -1785,11 +1785,17 @@ class SimpleBot:
 
                             if opponent and opponent.telegram_id:
                                 try:
+                                    # Создаем кнопку "Текущая игра"
+                                    current_game_keyboard = InlineKeyboardMarkup([
+                                        [InlineKeyboardButton("🎮 Текущая игра", callback_data=f"show_game:{game_id}")]
+                                    ])
+
                                     # Отправляем уведомление о перемещении противнику
                                     await context.bot.send_message(
                                         chat_id=opponent.telegram_id,
                                         text=f"👁️ Противник: {movement_message}",
-                                        parse_mode=self.parse_mode
+                                        parse_mode=self.parse_mode,
+                                        reply_markup=current_game_keyboard
                                     )
                                     logger.info(f"Уведомление о перемещении отправлено противнику {opponent.telegram_id}")
                                 except Exception as e:
@@ -1911,12 +1917,18 @@ class SimpleBot:
                         # Используем _edit_field для обновления поля с PNG
                         await self._edit_field(query, game_id, "✅ Атака выполнена!", keyboard)
 
+                        # Создаем кнопку "Текущая игра"
+                        current_game_keyboard = InlineKeyboardMarkup([
+                            [InlineKeyboardButton("🎮 Текущая игра", callback_data=f"show_game:{game_id}")]
+                        ])
+
                         # Отправить лог боя отдельным сообщением атакующему
                         try:
                             await context.bot.send_message(
                                 chat_id=update.effective_chat.id,
                                 text=message,
-                                parse_mode='HTML'
+                                parse_mode='HTML',
+                                reply_markup=current_game_keyboard
                             )
                         except Exception as e:
                             logger.error(f"Ошибка при отправке лога боя атакующему: {e}")
@@ -1930,7 +1942,8 @@ class SimpleBot:
                                 await context.bot.send_message(
                                     chat_id=opponent.telegram_id,
                                     text=message,
-                                    parse_mode='HTML'
+                                    parse_mode='HTML',
+                                    reply_markup=current_game_keyboard
                                 )
                             except Exception as e:
                                 logger.error(f"Ошибка при отправке лога боя противнику: {e}")
