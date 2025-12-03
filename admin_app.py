@@ -457,6 +457,12 @@ UNIT_FORM_TEMPLATE = """
                 </div>
 
                 <div class="form-group">
+                    <label>Описание</label>
+                    <textarea name="description" class="form-control" rows="3" maxlength="1000" placeholder="Смешное описание юнита...">{{ unit.description if unit and unit.description else '' }}</textarea>
+                    <small class="form-text text-muted">Краткое и желательно смешное описание юнита (до 1000 символов)</small>
+                </div>
+
+                <div class="form-group">
                     <label>Цена (автоматически рассчитывается)</label>
                     <input type="text" class="form-control" value="{{ unit.price if unit else 'Рассчитается автоматически' }}" readonly disabled style="background-color: #e9ecef; cursor: not-allowed;">
                     <small class="form-text text-muted">Формула: Урон + Защита + Здоровье + 100×Дальность + 50×Скорость + 100×Удача + 100×Крит</small>
@@ -821,6 +827,7 @@ def create_unit():
                 unit = Unit(
                     name=request.form['name'],
                     icon=request.form['icon'],
+                    description=request.form.get('description', ''),
                     price=price,
                     damage=damage,
                     defense=defense,
@@ -877,6 +884,7 @@ def edit_unit(unit_id):
 
                 unit.name = request.form['name']
                 unit.icon = request.form['icon']
+                unit.description = request.form.get('description', '')
                 unit.price = price
                 unit.damage = damage
                 unit.defense = defense

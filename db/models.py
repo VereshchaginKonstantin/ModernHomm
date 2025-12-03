@@ -70,6 +70,7 @@ class Unit(Base):
     name = Column(String(255), nullable=False, unique=True)
     icon = Column(String(10), nullable=False, default='🎮')  # Иконка для отображения на поле
     image_path = Column(String(512), nullable=True)  # Путь к изображению юнита
+    description = Column(String(1000), nullable=True)  # Описание юнита
     price = Column(Numeric(12, 2), nullable=False)
     damage = Column(Integer, nullable=False)
     defense = Column(Integer, nullable=False, default=0)  # Показатель защиты
