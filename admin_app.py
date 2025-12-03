@@ -20,10 +20,11 @@ app.secret_key = 'your-secret-key-change-in-production'
 app.config['UPLOAD_FOLDER'] = 'static/unit_images'
 app.config['MAX_CONTENT_LENGTH'] = 5 * 1024 * 1024  # 5 MB max file size
 
-def calculate_unit_price(damage: int, defense: int, health: int, unit_range: int, speed: int, luck: float, crit_chance: float, dodge_chance: float) -> Decimal:
+def calculate_unit_price(damage: int, defense: int, health: int, unit_range: int, speed: int, luck: float, crit_chance: float, dodge_chance: float, is_kamikaze: int = 0) -> Decimal:
     """
     Автоматический расчет стоимости юнита по формуле:
     Урон + Защита + Здоровье + 100*Дальность + 50*Скорость + 100*Удача + 100*Крит + 100*Уклонение
+    Если юнит камикадзе (is_kamikaze=1), стоимость делится на 5
 
     Args:
         damage: Урон юнита
@@ -34,6 +35,7 @@ def calculate_unit_price(damage: int, defense: int, health: int, unit_range: int
         luck: Вероятность удачи (0-1)
         crit_chance: Вероятность критического удара (0-1)
         dodge_chance: Вероятность уклонения (0-0.9)
+        is_kamikaze: Юнит-камикадзе (0 или 1)
 
     Returns:
         Decimal: Рассчитанная стоимость
@@ -48,6 +50,11 @@ def calculate_unit_price(damage: int, defense: int, health: int, unit_range: int
         100 * crit_chance +
         100 * dodge_chance
     )
+
+    # Если юнит камикадзе, делим стоимость на 5
+    if is_kamikaze:
+        price = price / 5
+
     return Decimal(str(round(price, 2)))
 
 
@@ -807,7 +814,7 @@ def create_unit():
                     return redirect(url_for('create_unit'))
 
                 # Автоматически рассчитать стоимость
-                price = calculate_unit_price(damage, defense, health, unit_range, speed, luck, crit_chance, dodge_chance)
+                price = calculate_unit_price(damage, defense, health, unit_range, speed, luck, crit_chance, dodge_chance, is_kamikaze)
 
                 unit = Unit(
                     name=request.form['name'],
@@ -864,7 +871,7 @@ def edit_unit(unit_id):
                     return redirect(url_for('edit_unit', unit_id=unit_id))
 
                 # Автоматически рассчитать стоимость
-                price = calculate_unit_price(damage, defense, health, unit_range, speed, luck, crit_chance, dodge_chance)
+                price = calculate_unit_price(damage, defense, health, unit_range, speed, luck, crit_chance, dodge_chance, is_kamikaze)
 
                 unit.name = request.form['name']
                 unit.icon = request.form['icon']
