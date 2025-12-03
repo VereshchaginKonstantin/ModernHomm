@@ -1736,7 +1736,31 @@ class SimpleBot:
                         keyboard = self._create_game_keyboard(game_id, game_user.id, actions)
 
                         # Используем _edit_field для обновления поля с PNG
-                        await self._edit_field(query, game_id, message, keyboard)
+                        await self._edit_field(query, game_id, "✅ Атака выполнена!", keyboard)
+
+                        # Отправить лог боя отдельным сообщением атакующему
+                        try:
+                            await context.bot.send_message(
+                                chat_id=update.effective_chat.id,
+                                text=message,
+                                parse_mode='HTML'
+                            )
+                        except Exception as e:
+                            logger.error(f"Ошибка при отправке лога боя атакующему: {e}")
+
+                        # Отправить лог боя защищающемуся игроку
+                        opponent_id = game.player2_id if game.player1_id == game_user.id else game.player1_id
+                        opponent = self.db.get_game_user_by_id(opponent_id)
+
+                        if opponent and opponent.telegram_id:
+                            try:
+                                await context.bot.send_message(
+                                    chat_id=opponent.telegram_id,
+                                    text=message,
+                                    parse_mode='HTML'
+                                )
+                            except Exception as e:
+                                logger.error(f"Ошибка при отправке лога боя противнику: {e}")
 
                         # Если ход сменился, отправить уведомление противнику
                         if turn_switched:
