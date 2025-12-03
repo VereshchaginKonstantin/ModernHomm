@@ -723,6 +723,19 @@ class GameEngine:
         # Подсчет количества атакующих юнитов
         alive_attackers = self._count_alive_units(attacker)
 
+        # Проверка уклонения (dodge)
+        dodge_chance = float(target_unit.dodge_chance)
+        dodge_roll = random.random()
+        is_dodged = dodge_roll < dodge_chance
+
+        if is_dodged:
+            # Уклонение успешно - урон 0
+            log = f"⚔️ {attacker_unit.name} (x{alive_attackers}) атакует {target_unit.name}\n\n"
+            log += f"🌀 УКЛОНЕНИЕ! {target_unit.name} уклонился от атаки!\n"
+            log += f"   Шанс уклонения: {dodge_chance*100:.1f}% (бросок: {dodge_roll*100:.1f}%)\n"
+            log += f"   ⚡ ИТОГОВЫЙ УРОН: 0"
+            return 0, False, log
+
         # Базовый урон с небольшой случайностью (±10%)
         base_damage = attacker_unit.damage
         damage_variance = random.uniform(0.9, 1.1)

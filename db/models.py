@@ -78,6 +78,7 @@ class Unit(Base):
     speed = Column(Integer, nullable=False, default=1)  # Число перемещений за ход
     luck = Column(Numeric(5, 4), nullable=False, default=0)  # Вероятность максимального урона (0-1)
     crit_chance = Column(Numeric(5, 4), nullable=False, default=0)  # Вероятность критического удара (0-1)
+    dodge_chance = Column(Numeric(5, 4), nullable=False, default=0)  # Вероятность уклонения от удара (0-1)
     effective_against_unit_id = Column(Integer, ForeignKey('units.id'), nullable=True)  # Юнит, против которого эффективен (x1.5 урона)
 
     # Связь с пользовательской иконкой

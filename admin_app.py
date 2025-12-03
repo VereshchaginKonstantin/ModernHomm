@@ -486,6 +486,12 @@ UNIT_FORM_TEMPLATE = """
                     <input type="number" name="crit_chance" class="form-control" value="{{ unit.crit_chance if unit else '0' }}" step="0.01" min="0" max="1" required>
                 </div>
 
+                <div class="form-group">
+                    <label>Шанс уклонения (0-1, например 0.2 = 20%) *</label>
+                    <input type="number" name="dodge_chance" class="form-control" value="{{ unit.dodge_chance if unit else '0' }}" step="0.01" min="0" max="1" required>
+                    <small class="form-text text-muted">Вероятность полностью избежать урона от атаки</small>
+                </div>
+
                 <div style="margin-top: 20px;">
                     <button type="submit" class="btn btn-primary">Сохранить</button>
                     <a href="{{ url_for('units_list') }}" class="btn" style="background-color: #95a5a6; color: white; text-decoration: none; margin-left: 10px;">Отмена</a>
@@ -776,6 +782,7 @@ def create_unit():
                 speed = int(request.form['speed'])
                 luck = float(request.form['luck'])
                 crit_chance = float(request.form['crit_chance'])
+                dodge_chance = float(request.form['dodge_chance'])
 
                 # Автоматически рассчитать стоимость
                 price = calculate_unit_price(damage, defense, health, unit_range, speed, luck, crit_chance)
@@ -790,7 +797,8 @@ def create_unit():
                     range=unit_range,
                     speed=speed,
                     luck=Decimal(str(luck)),
-                    crit_chance=Decimal(str(crit_chance))
+                    crit_chance=Decimal(str(crit_chance)),
+                    dodge_chance=Decimal(str(dodge_chance))
                 )
                 session.add(unit)
                 session.flush()
@@ -822,6 +830,7 @@ def edit_unit(unit_id):
                 speed = int(request.form['speed'])
                 luck = float(request.form['luck'])
                 crit_chance = float(request.form['crit_chance'])
+                dodge_chance = float(request.form['dodge_chance'])
 
                 # Автоматически рассчитать стоимость
                 price = calculate_unit_price(damage, defense, health, unit_range, speed, luck, crit_chance)
@@ -836,6 +845,7 @@ def edit_unit(unit_id):
                 unit.speed = speed
                 unit.luck = Decimal(str(luck))
                 unit.crit_chance = Decimal(str(crit_chance))
+                unit.dodge_chance = Decimal(str(dodge_chance))
                 session.flush()
 
                 flash(f'Юнит "{unit.name}" успешно обновлен с автоматически рассчитанной стоимостью {price}!', 'success')
@@ -855,6 +865,7 @@ def edit_unit(unit_id):
         _ = unit.speed
         _ = unit.luck
         _ = unit.crit_chance
+        _ = unit.dodge_chance
         session.expunge_all()
 
     return render_template_string(UNIT_FORM_TEMPLATE, unit=unit, active_page='units')
