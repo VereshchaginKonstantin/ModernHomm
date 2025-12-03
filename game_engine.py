@@ -467,6 +467,52 @@ class GameEngine:
         result_msg = f"Атака выполнена!\n{combat_log}\nУбито юнитов: {units_killed}"
         return True, result_msg, turn_switched
 
+    def skip_unit_turn(self, game_id: int, player_id: int, unit_id: int) -> Tuple[bool, str, bool]:
+        """
+        Пропустить ход юнита
+
+        Args:
+            game_id: ID игры
+            player_id: ID игрока
+            unit_id: ID юнита
+
+        Returns:
+            Tuple[bool, str, bool]: Успех, сообщение, сменился ли ход
+        """
+        game = self.db.query(Game).filter_by(id=game_id).first()
+        if not game:
+            return False, "Игра не найдена", False
+
+        if game.status != GameStatus.IN_PROGRESS:
+            return False, "Игра не в процессе", False
+
+        if game.current_player_id != player_id:
+            return False, "Сейчас не ваш ход", False
+
+        unit = self.db.query(BattleUnit).filter_by(id=unit_id, game_id=game_id).first()
+        if not unit:
+            return False, "Юнит не найден", False
+
+        if unit.player_id != player_id:
+            return False, "Это не ваш юнит", False
+
+        if unit.has_moved:
+            return False, "Этот юнит уже совершил ход", False
+
+        # Пометить юнита как сделавшего ход
+        unit.has_moved = 1
+
+        # Проверить, все ли юниты походили
+        turn_switched = False
+        if self._all_units_moved(game, player_id):
+            self._switch_turn(game)
+            turn_switched = True
+
+        game.last_move_at = datetime.utcnow()
+        self.db.commit()
+
+        return True, "Ход пропущен", turn_switched
+
     def render_field(self, game_id: int) -> str:
         """
         Отрисовка игрового поля

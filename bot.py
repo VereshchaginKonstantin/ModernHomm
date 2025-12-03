@@ -1570,6 +1570,10 @@ class SimpleBot:
                         )
                     ])
 
+            # Кнопка пропуска хода
+            if unit_data.get("can_move") or targets:
+                keyboard.append([InlineKeyboardButton("⏭️ Пропустить ход", callback_data=f"game_skip:{game_id}:{unit_id}")])
+
             keyboard.append([InlineKeyboardButton("◀️ Назад", callback_data=f"game_refresh:{game_id}")])
             keyboard.append([InlineKeyboardButton("🏃 Выйти из схватки", callback_data=f"surrender:{game_id}")])
 
@@ -1787,6 +1791,60 @@ class SimpleBot:
 
         except Exception as e:
             logger.error(f"Ошибка при атаке: {e}")
+            await query.answer(f"❌ Ошибка: {e}", show_alert=True)
+
+    async def game_skip_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Обработчик callback для пропуска хода юнита"""
+        query = update.callback_query
+        await query.answer()
+
+        data = query.data.split(':')
+        if len(data) != 3 or data[0] != 'game_skip':
+            return
+
+        game_id = int(data[1])
+        unit_id = int(data[2])
+        user = update.effective_user
+
+        try:
+            game_user = self.db.get_game_user(user.id)
+            with self.db.get_session() as session:
+                engine = GameEngine(session)
+                success, message, turn_switched = engine.skip_unit_turn(game_id, game_user.id, unit_id)
+
+                if success:
+                    # Обновить поле
+                    actions = engine.get_available_actions(game_id, game_user.id)
+                    keyboard = self._create_game_keyboard(game_id, game_user.id, actions)
+
+                    await self._edit_field(query, game_id, "⏭️ Ход пропущен", keyboard)
+
+                    # Если ход сменился, отправить уведомление противнику
+                    if turn_switched:
+                        game = self.db.get_game_by_id(game_id)
+                        opponent_id = game.player2_id if game.player1_id == game_user.id else game.player1_id
+                        opponent = self.db.get_game_user_by_id(opponent_id)
+
+                        if opponent and opponent.telegram_id:
+                            try:
+                                opponent_actions = engine.get_available_actions(game_id, opponent_id)
+                                opponent_keyboard = self._create_game_keyboard(game_id, opponent_id, opponent_actions)
+
+                                # Отправляем PNG поле противнику
+                                await self._send_field_image(
+                                    chat_id=opponent.telegram_id,
+                                    game_id=game_id,
+                                    caption="🎮 Теперь ваш ход!",
+                                    context=context,
+                                    keyboard=opponent_keyboard
+                                )
+                            except Exception as e:
+                                logger.error(f"Ошибка при отправке уведомления противнику: {e}")
+                else:
+                    await query.answer(f"❌ {message}", show_alert=True)
+
+        except Exception as e:
+            logger.error(f"Ошибка при пропуске хода: {e}")
             await query.answer(f"❌ Ошибка: {e}", show_alert=True)
 
     async def game_refresh_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -2860,6 +2918,7 @@ class SimpleBot:
         application.add_handler(CallbackQueryHandler(self.game_unit_callback, pattern=r'^game_unit:'))
         application.add_handler(CallbackQueryHandler(self.game_move_callback, pattern=r'^game_move:'))
         application.add_handler(CallbackQueryHandler(self.game_attack_callback, pattern=r'^game_attack:'))
+        application.add_handler(CallbackQueryHandler(self.game_skip_callback, pattern=r'^game_skip:'))
         application.add_handler(CallbackQueryHandler(self.game_refresh_callback, pattern=r'^game_refresh:'))
 
         # Обработчик текстовых сообщений
