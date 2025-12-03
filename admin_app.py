@@ -76,10 +76,11 @@ db = Database(db_url)
 HEADER_TEMPLATE = """
 <nav class="navbar">
     <div class="nav-links">
-        <a href="{{ url_for('index') }}" class="nav-link {{ 'active' if active_page == 'images' else '' }}">Картинки юнитов</a>
-        <a href="{{ url_for('units_list') }}" class="nav-link {{ 'active' if active_page == 'units' else '' }}">Управление юнитами</a>
+        <a href="{{ url_for('index') }}" class="nav-link {{ 'active' if active_page == 'home' else '' }}">Список юнитов</a>
+        <a href="{{ url_for('admin_images') }}" class="nav-link {{ 'active' if active_page == 'images' else '' }}">Картинки</a>
+        <a href="{{ url_for('admin_units_list') }}" class="nav-link {{ 'active' if active_page == 'units' else '' }}">Управление</a>
         <a href="{{ url_for('help_page') }}" class="nav-link {{ 'active' if active_page == 'help' else '' }}">Справка</a>
-        <a href="{{ url_for('export_units') }}" class="nav-link">Экспорт юнитов</a>
+        <a href="{{ url_for('export_units') }}" class="nav-link">Экспорт</a>
     </div>
 </nav>
 """
@@ -347,6 +348,63 @@ ADMIN_TEMPLATE = """
 </html>
 """
 
+# Шаблон для главной страницы (полный список юнитов)
+COMPREHENSIVE_UNITS_TEMPLATE = """
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Список юнитов</title>
+""" + BASE_STYLE + """
+</head>
+<body>
+""" + HEADER_TEMPLATE + """
+    <div class="content">
+        <h1>Полный список юнитов</h1>
+
+        {% for unit in units %}
+        <div style="background: white; padding: 20px; border-radius: 8px; margin-bottom: 20px;">
+            <div style="display: flex; gap: 20px; align-items: start;">
+                {% if unit.has_image %}
+                <div style="flex-shrink: 0;">
+                    <img src="/static/unit_images/{{ unit.id }}.png" alt="{{ unit.name }}" style="width: 150px; height: 150px; object-fit: cover; border-radius: 8px; border: 2px solid #ddd;">
+                </div>
+                {% endif %}
+
+                <div style="flex-grow: 1;">
+                    <h2 style="margin: 0 0 10px 0; color: #2c3e50;">{{ unit.icon }} {{ unit.name }}</h2>
+
+                    {% if unit.description %}
+                    <p style="color: #7f8c8d; font-style: italic; margin: 0 0 15px 0;">{{ unit.description }}</p>
+                    {% endif %}
+
+                    <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px;">
+                        <div><strong>💰 Цена:</strong> {{ unit.price }}</div>
+                        <div><strong>⚔️ Урон:</strong> {{ unit.damage }}</div>
+                        <div><strong>🛡️ Защита:</strong> {{ unit.defense }}</div>
+                        <div><strong>❤️ Здоровье:</strong> {{ unit.health }}</div>
+                        <div><strong>🎯 Дальность:</strong> {{ unit.range }}</div>
+                        <div><strong>⚡ Скорость:</strong> {{ unit.speed }}</div>
+                        <div><strong>🍀 Удача:</strong> {{ "%.2f"|format(unit.luck|float * 100) }}%</div>
+                        <div><strong>💥 Крит:</strong> {{ "%.2f"|format(unit.crit_chance|float * 100) }}%</div>
+                        <div><strong>🏃 Уклонение:</strong> {{ "%.2f"|format(unit.dodge_chance|float * 100) }}%</div>
+                        {% if unit.is_kamikaze %}
+                        <div><strong>💣 Камикадзе:</strong> Да</div>
+                        {% endif %}
+                        {% if unit.counterattack_chance > 0 %}
+                        <div><strong>🔄 Контратака:</strong> {{ "%.2f"|format(unit.counterattack_chance|float * 100) }}%</div>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+</body>
+</html>
+"""
+
 # Шаблон для управления юнитами
 UNITS_TEMPLATE = """
 <!DOCTYPE html>
@@ -371,7 +429,7 @@ UNITS_TEMPLATE = """
         {% endwith %}
 
         <div style="margin-bottom: 20px;">
-            <a href="{{ url_for('create_unit') }}" class="btn btn-primary">Создать нового юнита</a>
+            <a href="{{ url_for('admin_create_unit') }}" class="btn btn-primary">Создать нового юнита</a>
             <a href="{{ url_for('import_page') }}" class="btn btn-primary" style="margin-left: 10px;">Импортировать юнитов</a>
         </div>
 
@@ -407,8 +465,8 @@ UNITS_TEMPLATE = """
                     <td>{{ "%.2f"|format(unit.luck|float) }}</td>
                     <td>{{ "%.2f"|format(unit.crit_chance|float * 100) }}%</td>
                     <td>
-                        <a href="{{ url_for('edit_unit', unit_id=unit.id) }}" class="btn" style="background-color: #3498db; color: white; padding: 5px 10px; text-decoration: none; border-radius: 4px; font-size: 12px;">Редактировать</a>
-                        <form action="{{ url_for('delete_unit', unit_id=unit.id) }}" method="POST" style="display: inline;">
+                        <a href="{{ url_for('admin_edit_unit', unit_id=unit.id) }}" class="btn" style="background-color: #3498db; color: white; padding: 5px 10px; text-decoration: none; border-radius: 4px; font-size: 12px;">Редактировать</a>
+                        <form action="{{ url_for('admin_delete_unit', unit_id=unit.id) }}" method="POST" style="display: inline;">
                             <button type="submit" class="btn btn-danger" style="padding: 5px 10px; font-size: 12px;" onclick="return confirm('Удалить юнита {{ unit.name }}?')">Удалить</button>
                         </form>
                     </td>
@@ -524,7 +582,7 @@ UNIT_FORM_TEMPLATE = """
 
                 <div style="margin-top: 20px;">
                     <button type="submit" class="btn btn-primary">Сохранить</button>
-                    <a href="{{ url_for('units_list') }}" class="btn" style="background-color: #95a5a6; color: white; text-decoration: none; margin-left: 10px;">Отмена</a>
+                    <a href="{{ url_for('admin_units_list') }}" class="btn" style="background-color: #95a5a6; color: white; text-decoration: none; margin-left: 10px;">Отмена</a>
                 </div>
             </form>
         </div>
@@ -680,7 +738,7 @@ IMPORT_TEMPLATE = """
                 </div>
                 <div style="margin-top: 20px;">
                     <button type="submit" class="btn btn-danger" onclick="return confirm('Вы уверены? Это заменит всех существующих юнитов!')">Импортировать</button>
-                    <a href="{{ url_for('units_list') }}" class="btn" style="background-color: #95a5a6; color: white; text-decoration: none; margin-left: 10px;">Отмена</a>
+                    <a href="{{ url_for('admin_units_list') }}" class="btn" style="background-color: #95a5a6; color: white; text-decoration: none; margin-left: 10px;">Отмена</a>
                 </div>
             </form>
         </div>
@@ -692,7 +750,41 @@ IMPORT_TEMPLATE = """
 
 @app.route('/')
 def index():
-    """Главная страница админки"""
+    """Главная страница - полный список юнитов"""
+    with db.get_session() as session:
+        units = session.query(Unit).all()
+
+        # Принудительно загружаем все атрибуты перед закрытием сессии
+        for unit in units:
+            _ = unit.id
+            _ = unit.name
+            _ = unit.icon
+            _ = unit.image_path
+            _ = unit.description
+            _ = unit.price
+            _ = unit.damage
+            _ = unit.defense
+            _ = unit.range
+            _ = unit.health
+            _ = unit.speed
+            _ = unit.luck
+            _ = unit.crit_chance
+            _ = unit.dodge_chance
+            _ = unit.is_kamikaze
+            _ = unit.counterattack_chance
+
+        session.expunge_all()
+
+    # Проверить наличие файлов для каждого юнита
+    for unit in units:
+        unit.has_image = unit.image_path and os.path.exists(unit.image_path)
+
+    return render_template_string(COMPREHENSIVE_UNITS_TEMPLATE, units=units, active_page='home')
+
+
+@app.route('/admin/images')
+def admin_images():
+    """Управление картинками юнитов"""
     with db.get_session() as session:
         units = session.query(Unit).all()
 
@@ -730,12 +822,12 @@ def upload_image(unit_id):
     """Загрузка картинки для юнита"""
     if 'image' not in request.files:
         flash('Файл не выбран', 'error')
-        return redirect(url_for('index'))
+        return redirect(url_for('admin_images'))
 
     file = request.files['image']
     if file.filename == '':
         flash('Файл не выбран', 'error')
-        return redirect(url_for('index'))
+        return redirect(url_for('admin_images'))
 
     if file:
         # Получить юнит
@@ -743,7 +835,7 @@ def upload_image(unit_id):
             unit = session.query(Unit).filter_by(id=unit_id).first()
             if not unit:
                 flash('Юнит не найден', 'error')
-                return redirect(url_for('index'))
+                return redirect(url_for('admin_images'))
 
             # Создать безопасное имя файла
             filename = secure_filename(f"unit_{unit_id}_{file.filename}")
@@ -761,7 +853,7 @@ def upload_image(unit_id):
 
         flash(f'Картинка для {unit_name} успешно загружена!', 'success')
 
-    return redirect(url_for('index'))
+    return redirect(url_for('admin_images'))
 
 
 @app.route('/delete/<int:unit_id>', methods=['POST'])
@@ -771,7 +863,7 @@ def delete_image(unit_id):
         unit = session.query(Unit).filter_by(id=unit_id).first()
         if not unit:
             flash('Юнит не найден', 'error')
-            return redirect(url_for('index'))
+            return redirect(url_for('admin_images'))
 
         image_path = unit.image_path
         unit_name = unit.name
@@ -785,11 +877,11 @@ def delete_image(unit_id):
         unit.image_path = None
         session.flush()
 
-    return redirect(url_for('index'))
+    return redirect(url_for('admin_images'))
 
 
-@app.route('/units')
-def units_list():
+@app.route('/admin/units')
+def admin_units_list():
     """Страница управления юнитами"""
     with db.get_session() as session:
         units = session.query(Unit).all()
@@ -798,8 +890,8 @@ def units_list():
     return render_template_string(UNITS_TEMPLATE, units=units, active_page='units')
 
 
-@app.route('/units/create', methods=['GET', 'POST'])
-def create_unit():
+@app.route('/admin/units/create', methods=['GET', 'POST'])
+def admin_create_unit():
     """Создание нового юнита"""
     if request.method == 'POST':
         try:
@@ -819,7 +911,7 @@ def create_unit():
                 # Валидация: dodge_chance не более 0.9
                 if dodge_chance > 0.9:
                     flash('Ошибка: Шанс уклонения не может быть больше 90% (0.9)', 'error')
-                    return redirect(url_for('create_unit'))
+                    return redirect(url_for('admin_create_unit'))
 
                 # Автоматически рассчитать стоимость
                 price = calculate_unit_price(damage, defense, health, unit_range, speed, luck, crit_chance, dodge_chance, is_kamikaze, counterattack_chance)
@@ -844,21 +936,21 @@ def create_unit():
                 session.flush()
 
             flash(f'Юнит "{request.form["name"]}" успешно создан с автоматически рассчитанной стоимостью {price}!', 'success')
-            return redirect(url_for('units_list'))
+            return redirect(url_for('admin_units_list'))
         except Exception as e:
             flash(f'Ошибка при создании юнита: {str(e)}', 'error')
 
     return render_template_string(UNIT_FORM_TEMPLATE, unit=None, active_page='units')
 
 
-@app.route('/units/edit/<int:unit_id>', methods=['GET', 'POST'])
-def edit_unit(unit_id):
+@app.route('/admin/units/edit/<int:unit_id>', methods=['GET', 'POST'])
+def admin_edit_unit(unit_id):
     """Редактирование юнита"""
     with db.get_session() as session:
         unit = session.query(Unit).filter_by(id=unit_id).first()
         if not unit:
             flash('Юнит не найден', 'error')
-            return redirect(url_for('units_list'))
+            return redirect(url_for('admin_units_list'))
 
         if request.method == 'POST':
             try:
@@ -877,7 +969,7 @@ def edit_unit(unit_id):
                 # Валидация: dodge_chance не более 0.9
                 if dodge_chance > 0.9:
                     flash('Ошибка: Шанс уклонения не может быть больше 90% (0.9)', 'error')
-                    return redirect(url_for('edit_unit', unit_id=unit_id))
+                    return redirect(url_for('admin_edit_unit', unit_id=unit_id))
 
                 # Автоматически рассчитать стоимость
                 price = calculate_unit_price(damage, defense, health, unit_range, speed, luck, crit_chance, dodge_chance, is_kamikaze, counterattack_chance)
@@ -899,7 +991,7 @@ def edit_unit(unit_id):
                 session.flush()
 
                 flash(f'Юнит "{unit.name}" успешно обновлен с автоматически рассчитанной стоимостью {price}!', 'success')
-                return redirect(url_for('units_list'))
+                return redirect(url_for('admin_units_list'))
             except Exception as e:
                 flash(f'Ошибка при обновлении юнита: {str(e)}', 'error')
 
@@ -923,14 +1015,14 @@ def edit_unit(unit_id):
     return render_template_string(UNIT_FORM_TEMPLATE, unit=unit, active_page='units')
 
 
-@app.route('/units/delete/<int:unit_id>', methods=['POST'])
-def delete_unit(unit_id):
+@app.route('/admin/units/delete/<int:unit_id>', methods=['POST'])
+def admin_delete_unit(unit_id):
     """Удаление юнита"""
     with db.get_session() as session:
         unit = session.query(Unit).filter_by(id=unit_id).first()
         if not unit:
             flash('Юнит не найден', 'error')
-            return redirect(url_for('units_list'))
+            return redirect(url_for('admin_units_list'))
 
         unit_name = unit.name
 
@@ -942,7 +1034,7 @@ def delete_unit(unit_id):
         session.flush()
 
     flash(f'Юнит "{unit_name}" удален', 'success')
-    return redirect(url_for('units_list'))
+    return redirect(url_for('admin_units_list'))
 
 
 @app.route('/help')
@@ -1012,7 +1104,7 @@ def export_units():
 
     except Exception as e:
         flash(f'Ошибка при экспорте: {str(e)}', 'error')
-        return redirect(url_for('units_list'))
+        return redirect(url_for('admin_units_list'))
 
 
 @app.route('/import', methods=['GET', 'POST'])
@@ -1089,7 +1181,7 @@ def import_page():
             shutil.rmtree(temp_dir)
 
             flash(f'Успешно импортировано {len(units_data)} юнитов!', 'success')
-            return redirect(url_for('units_list'))
+            return redirect(url_for('admin_units_list'))
 
         except Exception as e:
             flash(f'Ошибка при импорте: {str(e)}', 'error')
