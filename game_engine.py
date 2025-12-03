@@ -380,37 +380,46 @@ class GameEngine:
         # Применить урон
         units_killed = self._apply_damage(target, damage)
 
-        # Обработать контратаку - если цель жива и имеет counterattack_chance
+        # Обработать контратаку - вероятность контратаки всегда 50%
         attacker_unit = attacker.user_unit.unit
         target_unit = target.user_unit.unit
         counterattack_damage = 0
-        if target.total_count > 0 and float(target_unit.counterattack_chance) > 0 and damage > 0:
-            # Рассчитать контратаку как урон цели с коэффициентом
-            counterattack_coef = float(target_unit.counterattack_chance)
 
-            # Базовый урон контратаки
-            base_counter_damage = target_unit.damage
-            alive_defenders = self._count_alive_units(target)
+        # Проверяем что цель жива и был нанесен урон
+        if target.total_count > 0 and damage > 0:
+            # Вероятность контратаки всегда 50%
+            counterattack_roll = random.random()
+            if counterattack_roll < 0.5:
+                # Рассчитать контратаку как урон цели с коэффициентом
+                counterattack_coef = float(target_unit.counterattack_chance)
 
-            # Проверка, не камикадзе ли защитник
-            is_target_kamikaze = bool(target_unit.is_kamikaze)
-            if is_target_kamikaze:
-                alive_defenders = 1
+                # Базовый урон контратаки
+                base_counter_damage = target_unit.damage
+                alive_defenders = self._count_alive_units(target)
 
-            # Применить коэффициент контратаки и количество юнитов
-            counterattack_damage = int(base_counter_damage * counterattack_coef * alive_defenders)
+                # Проверка, не камикадзе ли защитник
+                is_target_kamikaze = bool(target_unit.is_kamikaze)
+                if is_target_kamikaze:
+                    alive_defenders = 1
 
-            # Применить контратаку к атакующему
-            if counterattack_damage > 0:
-                counter_units_killed = self._apply_damage(attacker, counterattack_damage)
+                # Применить коэффициент контратаки и количество юнитов
+                counterattack_damage = int(base_counter_damage * counterattack_coef * alive_defenders)
 
-                combat_log += f"\n\n🔄 КОНТРАТАКА! {target_unit.name} наносит ответный урон {attacker_unit.name}!\n"
-                combat_log += f"   Коэффициент контратаки: {counterattack_coef*100:.1f}%\n"
-                combat_log += f"   Базовый урон: {base_counter_damage} x {alive_defenders} юнитов x {counterattack_coef:.2f} = {counterattack_damage}\n"
-                combat_log += f"   ⚡ Урон от контратаки: {counterattack_damage}"
+                # Применить контратаку к атакующему
+                if counterattack_damage > 0:
+                    counter_units_killed = self._apply_damage(attacker, counterattack_damage)
 
-                if counter_units_killed > 0:
-                    combat_log += f"\n   ⚰️ Убито атакующих юнитов: {counter_units_killed}"
+                    combat_log += f"\n\n🔄 КОНТРАТАКА! {target_unit.name} наносит ответный урон {attacker_unit.name}!\n"
+                    combat_log += f"   Вероятность контратаки: 50.0% (бросок: {counterattack_roll*100:.1f}%)\n"
+                    combat_log += f"   Коэффициент урона контратаки: {counterattack_coef*100:.1f}%\n"
+                    combat_log += f"   Базовый урон: {base_counter_damage} x {alive_defenders} юнитов x {counterattack_coef:.2f} = {counterattack_damage}\n"
+                    combat_log += f"   ⚡ Урон от контратаки: {counterattack_damage}"
+
+                    if counter_units_killed > 0:
+                        combat_log += f"\n   ⚰️ Убито атакующих юнитов: {counter_units_killed}"
+            else:
+                # Контратака не сработала
+                combat_log += f"\n\n❌ Контратака не сработала (вероятность 50%, бросок: {counterattack_roll*100:.1f}%)"
 
         # Обработать камикадзе - уменьшить счетчик юнитов на 1 после атаки
         if attacker_unit.is_kamikaze and attacker.total_count > 0:
