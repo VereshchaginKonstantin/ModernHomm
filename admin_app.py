@@ -20,10 +20,10 @@ app.secret_key = 'your-secret-key-change-in-production'
 app.config['UPLOAD_FOLDER'] = 'static/unit_images'
 app.config['MAX_CONTENT_LENGTH'] = 5 * 1024 * 1024  # 5 MB max file size
 
-def calculate_unit_price(damage: int, defense: int, health: int, unit_range: int, speed: int, luck: float, crit_chance: float, dodge_chance: float, is_kamikaze: int = 0) -> Decimal:
+def calculate_unit_price(damage: int, defense: int, health: int, unit_range: int, speed: int, luck: float, crit_chance: float, dodge_chance: float, is_kamikaze: int = 0, counterattack_chance: float = 0) -> Decimal:
     """
     Автоматический расчет стоимости юнита по формуле:
-    Урон + Защита + Здоровье + 100*Дальность + 50*Скорость + 100*Удача + 100*Крит + 100*Уклонение
+    Урон + Защита + Здоровье + 100*Дальность + 50*Скорость + 10000*Удача + 10000*Крит + 10000*Уклонение + 10000*Контратака
     Если юнит камикадзе (is_kamikaze=1), стоимость делится на 5
 
     Args:
@@ -36,6 +36,7 @@ def calculate_unit_price(damage: int, defense: int, health: int, unit_range: int
         crit_chance: Вероятность критического удара (0-1)
         dodge_chance: Вероятность уклонения (0-0.9)
         is_kamikaze: Юнит-камикадзе (0 или 1)
+        counterattack_chance: Доля контратаки (0-1)
 
     Returns:
         Decimal: Рассчитанная стоимость
@@ -46,9 +47,10 @@ def calculate_unit_price(damage: int, defense: int, health: int, unit_range: int
         health +
         100 * unit_range +
         50 * speed +
-        100 * luck +
-        100 * crit_chance +
-        100 * dodge_chance
+        10000 * luck +
+        10000 * crit_chance +
+        10000 * dodge_chance +
+        10000 * counterattack_chance
     )
 
     # Если юнит камикадзе, делим стоимость на 5
@@ -814,7 +816,7 @@ def create_unit():
                     return redirect(url_for('create_unit'))
 
                 # Автоматически рассчитать стоимость
-                price = calculate_unit_price(damage, defense, health, unit_range, speed, luck, crit_chance, dodge_chance, is_kamikaze)
+                price = calculate_unit_price(damage, defense, health, unit_range, speed, luck, crit_chance, dodge_chance, is_kamikaze, counterattack_chance)
 
                 unit = Unit(
                     name=request.form['name'],
@@ -871,7 +873,7 @@ def edit_unit(unit_id):
                     return redirect(url_for('edit_unit', unit_id=unit_id))
 
                 # Автоматически рассчитать стоимость
-                price = calculate_unit_price(damage, defense, health, unit_range, speed, luck, crit_chance, dodge_chance, is_kamikaze)
+                price = calculate_unit_price(damage, defense, health, unit_range, speed, luck, crit_chance, dodge_chance, is_kamikaze, counterattack_chance)
 
                 unit.name = request.form['name']
                 unit.icon = request.form['icon']
