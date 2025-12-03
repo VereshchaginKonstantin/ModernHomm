@@ -967,12 +967,15 @@ class GameEngine:
 
             distance = abs(attacker.position_x - enemy.position_x) + abs(attacker.position_y - enemy.position_y)
             if distance <= attacker_unit.range:
-                targets.append({
-                    "unit_id": enemy.id,
-                    "unit_name": enemy.user_unit.unit.name,
-                    "position": (enemy.position_x, enemy.position_y),
-                    "distance": distance
-                })
+                # Проверить линию видимости до цели
+                if self._has_line_of_sight(attacker.position_x, attacker.position_y,
+                                           enemy.position_x, enemy.position_y, game):
+                    targets.append({
+                        "unit_id": enemy.id,
+                        "unit_name": enemy.user_unit.unit.name,
+                        "position": (enemy.position_x, enemy.position_y),
+                        "distance": distance
+                    })
 
         return targets
 

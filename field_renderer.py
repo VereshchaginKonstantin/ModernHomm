@@ -99,6 +99,38 @@ class FieldRenderer:
                     width=self.BORDER_WIDTH
                 )
 
+        # Отобразить препятствия
+        from db.models import Obstacle
+        obstacles = self.db.query(Obstacle).filter_by(game_id=game_id).all()
+        for obstacle in obstacles:
+            x, y = obstacle.position_x, obstacle.position_y
+            cell_x = self.LABEL_HEIGHT + x * self.CELL_SIZE
+            cell_y = self.LABEL_HEIGHT + y * self.CELL_SIZE
+
+            # Закрасить клетку серым цветом
+            draw.rectangle(
+                [cell_x, cell_y, cell_x + self.CELL_SIZE, cell_y + self.CELL_SIZE],
+                fill=(128, 128, 128),  # Серый цвет
+                outline=self.COLOR_BORDER,
+                width=self.BORDER_WIDTH
+            )
+
+            # Нарисовать X в центре
+            # Диагональные линии
+            line_offset = 10
+            draw.line(
+                [cell_x + line_offset, cell_y + line_offset,
+                 cell_x + self.CELL_SIZE - line_offset, cell_y + self.CELL_SIZE - line_offset],
+                fill=(64, 64, 64),  # Темно-серый
+                width=4
+            )
+            draw.line(
+                [cell_x + self.CELL_SIZE - line_offset, cell_y + line_offset,
+                 cell_x + line_offset, cell_y + self.CELL_SIZE - line_offset],
+                fill=(64, 64, 64),  # Темно-серый
+                width=4
+            )
+
         # Разместить юниты на поле
         for battle_unit in game.battle_units:
             x, y = battle_unit.position_x, battle_unit.position_y
