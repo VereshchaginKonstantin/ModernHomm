@@ -149,6 +149,7 @@ class SimpleBot:
             "/version - Показать версию бота\n"
             "/play - Начать игру (инициализация игрового профиля)\n"
             "/profile - Посмотреть свой игровой профиль\n"
+            "/top - Рейтинг игроков\n"
             "/shop - Магазин юнитов (покупка армии)\n\n"
             "<b>Игровые команды:</b>\n"
             "/challenge &lt;username&gt; - Вызвать игрока на бой\n"
@@ -264,6 +265,74 @@ class SimpleBot:
             logger.error(f"Ошибка при получении профиля: {e}")
             await update.message.reply_text(
                 "Произошла ошибка при получении профиля. Попробуйте позже.",
+                parse_mode=self.parse_mode
+            )
+
+    async def top_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Обработчик команды /top - рейтинг игроков"""
+        logger.info(f"Команда /top от пользователя {update.effective_user.id}")
+
+        try:
+            # Получаем всех игроков
+            all_users = self.db.get_all_game_users()
+
+            if not all_users:
+                await update.message.reply_text(
+                    "📊 Рейтинг пока пуст. Станьте первым игроком!",
+                    parse_mode=self.parse_mode
+                )
+                return
+
+            # Подготовка данных для рейтинга
+            player_stats = []
+            for game_user in all_users:
+                # Получаем юнитов игрока
+                user_units = self.db.get_user_units(game_user.telegram_id)
+
+                # Вычисляем стоимость армии
+                army_cost = Decimal('0')
+                for user_unit in user_units:
+                    if user_unit.count > 0:
+                        unit = self.db.get_unit_by_id(user_unit.unit_type_id)
+                        if unit:
+                            army_cost += unit.price * user_unit.count
+
+                player_stats.append({
+                    'name': game_user.name,
+                    'wins': game_user.wins,
+                    'losses': game_user.losses,
+                    'army_cost': army_cost
+                })
+
+            # Сортируем по победам (по убыванию), затем по стоимости армии (по убыванию)
+            player_stats.sort(key=lambda x: (x['wins'], x['army_cost']), reverse=True)
+
+            # Формируем текст рейтинга
+            response = "🏆 <b>Рейтинг игроков</b>\n\n"
+
+            for idx, player in enumerate(player_stats[:10], 1):  # Топ-10
+                medal = ""
+                if idx == 1:
+                    medal = "🥇 "
+                elif idx == 2:
+                    medal = "🥈 "
+                elif idx == 3:
+                    medal = "🥉 "
+                else:
+                    medal = f"{idx}. "
+
+                response += (
+                    f"{medal}<b>{html.escape(player['name'])}</b>\n"
+                    f"  🏆 Побед: {player['wins']} | 💔 Поражений: {player['losses']}\n"
+                    f"  ⚔️ Стоимость армии: ${player['army_cost']}\n\n"
+                )
+
+            await update.message.reply_text(response, parse_mode=self.parse_mode)
+
+        except Exception as e:
+            logger.error(f"Ошибка при получении рейтинга: {e}")
+            await update.message.reply_text(
+                "Произошла ошибка при получении рейтинга. Попробуйте позже.",
                 parse_mode=self.parse_mode
             )
 
@@ -2872,6 +2941,7 @@ class SimpleBot:
         application.add_handler(CommandHandler("version", self.version_command))
         application.add_handler(CommandHandler("play", self.play_command))
         application.add_handler(CommandHandler("profile", self.profile_command))
+        application.add_handler(CommandHandler("top", self.top_command))
         application.add_handler(CommandHandler("shop", self.shop_command))
         application.add_handler(CommandHandler("search", self.search_command))
         application.add_handler(CommandHandler("users", self.users_command))
