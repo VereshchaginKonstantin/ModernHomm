@@ -380,6 +380,17 @@ class GameEngine:
         # Применить урон
         units_killed = self._apply_damage(target, damage)
 
+        # Обработать камикадзе - уменьшить счетчик юнитов на 1 после атаки
+        attacker_unit = attacker.user_unit.unit
+        if attacker_unit.is_kamikaze and attacker.total_count > 0:
+            attacker.total_count -= 1
+            combat_log += f"\n\n💣 КАМИКАДЗЕ: {attacker_unit.name} потерял 1 юнита после атаки (осталось: {attacker.total_count})"
+
+            # Если камикадзе юниты закончились, обнулить HP
+            if attacker.total_count == 0:
+                attacker.remaining_hp = 0
+                combat_log += f"\n⚰️ Все камикадзе юниты {attacker_unit.name} погибли!"
+
         # Обновить кураж (morale) в зависимости от результата атаки
         if units_killed > 0:
             # Атакующий убил юнитов - повышение куража
@@ -399,7 +410,12 @@ class GameEngine:
             logger.info(f"Удаление мёртвого юнита: id={target.id}, position=({target.position_x}, {target.position_y})")
             self.db.delete(target)
 
-        attacker.has_moved = 1
+        # Удалить камикадзе юнит, если все юниты погибли
+        if attacker.total_count == 0:
+            logger.info(f"Удаление мёртвого камикадзе юнита: id={attacker.id}, position=({attacker.position_x}, {attacker.position_y})")
+            self.db.delete(attacker)
+        else:
+            attacker.has_moved = 1
 
         # Проверить, все ли юниты игрока мертвы
         turn_switched = False
@@ -723,6 +739,12 @@ class GameEngine:
         # Подсчет количества атакующих юнитов
         alive_attackers = self._count_alive_units(attacker)
 
+        # Проверка камикадзе (в расчете урона учитывается только 1 юнит)
+        is_kamikaze = bool(attacker_unit.is_kamikaze)
+        actual_attackers = alive_attackers  # Сохраняем реальное количество для лога
+        if is_kamikaze:
+            alive_attackers = 1  # Камикадзе наносит урон только за 1 юнита
+
         # Проверка уклонения (dodge)
         dodge_chance = float(target_unit.dodge_chance)
         dodge_roll = random.random()
@@ -730,7 +752,8 @@ class GameEngine:
 
         if is_dodged:
             # Уклонение успешно - урон 0
-            log = f"⚔️ {attacker_unit.name} (x{alive_attackers}) атакует {target_unit.name}\n\n"
+            attacker_display = f"x{actual_attackers}" if not is_kamikaze else f"x{actual_attackers} 💣КАМИКАДЗЕ💣"
+            log = f"⚔️ {attacker_unit.name} ({attacker_display}) атакует {target_unit.name}\n\n"
             log += f"🌀 УКЛОНЕНИЕ! {target_unit.name} уклонился от атаки!\n"
             log += f"   Шанс уклонения: {dodge_chance*100:.1f}% (бросок: {dodge_roll*100:.1f}%)\n"
             log += f"   ⚡ ИТОГОВЫЙ УРОН: 0"
@@ -790,7 +813,10 @@ class GameEngine:
         total_damage = damage_after_defense * alive_attackers
 
         # Создать детальный лог с формулой расчета
-        log = f"⚔️ {attacker_unit.name} (x{alive_attackers}) атакует {target_unit.name}\n"
+        attacker_display = f"x{actual_attackers}" if not is_kamikaze else f"x{actual_attackers} 💣КАМИКАДЗЕ💣"
+        log = f"⚔️ {attacker_unit.name} ({attacker_display}) атакует {target_unit.name}\n"
+        if is_kamikaze:
+            log += f"⚠️ КАМИКАДЗЕ: урон рассчитывается только за 1 юнита (вместо {actual_attackers})\n"
         log += f"\n📊 Расчет урона:\n"
         log += f"1️⃣ Базовый урон: {base_damage}\n"
         log += f"   Случайность (±10%): x{damage_variance:.2f} = {base_damage_with_variance}\n"

@@ -492,6 +492,13 @@ UNIT_FORM_TEMPLATE = """
                     <small class="form-text text-muted">Вероятность полностью избежать урона от атаки</small>
                 </div>
 
+                <div class="form-group form-check">
+                    <input type="checkbox" name="is_kamikaze" class="form-check-input" id="is_kamikaze" value="1" {{ 'checked' if unit and unit.is_kamikaze else '' }}>
+                    <label class="form-check-label" for="is_kamikaze">
+                        💣 Камикадзе (урон за 1 юнита, -1 юнит после атаки)
+                    </label>
+                </div>
+
                 <div style="margin-top: 20px;">
                     <button type="submit" class="btn btn-primary">Сохранить</button>
                     <a href="{{ url_for('units_list') }}" class="btn" style="background-color: #95a5a6; color: white; text-decoration: none; margin-left: 10px;">Отмена</a>
@@ -783,6 +790,7 @@ def create_unit():
                 luck = float(request.form['luck'])
                 crit_chance = float(request.form['crit_chance'])
                 dodge_chance = float(request.form['dodge_chance'])
+                is_kamikaze = 1 if request.form.get('is_kamikaze') else 0
 
                 # Автоматически рассчитать стоимость
                 price = calculate_unit_price(damage, defense, health, unit_range, speed, luck, crit_chance)
@@ -798,7 +806,8 @@ def create_unit():
                     speed=speed,
                     luck=Decimal(str(luck)),
                     crit_chance=Decimal(str(crit_chance)),
-                    dodge_chance=Decimal(str(dodge_chance))
+                    dodge_chance=Decimal(str(dodge_chance)),
+                    is_kamikaze=is_kamikaze
                 )
                 session.add(unit)
                 session.flush()
@@ -831,6 +840,7 @@ def edit_unit(unit_id):
                 luck = float(request.form['luck'])
                 crit_chance = float(request.form['crit_chance'])
                 dodge_chance = float(request.form['dodge_chance'])
+                is_kamikaze = 1 if request.form.get('is_kamikaze') else 0
 
                 # Автоматически рассчитать стоимость
                 price = calculate_unit_price(damage, defense, health, unit_range, speed, luck, crit_chance)
@@ -846,6 +856,7 @@ def edit_unit(unit_id):
                 unit.luck = Decimal(str(luck))
                 unit.crit_chance = Decimal(str(crit_chance))
                 unit.dodge_chance = Decimal(str(dodge_chance))
+                unit.is_kamikaze = is_kamikaze
                 session.flush()
 
                 flash(f'Юнит "{unit.name}" успешно обновлен с автоматически рассчитанной стоимостью {price}!', 'success')
@@ -866,6 +877,7 @@ def edit_unit(unit_id):
         _ = unit.luck
         _ = unit.crit_chance
         _ = unit.dodge_chance
+        _ = unit.is_kamikaze
         session.expunge_all()
 
     return render_template_string(UNIT_FORM_TEMPLATE, unit=unit, active_page='units')
