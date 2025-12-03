@@ -51,14 +51,14 @@ class GameEngine:
     def __init__(self, db_session: Session):
         self.db = db_session
 
-    def create_game(self, player1_id: int, player2_username: str, field_name: str = "5x5") -> Tuple[Optional[Game], str]:
+    def create_game(self, player1_id: int, player2_username: str, field_name: str = "7x7") -> Tuple[Optional[Game], str]:
         """
         Создание новой игры
 
         Args:
             player1_id: ID игрока, создающего игру
             player2_username: Имя второго игрока
-            field_name: Название поля (по умолчанию "5x5")
+            field_name: Название поля (по умолчанию "7x7")
 
         Returns:
             Tuple[Game, str]: Созданная игра и сообщение
