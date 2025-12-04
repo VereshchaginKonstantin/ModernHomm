@@ -3,6 +3,7 @@ FROM python:3.8-slim
 # Установка зависимостей системы
 RUN apt-get update && apt-get install -y \
     postgresql-client \
+    git \
     && rm -rf /var/lib/apt/lists/*
 
 # Создание рабочей директории
@@ -22,6 +23,9 @@ COPY VERSION .
 
 # Копирование Python модуля db (модели и репозиторий)
 COPY db/ ./db/
+
+# Копирование .git для получения информации о коммитах
+COPY .git/ ./.git/
 
 # Создание директории для статических файлов (картинки юнитов)
 RUN mkdir -p static/unit_images
