@@ -891,12 +891,13 @@ class GameEngine:
         if is_lucky:
             damage = int(damage * 1.5)  # Удача увеличивает урон на 50%
 
-        # Применить защиту
-        defense_reduction = target_unit.defense
-        damage_after_defense = max(1, damage - defense_reduction)  # Минимум 1 урона
-
         # Умножить на количество атакующих юнитов
-        total_damage = damage_after_defense * alive_attackers
+        damage_multiplied = damage * alive_attackers
+
+        # Применить защиту (вычитаем защиту × количество обороняющихся)
+        alive_defenders = self._count_alive_units(target)
+        defense_reduction = target_unit.defense * alive_defenders
+        total_damage = max(alive_attackers, damage_multiplied - defense_reduction)  # Минимум по 1 урона на атакующего
 
         # Создать детальный лог с формулой расчета
         attacker_display = f"x{actual_attackers}" if not is_kamikaze else f"x{actual_attackers} 💣КАМИКАДЗЕ💣"
@@ -934,12 +935,13 @@ class GameEngine:
         if is_lucky:
             log += f"   🍀 УДАЧА! x1.5 = {damage} урона\n"
 
-        # Защита
-        log += f"\n6️⃣ Защита цели: -{defense_reduction}\n"
-        log += f"   Урон после защиты: {damage_after_defense} (мин. 1)\n"
+        # Умножение на количество атакующих
+        log += f"\n6️⃣ Количество атакующих: x{alive_attackers}\n"
+        log += f"   Урон до защиты: {damage_multiplied}\n"
 
-        # Итоговый урон
-        log += f"\n7️⃣ Количество атакующих: x{alive_attackers}\n"
+        # Защита
+        log += f"\n7️⃣ Защита цели: {target_unit.defense} x {alive_defenders} обороняющихся = {defense_reduction}\n"
+        log += f"   Урон после защиты: max({alive_attackers}, {damage_multiplied} - {defense_reduction}) = {total_damage}\n"
         log += f"   ⚡ ИТОГОВЫЙ УРОН: {total_damage}"
 
         return total_damage, is_crit, log
