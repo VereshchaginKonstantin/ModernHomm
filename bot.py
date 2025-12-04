@@ -184,48 +184,9 @@ class SimpleBot:
             logger.error(f"Ошибка при отправке уведомлений: {e}")
 
     async def start_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Обработчик команды /start"""
-        await update.message.reply_text(
-            f"Привет! Я простой бот.\n\n{self.default_response}",
-            parse_mode=self.parse_mode
-        )
-        logger.info(f"Команда /start от пользователя {update.effective_user.id}")
-
-    async def help_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Обработчик команды /help"""
-        help_text = (
-            "Я простой бот, который отвечает на все сообщения одинаково.\n\n"
-            "<b>Основные команды:</b>\n"
-            "/start - Начать работу с ботом\n"
-            "/help - Показать это сообщение\n"
-            "/version - Показать версию бота\n"
-            "/play - Начать игру (инициализация игрового профиля)\n"
-            "/profile - Посмотреть свой игровой профиль\n"
-            "/top - Рейтинг игроков\n"
-            "/shop - Магазин юнитов (покупка армии)\n\n"
-            "<b>Игровые команды:</b>\n"
-            "/challenge &lt;username&gt; - Вызвать игрока на бой\n"
-            "/accept - Принять вызов на бой\n"
-            "/game - Показать текущую игру\n"
-            "/activegames - Просмотр активных игр\n"
-            "/mygames - История игр"
-        )
-        await update.message.reply_text(help_text, parse_mode=self.parse_mode)
-        logger.info(f"Команда /help от пользователя {update.effective_user.id}")
-
-    async def version_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Обработчик команды /version"""
-        version_text = (
-            f"🤖 <b>Версия бота:</b> {self.version}\n\n"
-            f"Эта версия была собрана: {self.version}"
-        )
-        await update.message.reply_text(version_text, parse_mode=self.parse_mode)
-        logger.info(f"Команда /version от пользователя {update.effective_user.id}")
-
-    async def play_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Обработчик команды /play - инициализация игрового профиля"""
+        """Обработчик команды /start - начало работы с ботом и инициализация профиля"""
         user = update.effective_user
-        logger.info(f"Команда /play от пользователя {user.id}")
+        logger.info(f"Команда /start от пользователя {user.id}")
 
         try:
             # Получаем или создаем игрового пользователя
@@ -241,7 +202,7 @@ class SimpleBot:
                     f"💰 Ваш начальный баланс: ${game_user.balance}\n"
                     f"🏆 Побед: {game_user.wins}\n"
                     f"💔 Поражений: {game_user.losses}\n\n"
-                    "Удачи в игре!"
+                    "Используйте /help для просмотра команд."
                 )
             else:
                 response = (
@@ -249,17 +210,45 @@ class SimpleBot:
                     f"💰 Текущий баланс: ${game_user.balance}\n"
                     f"🏆 Побед: {game_user.wins}\n"
                     f"💔 Поражений: {game_user.losses}\n\n"
-                    "Вы уже зарегистрированы в игре!"
+                    "Используйте /help для просмотра команд."
                 )
 
             await update.message.reply_text(response, parse_mode=self.parse_mode)
 
         except Exception as e:
-            logger.error(f"Ошибка при инициализации игрового профиля: {e}")
+            logger.error(f"Ошибка при инициализации профиля: {e}")
             await update.message.reply_text(
-                "Произошла ошибка при создании игрового профиля. Попробуйте позже.",
+                "Произошла ошибка при создании профиля. Попробуйте позже.",
                 parse_mode=self.parse_mode
             )
+
+    async def help_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Обработчик команды /help"""
+        help_text = (
+            "<b>Основные команды:</b>\n"
+            "/start - Начать работу с ботом и инициализировать игровой профиль\n"
+            "/help - Показать это сообщение\n"
+            "/version - Показать версию бота\n"
+            "/profile - Посмотреть свой игровой профиль\n"
+            "/top - Рейтинг игроков\n"
+            "/shop - Магазин юнитов (покупка армии)\n\n"
+            "<b>Игровые команды:</b>\n"
+            "/challenge &lt;username&gt; - Вызвать игрока на бой\n"
+            "/accept - Принять вызов на бой\n"
+            "/game - Показать текущую игру\n"
+            "/mygames - История игр"
+        )
+        await update.message.reply_text(help_text, parse_mode=self.parse_mode)
+        logger.info(f"Команда /help от пользователя {update.effective_user.id}")
+
+    async def version_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Обработчик команды /version"""
+        version_text = (
+            f"🤖 <b>Версия бота:</b> {self.version}\n\n"
+            f"Эта версия была собрана: {self.version}"
+        )
+        await update.message.reply_text(version_text, parse_mode=self.parse_mode)
+        logger.info(f"Команда /version от пользователя {update.effective_user.id}")
 
     async def profile_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Обработчик команды /profile - просмотр игрового профиля"""
@@ -272,7 +261,7 @@ class SimpleBot:
             if not game_user:
                 await update.message.reply_text(
                     "❌ У вас еще нет игрового профиля.\n"
-                    "Используйте /play для создания профиля.",
+                    "Используйте /start для создания профиля.",
                     parse_mode=self.parse_mode
                 )
                 return
@@ -396,7 +385,7 @@ class SimpleBot:
             if not game_user:
                 await update.message.reply_text(
                     "❌ У вас еще нет игрового профиля.\n"
-                    "Используйте /play для создания профиля.",
+                    "Используйте /start для создания профиля.",
                     parse_mode=self.parse_mode
                 )
                 return
@@ -1044,7 +1033,7 @@ class SimpleBot:
         game_user = self.db.get_game_user(user.id)
         if not game_user:
             await update.message.reply_text(
-                "❌ У вас еще нет игрового профиля. Используйте /play",
+                "❌ У вас еще нет игрового профиля. Используйте /start",
                 parse_mode=self.parse_mode
             )
             return
@@ -1190,7 +1179,7 @@ class SimpleBot:
             game_user = self.db.get_game_user(user.id)
             if not game_user:
                 await update.message.reply_text(
-                    "❌ У вас еще нет игрового профиля. Используйте /play",
+                    "❌ У вас еще нет игрового профиля. Используйте /start",
                     parse_mode=self.parse_mode
                 )
                 return
@@ -1273,7 +1262,7 @@ class SimpleBot:
             game_user = self.db.get_game_user(user.id)
             if not game_user:
                 await update.message.reply_text(
-                    "❌ У вас еще нет игрового профиля. Используйте /play",
+                    "❌ У вас еще нет игрового профиля. Используйте /start",
                     parse_mode=self.parse_mode
                 )
                 return
@@ -1321,7 +1310,7 @@ class SimpleBot:
             game_user = self.db.get_game_user(user.id)
             if not game_user:
                 await update.message.reply_text(
-                    "❌ У вас еще нет игрового профиля. Используйте /play",
+                    "❌ У вас еще нет игрового профиля. Используйте /start",
                     parse_mode=self.parse_mode
                 )
                 return
@@ -1358,79 +1347,6 @@ class SimpleBot:
 
         except Exception as e:
             logger.error(f"Ошибка при получении истории игр: {e}")
-            await update.message.reply_text(
-                f"❌ Произошла ошибка: {e}",
-                parse_mode=self.parse_mode
-            )
-
-    async def activegames_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Обработчик команды /activegames - просмотр активных игр"""
-        user = update.effective_user
-        logger.info(f"Команда /activegames от пользователя {user.id}")
-
-        try:
-            # Проверка игрового профиля
-            game_user = self.db.get_game_user(user.id)
-            if not game_user:
-                await update.message.reply_text(
-                    "❌ У вас еще нет игрового профиля. Используйте /play",
-                    parse_mode=self.parse_mode
-                )
-                return
-
-            # Получение активных игр
-            active_games = self.db.get_active_games(user.id)
-
-            if not active_games:
-                await update.message.reply_text(
-                    "🎮 У вас нет активных игр.\nИспользуйте /challenge для вызова на бой!",
-                    parse_mode=self.parse_mode
-                )
-                return
-
-            response = "🎮 <b>Ваши активные игры:</b>\n\n"
-            keyboard = []
-
-            for game in active_games:
-                opponent_id = game.player2_id if game.player1_id == game_user.id else game.player1_id
-                opponent = self.db.get_game_user_by_id(opponent_id) if opponent_id else None
-                opponent_name = opponent.name if opponent else "Unknown"
-
-                status_emoji = {"waiting": "⏳", "in_progress": "⚔️"}
-                status_text = status_emoji.get(game.status.value, "❓")
-
-                # Определить статус игры
-                turn_info = ""
-                if game.status.value == "waiting":
-                    # Определяем, кто создал игру (player1) и кто должен принять (player2)
-                    if game.player1_id == game_user.id:
-                        turn_info = " - Ожидание принятия"
-                    else:
-                        turn_info = " - Нужно принять вызов"
-                elif game.status.value == "in_progress":
-                    if game.current_player_id == game_user.id:
-                        turn_info = " - 🟢 Ваш ход"
-                    else:
-                        turn_info = " - 🔴 Ход противника"
-
-                response += f"{status_text} Игра #{game.id} vs {opponent_name}{turn_info}\n"
-
-                # Создать кнопку для каждой игры
-                keyboard.append([
-                    InlineKeyboardButton(
-                        f"📋 Игра #{game.id} vs {opponent_name}",
-                        callback_data=f"show_game:{game.id}"
-                    )
-                ])
-
-            await update.message.reply_text(
-                response,
-                parse_mode=self.parse_mode,
-                reply_markup=InlineKeyboardMarkup(keyboard)
-            )
-
-        except Exception as e:
-            logger.error(f"Ошибка при получении активных игр: {e}")
             await update.message.reply_text(
                 f"❌ Произошла ошибка: {e}",
                 parse_mode=self.parse_mode
@@ -3214,7 +3130,6 @@ class SimpleBot:
         application.add_handler(CommandHandler("start", self.start_command))
         application.add_handler(CommandHandler("help", self.help_command))
         application.add_handler(CommandHandler("version", self.version_command))
-        application.add_handler(CommandHandler("play", self.play_command))
         application.add_handler(CommandHandler("profile", self.profile_command))
         application.add_handler(CommandHandler("top", self.top_command))
         application.add_handler(CommandHandler("shop", self.shop_command))
@@ -3225,7 +3140,6 @@ class SimpleBot:
         application.add_handler(CommandHandler("challenge", self.challenge_command))
         application.add_handler(CommandHandler("accept", self.accept_command))
         application.add_handler(CommandHandler("game", self.game_command))
-        application.add_handler(CommandHandler("activegames", self.activegames_command))
         application.add_handler(CommandHandler("mygames", self.mygames_command))
 
         # Админские команды
