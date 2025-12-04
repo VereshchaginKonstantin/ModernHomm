@@ -11,8 +11,8 @@ from admin_app import calculate_unit_price
 class TestKamikazePrice:
     """Тесты для стоимости юнитов-камикадзе"""
 
-    def test_kamikaze_reduces_price_by_5(self):
-        """Тест, что камикадзе снижает стоимость в 5 раз"""
+    def test_kamikaze_reduces_price_by_10(self):
+        """Тест, что камикадзе снижает стоимость в 10 раз (относительно обычного юнита с учетом /20)"""
         # Базовые параметры
         damage = 100
         defense = 20
@@ -29,16 +29,16 @@ class TestKamikazePrice:
         # Рассчитать цену юнита-камикадзе
         kamikaze_price = calculate_unit_price(damage, defense, health, unit_range, speed, luck, crit_chance, dodge_chance, is_kamikaze=1, counterattack_chance=0)
 
-        # Проверить, что цена камикадзе в 5 раз меньше
-        expected_kamikaze_price = normal_price / 5
+        # Проверить, что цена камикадзе в 10 раз меньше обычной
+        expected_kamikaze_price = normal_price / 10
         assert kamikaze_price == expected_kamikaze_price, f"Ожидаемая цена камикадзе {expected_kamikaze_price}, получено {kamikaze_price}"
 
         # Проверить точное значение
-        # Обычная цена: 100 + 20 + 150 + 100*1 + 50*2 + 10000*0.1 + 10000*0.15 + 10000*0.2 + 10000*0
-        #            = 100 + 20 + 150 + 100 + 100 + 1000 + 1500 + 2000 + 0 = 4970
-        # Камикадзе: 4970 / 5 = 994
-        assert normal_price == Decimal("4970.00"), f"Обычная цена должна быть 4970, получено {normal_price}"
-        assert kamikaze_price == Decimal("994.00"), f"Цена камикадзе должна быть 994, получено {kamikaze_price}"
+        # Базовая стоимость: 100 + 20 + 150 + 100*1 + 50*2 + 10000*0.1 + 10000*0.15 + 10000*0.2 + 10000*0 = 4970
+        # Обычная цена: 4970 / 20 = 248.5
+        # Камикадзе: 4970 / 10 / 20 = 24.85
+        assert normal_price == Decimal("248.50"), f"Обычная цена должна быть 248.50, получено {normal_price}"
+        assert kamikaze_price == Decimal("24.85"), f"Цена камикадзе должна быть 24.85, получено {kamikaze_price}"
 
     def test_non_kamikaze_price_unchanged(self):
         """Тест, что обычный юнит (не камикадзе) имеет нормальную цену"""
@@ -60,8 +60,8 @@ class TestKamikazePrice:
         # Проверить что цены одинаковые
         assert price1 == price2, "Цены должны быть одинаковыми для не-камикадзе"
 
-        # Проверить точное значение: 50 + 10 + 100 + 100*2 + 50*1 + 10000*0 + 10000*0 + 10000*0 + 10000*0 = 410
-        expected_price = Decimal("410.00")
+        # Проверить точное значение: (50 + 10 + 100 + 100*2 + 50*1) / 20 = 410 / 20 = 20.5
+        expected_price = Decimal("20.50")
         assert price1 == expected_price, f"Ожидаемая цена {expected_price}, получено {price1}"
 
     def test_kamikaze_with_max_stats(self):
@@ -77,9 +77,9 @@ class TestKamikazePrice:
 
         kamikaze_price = calculate_unit_price(damage, defense, health, unit_range, speed, luck, crit_chance, dodge_chance, is_kamikaze=1, counterattack_chance=0)
 
-        # Обычная цена: 200 + 50 + 300 + 100*5 + 50*5 + 10000*1.0 + 10000*1.0 + 10000*0.9 + 10000*0 = 200 + 50 + 300 + 500 + 250 + 10000 + 10000 + 9000 + 0 = 30300
-        # Камикадзе: 30300 / 5 = 6060
-        expected_price = Decimal("6060.00")
+        # Базовая стоимость: 200 + 50 + 300 + 100*5 + 50*5 + 10000*1.0 + 10000*1.0 + 10000*0.9 + 10000*0 = 30300
+        # Камикадзе: 30300 / 10 / 20 = 151.5
+        expected_price = Decimal("151.50")
         assert kamikaze_price == expected_price, f"Ожидаемая цена {expected_price}, получено {kamikaze_price}"
 
 

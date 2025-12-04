@@ -23,8 +23,8 @@ app.config['MAX_CONTENT_LENGTH'] = 5 * 1024 * 1024  # 5 MB max file size
 def calculate_unit_price(damage: int, defense: int, health: int, unit_range: int, speed: int, luck: float, crit_chance: float, dodge_chance: float, is_kamikaze: int = 0, counterattack_chance: float = 0) -> Decimal:
     """
     Автоматический расчет стоимости юнита по формуле:
-    Урон + Защита + Здоровье + 100*Дальность + 50*Скорость + 10000*Удача + 10000*Крит + 10000*Уклонение + 10000*Контратака
-    Если юнит камикадзе (is_kamikaze=1), стоимость делится на 5
+    (Урон + Защита + Здоровье + 100*Дальность + 50*Скорость + 10000*Удача + 10000*Крит + 10000*Уклонение + 10000*Контратака) / 20
+    Если юнит камикадзе (is_kamikaze=1), дополнительно делится на 10
 
     Args:
         damage: Урон юнита
@@ -53,9 +53,12 @@ def calculate_unit_price(damage: int, defense: int, health: int, unit_range: int
         10000 * counterattack_chance
     )
 
-    # Если юнит камикадзе, делим стоимость на 5
+    # Если юнит камикадзе, делим стоимость на 10
     if is_kamikaze:
-        price = price / 5
+        price = price / 10
+
+    # Всегда делим итоговую стоимость на 20
+    price = price / 20
 
     return Decimal(str(round(price, 2)))
 
@@ -523,7 +526,7 @@ UNIT_FORM_TEMPLATE = """
                 <div class="form-group">
                     <label>Цена (автоматически рассчитывается)</label>
                     <input type="text" class="form-control" value="{{ unit.price if unit else 'Рассчитается автоматически' }}" readonly disabled style="background-color: #e9ecef; cursor: not-allowed;">
-                    <small class="form-text text-muted">Формула: Урон + Защита + Здоровье + 100×Дальность + 50×Скорость + 100×Удача + 100×Крит</small>
+                    <small class="form-text text-muted">Формула: (Урон + Защита + Здоровье + 100×Дальность + 50×Скорость + 10000×Удача + 10000×Крит + 10000×Уклонение + 10000×Контратака) / 20. Если камикадзе: дополнительно /10</small>
                 </div>
 
                 <div class="form-group">
