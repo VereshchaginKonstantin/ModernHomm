@@ -469,9 +469,6 @@ UNITS_TEMPLATE = """
                     <td>{{ "%.2f"|format(unit.crit_chance|float * 100) }}%</td>
                     <td>
                         <a href="{{ url_for('admin_edit_unit', unit_id=unit.id) }}" class="btn" style="background-color: #3498db; color: white; padding: 5px 10px; text-decoration: none; border-radius: 4px; font-size: 12px;">Редактировать</a>
-                        <form action="{{ url_for('admin_delete_unit', unit_id=unit.id) }}" method="POST" style="display: inline;">
-                            <button type="submit" class="btn btn-danger" style="padding: 5px 10px; font-size: 12px;" onclick="return confirm('Удалить юнита {{ unit.name }}?')">Удалить</button>
-                        </form>
                     </td>
                 </tr>
                 {% endfor %}
@@ -1016,28 +1013,6 @@ def admin_edit_unit(unit_id):
         session.expunge_all()
 
     return render_template_string(UNIT_FORM_TEMPLATE, unit=unit, active_page='units')
-
-
-@app.route('/admin/units/delete/<int:unit_id>', methods=['POST'])
-def admin_delete_unit(unit_id):
-    """Удаление юнита"""
-    with db.get_session() as session:
-        unit = session.query(Unit).filter_by(id=unit_id).first()
-        if not unit:
-            flash('Юнит не найден', 'error')
-            return redirect(url_for('admin_units_list'))
-
-        unit_name = unit.name
-
-        # Удалить картинку если есть
-        if unit.image_path and os.path.exists(unit.image_path):
-            os.remove(unit.image_path)
-
-        session.delete(unit)
-        session.flush()
-
-    flash(f'Юнит "{unit_name}" удален', 'success')
-    return redirect(url_for('admin_units_list'))
 
 
 @app.route('/help')
