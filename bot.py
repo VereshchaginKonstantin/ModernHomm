@@ -165,10 +165,7 @@ class SimpleBot:
             "/accept - Принять вызов на бой\n"
             "/game - Показать текущую игру\n"
             "/activegames - Просмотр активных игр\n"
-            "/mygames - История игр\n\n"
-            "<b>Другое:</b>\n"
-            "/search &lt;username&gt; - Поиск сообщений пользователя\n"
-            "/users - Просмотр всех пользователей"
+            "/mygames - История игр"
         )
         await update.message.reply_text(help_text, parse_mode=self.parse_mode)
         logger.info(f"Команда /help от пользователя {update.effective_user.id}")
