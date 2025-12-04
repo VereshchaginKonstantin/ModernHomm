@@ -9,7 +9,7 @@ from contextlib import contextmanager
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, Session
 
-from .models import Base, User, Message, GameUser, Unit, UserUnit, Game, GameStatus, Field, BattleUnit
+from .models import Base, User, Message, Config, GameUser, Unit, UserUnit, Game, GameStatus, Field, BattleUnit
 
 
 class Database:
@@ -274,6 +274,71 @@ class Database:
             session.expunge_all()
 
             return messages, total_count
+
+    # ===== CRUD методы для Config =====
+
+    def get_config(self, key: str, default: str = None) -> str:
+        """
+        Получение значения конфигурации по ключу
+
+        Args:
+            key: Ключ конфигурации
+            default: Значение по умолчанию, если ключ не найден
+
+        Returns:
+            str: Значение конфигурации или default
+        """
+        with self.get_session() as session:
+            config = session.query(Config).filter_by(key=key).first()
+
+            if config:
+                return config.value
+
+            return default
+
+    def set_config(self, key: str, value: str, description: str = None) -> Config:
+        """
+        Установка значения конфигурации
+
+        Args:
+            key: Ключ конфигурации
+            value: Значение конфигурации
+            description: Описание конфигурации (опционально)
+
+        Returns:
+            Config: Объект конфигурации
+        """
+        with self.get_session() as session:
+            config = session.query(Config).filter_by(key=key).first()
+
+            if config:
+                # Обновляем существующее значение
+                config.value = value
+                if description is not None:
+                    config.description = description
+                config.updated_at = datetime.utcnow()
+            else:
+                # Создаем новое значение
+                config = Config(
+                    key=key,
+                    value=value,
+                    description=description
+                )
+                session.add(config)
+
+            session.flush()
+            session.refresh(config)
+
+            # Загружаем все атрибуты
+            _ = config.id
+            _ = config.key
+            _ = config.value
+            _ = config.description
+            _ = config.created_at
+            _ = config.updated_at
+
+            session.expunge_all()
+            return config
 
     # ===== CRUD методы для GameUser =====
 

@@ -42,6 +42,21 @@ class Message(Base):
         return f"<Message(id={self.id}, telegram_user_id={self.telegram_user_id})>"
 
 
+class Config(Base):
+    """Модель конфигурации приложения"""
+    __tablename__ = 'config'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    key = Column(String(255), nullable=False, unique=True, index=True)
+    value = Column(Text, nullable=False)
+    description = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    def __repr__(self):
+        return f"<Config(key={self.key}, value={self.value})>"
+
+
 class GameUser(Base):
     """Модель игрового профиля пользователя"""
     __tablename__ = 'game_users'

@@ -34,7 +34,6 @@ class SimpleBot:
         self.default_response = self.config['bot']['default_response']
         self.bot_token = self.config['telegram']['bot_token']
         self.parse_mode = self.config['telegram'].get('parse_mode', 'HTML')
-        self.initial_balance = self.config.get('game', {}).get('initial_balance', 1000)
         self.version = self.load_version()
 
         # Инициализация базы данных
@@ -70,6 +69,15 @@ class SimpleBot:
         except FileNotFoundError:
             logger.warning("Файл VERSION не найден, используется версия по умолчанию")
             return "unknown"
+
+    def get_initial_balance(self):
+        """Получение стартовой суммы из конфигурации в базе данных"""
+        try:
+            value = self.db.get_config('start_registration_amount', '1000')
+            return float(value)
+        except (ValueError, TypeError):
+            logger.warning("Ошибка при получении start_registration_amount из БД, используется 1000")
+            return 1000.0
 
     def check_version_changed(self):
         """Проверка, изменилась ли версия с прошлого запуска"""
@@ -184,7 +192,7 @@ class SimpleBot:
             game_user, created = self.db.get_or_create_game_user(
                 telegram_id=user.id,
                 name=user.first_name or user.username or f"User_{user.id}",
-                initial_balance=self.initial_balance
+                initial_balance=self.get_initial_balance()
             )
 
             if created:
@@ -2491,6 +2499,11 @@ class SimpleBot:
 
         try:
             # === ADMIN FUNCTIONS ===
+            # Обработка ввода стартовой суммы
+            if context.user_data.get('waiting_for_start_amount') and self.is_admin(user.username):
+                await self.handle_start_amount_input(update, context)
+                return
+
             # Обработка изменения эмодзи юнита
             if 'editing_icon_unit_id' in context.user_data and self.is_admin(user.username):
                 unit_id = context.user_data['editing_icon_unit_id']
@@ -2622,7 +2635,7 @@ class SimpleBot:
                 game_user, created = self.db.get_or_create_game_user(
                     telegram_id=user.id,
                     name=user.first_name or user.username or f"User_{user.id}",
-                    initial_balance=self.initial_balance
+                    initial_balance=self.get_initial_balance()
                 )
                 logger.info(f"Создан игровой профиль для пользователя {user.id}")
 
@@ -2947,6 +2960,86 @@ class SimpleBot:
                 reply_markup=InlineKeyboardMarkup(keyboard)
             )
 
+    async def start_registration_amount_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Команда для настройки стартовой суммы при регистрации (только для okarien)"""
+        user = update.effective_user
+        username = user.username
+
+        # Проверить права доступа
+        if not self.is_admin(username):
+            await update.message.reply_text(
+                "❌ У вас нет доступа к этой команде.",
+                parse_mode=self.parse_mode
+            )
+            return
+
+        # Получить текущее значение из базы данных
+        current_amount = self.get_initial_balance()
+
+        # Сохранить состояние для ожидания ввода
+        context.user_data['waiting_for_start_amount'] = True
+
+        await update.message.reply_text(
+            f"💰 <b>Настройка стартовой суммы при регистрации</b>\n\n"
+            f"Текущая стартовая сумма: <b>${current_amount:.2f}</b>\n\n"
+            f"Введите новую сумму (число):",
+            parse_mode=self.parse_mode
+        )
+
+    async def handle_start_amount_input(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Обработка ввода новой стартовой суммы"""
+        user = update.effective_user
+        username = user.username
+
+        # Проверить, что мы ждем ввода суммы
+        if not context.user_data.get('waiting_for_start_amount'):
+            return
+
+        # Проверить права доступа
+        if not self.is_admin(username):
+            context.user_data['waiting_for_start_amount'] = False
+            return
+
+        # Получить введенное значение
+        try:
+            new_amount = float(update.message.text.strip())
+
+            if new_amount < 0:
+                await update.message.reply_text(
+                    "❌ Сумма должна быть положительным числом. Попробуйте еще раз:",
+                    parse_mode=self.parse_mode
+                )
+                return
+
+        except ValueError:
+            await update.message.reply_text(
+                "❌ Неверный формат. Введите число (например, 1000):",
+                parse_mode=self.parse_mode
+            )
+            return
+
+        # Сохранить новое значение в базу данных
+        old_amount = self.get_initial_balance()
+        self.db.set_config(
+            key='start_registration_amount',
+            value=str(new_amount),
+            description='Стартовая сумма денег при регистрации нового пользователя'
+        )
+
+        # Очистить состояние ожидания
+        context.user_data['waiting_for_start_amount'] = False
+
+        # Отправить подтверждение
+        await update.message.reply_text(
+            f"✅ <b>Стартовая сумма обновлена!</b>\n\n"
+            f"Старое значение: ${old_amount:.2f}\n"
+            f"Новое значение: ${new_amount:.2f}\n\n"
+            f"Новые пользователи будут получать ${new_amount:.2f} при регистрации.",
+            parse_mode=self.parse_mode
+        )
+
+        logger.info(f"Администратор {username} изменил стартовую сумму с ${old_amount} на ${new_amount}")
+
     async def admin_unit_icons_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Показать список юнитов для настройки эмодзи"""
         query = update.callback_query
@@ -3098,6 +3191,7 @@ class SimpleBot:
         # Админские команды
         application.add_handler(CommandHandler("admin", self.admin_command))
         application.add_handler(CommandHandler("addmoney", self.addmoney_command))
+        application.add_handler(CommandHandler("startRegistrationAmount", self.start_registration_amount_command))
 
         # Регистрация обработчиков callback (порядок важен для правильной маршрутизации)
         # Админские callback обработчики
