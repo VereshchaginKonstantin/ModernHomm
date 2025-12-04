@@ -34,11 +34,11 @@ class TestKamikazePrice:
         assert kamikaze_price == expected_kamikaze_price, f"Ожидаемая цена камикадзе {expected_kamikaze_price}, получено {kamikaze_price}"
 
         # Проверить точное значение
-        # Базовая стоимость: 100 + 20 + 150 + 100*1 + 50*2 + 1000*0.1 + 1000*0.15 + 1000*0.2 + 1000*0 = 920
-        # Обычная цена: 920 / 10 = 92.0
-        # Камикадзе: 920 / 5 / 10 = 18.4
-        assert normal_price == Decimal("92.00"), f"Обычная цена должна быть 92.00, получено {normal_price}"
-        assert kamikaze_price == Decimal("18.40"), f"Цена камикадзе должна быть 18.40, получено {kamikaze_price}"
+        # Базовая стоимость: 100 + 5*20 + 150 + 100*1 + 50*2 + 1000*0.1 + 1000*0.15 + 50000*0.2 + 1000*0 = 10800
+        # Обычная цена: 10800 / 10 = 1080.0
+        # Камикадзе: 10800 / 5 / 10 = 216.0
+        assert normal_price == Decimal("1080.00"), f"Обычная цена должна быть 1080.00, получено {normal_price}"
+        assert kamikaze_price == Decimal("216.00"), f"Цена камикадзе должна быть 216.00, получено {kamikaze_price}"
 
     def test_non_kamikaze_price_unchanged(self):
         """Тест, что обычный юнит (не камикадзе) имеет нормальную цену"""
@@ -60,8 +60,8 @@ class TestKamikazePrice:
         # Проверить что цены одинаковые
         assert price1 == price2, "Цены должны быть одинаковыми для не-камикадзе"
 
-        # Проверить точное значение: (50 + 10 + 100 + 100*2 + 50*1) / 10 = 410 / 10 = 41.0
-        expected_price = Decimal("41.00")
+        # Проверить точное значение: (50 + 5*10 + 100 + 100*2 + 50*1) / 10 = 450 / 10 = 45.0
+        expected_price = Decimal("45.00")
         assert price1 == expected_price, f"Ожидаемая цена {expected_price}, получено {price1}"
 
     def test_kamikaze_with_max_stats(self):
@@ -77,9 +77,9 @@ class TestKamikazePrice:
 
         kamikaze_price = calculate_unit_price(damage, defense, health, unit_range, speed, luck, crit_chance, dodge_chance, is_kamikaze=1, counterattack_chance=0)
 
-        # Базовая стоимость: 200 + 50 + 300 + 100*5 + 50*5 + 1000*1.0 + 1000*1.0 + 1000*0.9 + 1000*0 = 4200
-        # Камикадзе: 4200 / 5 / 10 = 84.0
-        expected_price = Decimal("84.00")
+        # Базовая стоимость: 200 + 5*50 + 300 + 100*5 + 50*5 + 1000*1.0 + 1000*1.0 + 50000*0.9 + 1000*0 = 48500
+        # Камикадзе: 48500 / 5 / 10 = 970.0
+        expected_price = Decimal("970.00")
         assert kamikaze_price == expected_price, f"Ожидаемая цена {expected_price}, получено {kamikaze_price}"
 
 

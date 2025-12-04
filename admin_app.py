@@ -23,7 +23,7 @@ app.config['MAX_CONTENT_LENGTH'] = 5 * 1024 * 1024  # 5 MB max file size
 def calculate_unit_price(damage: int, defense: int, health: int, unit_range: int, speed: int, luck: float, crit_chance: float, dodge_chance: float, is_kamikaze: int = 0, counterattack_chance: float = 0) -> Decimal:
     """
     Автоматический расчет стоимости юнита по формуле:
-    (Урон + Защита + Здоровье + 100*Дальность + 50*Скорость + 1000*Удача + 1000*Крит + 1000*Уклонение + 1000*Контратака) / 10
+    (Урон + 5*Защита + Здоровье + 100*Дальность + 50*Скорость + 1000*Удача + 1000*Крит + 50000*Уклонение + 1000*Контратака) / 10
     Если юнит камикадзе (is_kamikaze=1), дополнительно делится на 5
 
     Args:
@@ -43,13 +43,13 @@ def calculate_unit_price(damage: int, defense: int, health: int, unit_range: int
     """
     price = (
         damage +
-        defense +
+        5 * defense +
         health +
         100 * unit_range +
         50 * speed +
         1000 * luck +
         1000 * crit_chance +
-        1000 * dodge_chance +
+        50000 * dodge_chance +
         1000 * counterattack_chance
     )
 
@@ -523,7 +523,7 @@ UNIT_FORM_TEMPLATE = """
                 <div class="form-group">
                     <label>Цена (автоматически рассчитывается)</label>
                     <input type="text" class="form-control" value="{{ unit.price if unit else 'Рассчитается автоматически' }}" readonly disabled style="background-color: #e9ecef; cursor: not-allowed;">
-                    <small class="form-text text-muted">Формула: (Урон + Защита + Здоровье + 100×Дальность + 50×Скорость + 1000×Удача + 1000×Крит + 1000×Уклонение + 1000×Контратака) / 10. Если камикадзе: дополнительно /5</small>
+                    <small class="form-text text-muted">Формула: (Урон + 5×Защита + Здоровье + 100×Дальность + 50×Скорость + 1000×Удача + 1000×Крит + 50000×Уклонение + 1000×Контратака) / 10. Если камикадзе: дополнительно /5</small>
                 </div>
 
                 <div class="form-group">
