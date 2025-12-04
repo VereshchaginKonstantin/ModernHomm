@@ -516,8 +516,8 @@ UNIT_FORM_TEMPLATE = """
 
                 <div class="form-group">
                     <label>Описание</label>
-                    <textarea name="description" class="form-control" rows="3" maxlength="1000" placeholder="Смешное описание юнита...">{{ unit.description if unit and unit.description else '' }}</textarea>
-                    <small class="form-text text-muted">Краткое и желательно смешное описание юнита (до 1000 символов)</small>
+                    <textarea name="description" class="form-control" rows="3" maxlength="1000" placeholder="Описание юнита...">{{ unit.description if unit and unit.description else '' }}</textarea>
+                    <small class="form-text text-muted">Описание юнита (до 1000 символов)</small>
                 </div>
 
                 <div class="form-group">
