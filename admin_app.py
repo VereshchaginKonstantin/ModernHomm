@@ -371,7 +371,7 @@ COMPREHENSIVE_UNITS_TEMPLATE = """
             <div style="display: flex; gap: 20px; align-items: start;">
                 {% if unit.has_image %}
                 <div style="flex-shrink: 0;">
-                    <img src="/static/unit_images/{{ unit.id }}.png" alt="{{ unit.name }}" style="width: 150px; height: 150px; object-fit: cover; border-radius: 8px; border: 2px solid #ddd;">
+                    <img src="{{ '/' + unit.image_path }}" alt="{{ unit.name }}" style="width: 150px; height: 150px; object-fit: cover; border-radius: 8px; border: 2px solid #ddd;">
                 </div>
                 {% endif %}
 
