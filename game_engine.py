@@ -898,7 +898,7 @@ class GameEngine:
         alive_defenders = self._count_alive_units(target)
         min_units = min(alive_attackers, alive_defenders)
         defense_reduction = target_unit.defense * min_units
-        total_damage = max(alive_attackers, damage_multiplied - defense_reduction)  # Минимум по 1 урона на атакующего
+        total_damage = damage_multiplied - defense_reduction
 
         # Создать детальный лог с формулой расчета
         attacker_display = f"x{actual_attackers}" if not is_kamikaze else f"x{actual_attackers} 💣КАМИКАДЗЕ💣"
@@ -942,7 +942,7 @@ class GameEngine:
 
         # Защита
         log += f"\n7️⃣ Защита цели: {target_unit.defense} x min({alive_attackers}, {alive_defenders}) = {target_unit.defense} x {min_units} = {defense_reduction}\n"
-        log += f"   Урон после защиты: max({alive_attackers}, {damage_multiplied} - {defense_reduction}) = {total_damage}\n"
+        log += f"   Урон после защиты: {damage_multiplied} - {defense_reduction} = {total_damage}\n"
         log += f"   ⚡ ИТОГОВЫЙ УРОН: {total_damage}"
 
         return total_damage, is_crit, log

@@ -706,8 +706,8 @@ HELP_TEMPLATE = """
                 <p><strong>7.</strong> Если крит: <code>dmg = dmg × 2</code></p>
                 <p><strong>8.</strong> Проверка удачи: <code>if random() < luck: dmg = dmg × 1.5</code></p>
                 <p><strong>9.</strong> Умножение на количество атакующих: <code>dmg_multiplied = dmg × кол-во_атакующих</code></p>
-                <p><strong>10.</strong> Применение защиты: <code>defense_reduction = defense × min(кол-во_атакующих, кол-во_обороняющихся)</code></p>
-                <p><strong>11.</strong> Итоговый урон: <code>total_dmg = max(кол-во_атакующих, dmg_multiplied - defense_reduction)</code></p>
+                <p><strong>10.</strong> Вычисляем защиту: <code>defense_reduction = defense × min(кол-во_обороняющихся, кол-во_атакующих)</code></p>
+                <p><strong>11.</strong> Итоговый урон: <code>total_dmg = dmg_multiplied - defense_reduction</code></p>
             </div>
         </div>
     </div>
