@@ -29,9 +29,9 @@ class TestPriceFormulaUpdate:
             is_kamikaze=0, counterattack_chance=counterattack_chance
         )
 
-        # Расчет: 100 + 20 + 150 + 100*1 + 100*2 + 1000*0.1 + 1000*0.15 + 1000*0.2 + 100*0
-        # = 100 + 20 + 150 + 100 + 200 + 100 + 150 + 200 + 0 = 1020.0
-        expected_price = Decimal("1020.00")
+        # Расчет: 100 + 20 + 150 + 100*1 + 100*2 + 1000*0.1 + 1000*0.15 + 5000*0.2 + 1000*0
+        # = 100 + 20 + 150 + 100 + 200 + 100 + 150 + 1000 + 0 = 1820.0
+        expected_price = Decimal("1820.00")
         assert price == expected_price, f"Ожидаемая цена {expected_price}, получено {price}"
 
     def test_kamikaze_unit_price_without_dodge(self):
@@ -52,9 +52,9 @@ class TestPriceFormulaUpdate:
             is_kamikaze=1, counterattack_chance=counterattack_chance
         )
 
-        # Расчет: 100 + 20 + 150 + 100*1 + 100*2 + 1000*0.1 + 1000*0.15 + 0*0.2 + 100*0
-        # = 100 + 20 + 150 + 100 + 200 + 100 + 150 + 0 + 0 = 820.0
-        expected_price = Decimal("820.00")
+        # Расчет: 100/5 + 20 + 150 + 100*1 + 100*2 + 1000*0.1 + 1000*0.15 + 100*0.2 + 1000*0
+        # = 20 + 20 + 150 + 100 + 200 + 100 + 150 + 20 + 0 = 760.0
+        expected_price = Decimal("760.00")
         assert price == expected_price, f"Ожидаемая цена {expected_price}, получено {price}"
 
     def test_kamikaze_vs_normal_with_dodge(self):
@@ -81,10 +81,10 @@ class TestPriceFormulaUpdate:
             is_kamikaze=1, counterattack_chance=counterattack_chance
         )
 
-        # Обычный: 50 + 10 + 100 + 100*1 + 100*1 + 0 + 0 + 1000*0.3 + 0 = 660.0
-        # Камикадзе: 50 + 10 + 100 + 100*1 + 100*1 + 0 + 0 + 0*0.3 + 0 = 360.0
-        assert normal_price == Decimal("660.00")
-        assert kamikaze_price == Decimal("360.00")
+        # Обычный: 50 + 10 + 100 + 100*1 + 100*1 + 0 + 0 + 5000*0.3 + 0 = 1860.0
+        # Камикадзе: 50/5 + 10 + 100 + 100*1 + 100*1 + 0 + 0 + 100*0.3 + 0 = 350.0
+        assert normal_price == Decimal("1860.00")
+        assert kamikaze_price == Decimal("350.00")
 
         # Проверяем что камикадзе дешевле из-за отсутствия уклонения в цене
         assert kamikaze_price < normal_price, "Камикадзе должен быть дешевле обычного юнита с уклонением"
@@ -113,9 +113,9 @@ class TestPriceFormulaUpdate:
         )
 
         # Без контратаки: 50 + 10 + 100 + 100*1 + 100*1 = 360.0
-        # С контратакой 0.5: 360 + 100*0.5 = 410.0
+        # С контратакой 0.5: 360 + 1000*0.5 = 860.0
         assert price_without_counter == Decimal("360.00")
-        assert price_with_counter == Decimal("410.00")
+        assert price_with_counter == Decimal("860.00")
 
     def test_price_all_stats_zero(self):
         """Тест стоимости юнита с нулевыми характеристиками"""
@@ -137,10 +137,10 @@ class TestPriceFormulaUpdate:
             is_kamikaze=0, counterattack_chance=1.0
         )
 
-        # 200 + 50 + 300 + 100*5 + 100*5 + 1000*1.0 + 1000*1.0 + 1000*0.9 + 100*1.0
-        # = 200 + 50 + 300 + 500 + 500 + 1000 + 1000 + 900 + 100
-        # = 4550.0
-        expected_price = Decimal("4550.00")
+        # 200 + 50 + 300 + 100*5 + 100*5 + 1000*1.0 + 1000*1.0 + 5000*0.9 + 1000*1.0
+        # = 200 + 50 + 300 + 500 + 500 + 1000 + 1000 + 4500 + 1000
+        # = 9050.0
+        expected_price = Decimal("9050.00")
         assert price == expected_price, f"Ожидаемая цена {expected_price}, получено {price}"
 
 

@@ -23,8 +23,8 @@ app.config['MAX_CONTENT_LENGTH'] = 5 * 1024 * 1024  # 5 MB max file size
 def calculate_unit_price(damage: int, defense: int, health: int, unit_range: int, speed: int, luck: float, crit_chance: float, dodge_chance: float, is_kamikaze: int = 0, counterattack_chance: float = 0) -> Decimal:
     """
     Автоматический расчет стоимости юнита по формуле:
-    (Урон + Защита + Здоровье + 100*Дальность + 100*Скорость + 1000*Удача + 1000*Крит + 1000*Уклонение + 100*Контратака)
-    Если юнит камикадзе (is_kamikaze=1), уклонение не учитывается в стоимости
+    (Урон + Защита + Здоровье + 100*Дальность + 100*Скорость + 1000*Удача + 1000*Крит + 5000*Уклонение + 1000*Контратака)
+    Для камикадзе: Урон/5 и Уклонение/50
 
     Args:
         damage: Урон юнита
@@ -41,11 +41,12 @@ def calculate_unit_price(damage: int, defense: int, health: int, unit_range: int
     Returns:
         Decimal: Рассчитанная стоимость
     """
-    # Для камикадзе уклонение не учитывается
-    dodge_multiplier = 0 if is_kamikaze else 1000
+    # Для камикадзе: урон делится на 5, уклонение делится на 50
+    damage_value = damage / 5 if is_kamikaze else damage
+    dodge_multiplier = 5000 / 50 if is_kamikaze else 5000  # 100 для камикадзе, 5000 для обычного
 
     price = (
-        damage +
+        damage_value +
         defense +
         health +
         100 * unit_range +
@@ -53,7 +54,7 @@ def calculate_unit_price(damage: int, defense: int, health: int, unit_range: int
         1000 * luck +
         1000 * crit_chance +
         dodge_multiplier * dodge_chance +
-        100 * counterattack_chance
+        1000 * counterattack_chance
     )
 
     return Decimal(str(round(price, 2)))
@@ -519,7 +520,7 @@ UNIT_FORM_TEMPLATE = """
                 <div class="form-group">
                     <label>Цена (автоматически рассчитывается)</label>
                     <input type="text" class="form-control" value="{{ unit.price if unit else 'Рассчитается автоматически' }}" readonly disabled style="background-color: #e9ecef; cursor: not-allowed;">
-                    <small class="form-text text-muted">Формула: (Урон + Защита + Здоровье + 100×Дальность + 100×Скорость + 1000×Удача + 1000×Крит + 1000×Уклонение + 100×Контратака). Для камикадзе: уклонение не учитывается</small>
+                    <small class="form-text text-muted">Формула: (Урон + Защита + Здоровье + 100×Дальность + 100×Скорость + 1000×Удача + 1000×Крит + 5000×Уклонение + 1000×Контратака). Для камикадзе: Урон/5 и Уклонение/50</small>
                 </div>
 
                 <div class="form-group">
