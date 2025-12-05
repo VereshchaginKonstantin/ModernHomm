@@ -1705,6 +1705,26 @@ class SimpleBot:
                 await self._edit_message_universal(query, "❌ Юнит не найден", parse_mode=self.parse_mode)
                 return
 
+            # Проверка: если юнит не может ни двигаться, ни атаковать - автоматически пропускаем ход
+            can_move = unit_data.get("can_move", False)
+            targets = unit_data.get("targets", [])
+
+            if not can_move and not targets:
+                # Автоматически пропускаем ход
+                with self.db.get_session() as session:
+                    engine = GameEngine(session)
+                    success, message = engine.skip_turn(game_id, game_user.id)
+
+                    if success:
+                        await self._edit_message_universal(
+                            query,
+                            f"⏭️ {unit_data['unit_name']} не может ходить и атаковать.\nХод пропущен автоматически.\n\n{message}",
+                            parse_mode=self.parse_mode
+                        )
+                    else:
+                        await self._edit_message_universal(query, f"❌ {message}", parse_mode=self.parse_mode)
+                return
+
             # Получаем позицию в шахматной нотации
             pos = unit_data['position']
             chess_pos = coords_to_chess(pos[0], pos[1])

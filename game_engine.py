@@ -894,9 +894,10 @@ class GameEngine:
         # Умножить на количество атакующих юнитов
         damage_multiplied = damage * alive_attackers
 
-        # Применить защиту (вычитаем защиту × количество обороняющихся)
+        # Применить защиту (вычитаем защиту × минимум между атакующими и обороняющимися)
         alive_defenders = self._count_alive_units(target)
-        defense_reduction = target_unit.defense * alive_defenders
+        min_units = min(alive_attackers, alive_defenders)
+        defense_reduction = target_unit.defense * min_units
         total_damage = max(alive_attackers, damage_multiplied - defense_reduction)  # Минимум по 1 урона на атакующего
 
         # Создать детальный лог с формулой расчета
@@ -940,7 +941,7 @@ class GameEngine:
         log += f"   Урон до защиты: {damage_multiplied}\n"
 
         # Защита
-        log += f"\n7️⃣ Защита цели: {target_unit.defense} x {alive_defenders} обороняющихся = {defense_reduction}\n"
+        log += f"\n7️⃣ Защита цели: {target_unit.defense} x min({alive_attackers}, {alive_defenders}) = {target_unit.defense} x {min_units} = {defense_reduction}\n"
         log += f"   Урон после защиты: max({alive_attackers}, {damage_multiplied} - {defense_reduction}) = {total_damage}\n"
         log += f"   ⚡ ИТОГОВЫЙ УРОН: {total_damage}"
 
