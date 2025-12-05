@@ -462,9 +462,17 @@ class GameEngine:
         turn_switched = False
         winner_id = self._check_game_over(game)
         if winner_id:
-            reward = self._complete_game(game, winner_id)
+            reward, stats = self._complete_game(game, winner_id)
             winner_name = game.player1.name if winner_id == game.player1_id else game.player2.name
-            combat_log += f"\n\n🏆 Игра окончена! Победитель: {winner_name}\n💰 Выигрыш: ${float(reward):.2f} (стоимость уничтоженных юнитов противника)"
+            loser_name = game.player2.name if winner_id == game.player1_id else game.player1.name
+
+            combat_log += f"\n\n🏆 Игра окончена! Победитель: {winner_name}\n\n"
+            combat_log += f"💰 Финансовая статистика:\n"
+            combat_log += f"   📦 Убито юнитов {loser_name}: ${float(stats['killed_enemy_value']):.2f}\n"
+            if stats['lost_own_value'] > 0:
+                combat_log += f"   ⚰️ Потеряно своих юнитов: ${float(stats['lost_own_value']):.2f}\n"
+            combat_log += f"   💵 Награда (90%): +${float(reward):.2f}\n"
+            combat_log += f"   💹 Чистая прибыль: ${float(stats['net_profit']):.2f}"
         else:
             # Проверить, все ли юниты текущего игрока походили
             if self._all_units_moved(game, player_id):
@@ -896,17 +904,17 @@ class GameEngine:
         damage_multiplied = damage * alive_attackers
 
         # Вычислить задетые юниты (сколько юнитов получит урон)
-        # Формула: задетые_юниты = 1 + (0.5 * (dmg_multiplied - target_health)) / target_health
+        # Формула: задетые_юниты = 1 + floor(0.5 * (dmg_multiplied - target_health) / target_health)
+        import math
         target_health = target_unit.health
         if damage_multiplied > target_health:
-            affected_units = 1 + (0.5 * (damage_multiplied - target_health)) / target_health
+            affected_units = 1 + math.floor((0.5 * (damage_multiplied - target_health)) / target_health)
         else:
-            affected_units = 1.0  # Если урон меньше здоровья одного юнита, задевается только 1
+            affected_units = 1  # Если урон меньше здоровья одного юнита, задевается только 1
 
-        # Применить защиту (вычитаем защиту × минимум между задетыми юнитами и атакующими)
+        # Применить защиту (вычитаем защиту × абсолютное значение задетых юнитов)
         alive_defenders = self._count_alive_units(target)
-        min_units = min(affected_units, alive_attackers)
-        defense_reduction = target_unit.defense * min_units
+        defense_reduction = target_unit.defense * abs(affected_units)
         total_damage = damage_multiplied - defense_reduction
 
         # Создать детальный лог с формулой расчета
@@ -950,12 +958,12 @@ class GameEngine:
         log += f"   Урон до защиты: {damage_multiplied}\n"
 
         # Вычисление задетых юнитов
-        log += f"\n7️⃣ Задетые юниты: 1 + (0.5 * ({damage_multiplied} - {target_health}) / {target_health}) = {affected_units:.2f}\n"
+        log += f"\n7️⃣ Задетые юниты: 1 + floor(0.5 * ({damage_multiplied} - {target_health}) / {target_health}) = {affected_units}\n"
 
         # Защита
-        log += f"\n8️⃣ Защита цели: {target_unit.defense} x min({affected_units:.2f}, {alive_attackers}) = {target_unit.defense} x {min_units:.2f} = {defense_reduction:.2f}\n"
-        log += f"   Урон после защиты: {damage_multiplied} - {defense_reduction:.2f} = {total_damage:.2f}\n"
-        log += f"   ⚡ ИТОГОВЫЙ УРОН: {total_damage:.0f}"
+        log += f"\n8️⃣ Защита цели: {target_unit.defense} × |{affected_units}| = {defense_reduction}\n"
+        log += f"   Урон после защиты: {damage_multiplied} - {defense_reduction} = {total_damage}\n"
+        log += f"   ⚡ ИТОГОВЫЙ УРОН: {int(total_damage)}"
 
         return total_damage, is_crit, log
 
@@ -1206,7 +1214,7 @@ class GameEngine:
 
         self.db.flush()
 
-    def _complete_game(self, game: Game, winner_id: int) -> Decimal:
+    def _complete_game(self, game: Game, winner_id: int) -> Tuple[Decimal, dict]:
         """
         Завершить игру
 
@@ -1215,7 +1223,7 @@ class GameEngine:
             winner_id: ID победителя
 
         Returns:
-            Decimal: Награда победителя в деньгах
+            Tuple[Decimal, dict]: Награда победителя в деньгах и статистика боя
         """
         from decimal import Decimal
 
@@ -1240,28 +1248,37 @@ class GameEngine:
         winner.wins += 1
         loser.losses += 1
 
-        # Рассчитать награду (стоимость побежденных юнитов) ДО сохранения урона
-        reward = Decimal('0')
-        killed_units_details = []
+        # Рассчитать награду (90% от стоимости побежденных юнитов) ДО сохранения урона
+        killed_enemy_value = Decimal('0')  # Стоимость убитых юнитов противника
+        lost_own_value = Decimal('0')  # Стоимость потерянных своих юнитов
+        killed_enemy_details = []
+        lost_own_details = []
 
-        # Сохраним информацию о начальном и текущем количестве юнитов проигравшего
-        initial_units_data = {}
+        # Подсчитать убитых юнитов у обоих игроков
         for battle_unit in game.battle_units:
-            if battle_unit.player_id == loser_id:
-                unit_price = battle_unit.user_unit.unit.price
-                unit_name = battle_unit.user_unit.unit.name
-                user_unit_id = battle_unit.user_unit.id
+            unit_price = battle_unit.user_unit.unit.price
+            unit_name = battle_unit.user_unit.unit.name
+            initial_count = battle_unit.user_unit.count
+            alive_count = self._count_alive_units(battle_unit)
+            killed_count = initial_count - alive_count
 
-                # Получить начальное количество из user_unit
-                initial_count = battle_unit.user_unit.count
-                alive_count = self._count_alive_units(battle_unit)
-                killed_count = initial_count - alive_count
+            if killed_count > 0:
+                unit_value = Decimal(str(unit_price)) * killed_count
 
-                unit_reward = Decimal(str(unit_price)) * killed_count
-                reward += unit_reward
+                if battle_unit.player_id == loser_id:
+                    # Юниты проигравшего
+                    killed_enemy_value += unit_value
+                    killed_enemy_details.append(f"{unit_name} x{killed_count} = ${float(unit_value):.2f}")
+                elif battle_unit.player_id == winner_id:
+                    # Юниты победителя
+                    lost_own_value += unit_value
+                    lost_own_details.append(f"{unit_name} x{killed_count} = ${float(unit_value):.2f}")
 
-                if killed_count > 0:
-                    killed_units_details.append(f"{unit_name} x{killed_count} = ${float(unit_reward):.2f}")
+        # Награда = 90% от стоимости убитых юнитов противника
+        reward = killed_enemy_value * Decimal('0.9')
+
+        # Чистая прибыль = Награда - Стоимость потерянных юнитов
+        net_profit = reward - lost_own_value
 
         winner.balance += reward
 
@@ -1271,10 +1288,26 @@ class GameEngine:
         logger.info(f"📊 Статистика обновлена:")
         logger.info(f"  • {winner.name}: Побед {old_winner_wins} → {winner.wins}, Баланс ${old_winner_balance:.2f} → ${float(winner.balance):.2f} (+${float(reward):.2f})")
         logger.info(f"  • {loser.name}: Поражений {old_loser_losses} → {loser.losses}")
-        if killed_units_details:
-            logger.info(f"💰 Награда за убитых юнитов: {', '.join(killed_units_details)}")
+        logger.info(f"\n💰 Финансовая статистика:")
+        if killed_enemy_details:
+            logger.info(f"  • Убито юнитов противника ({loser.name}): {', '.join(killed_enemy_details)}")
+            logger.info(f"    Общая стоимость: ${float(killed_enemy_value):.2f}")
+        if lost_own_details:
+            logger.info(f"  • Потеряно своих юнитов ({winner.name}): {', '.join(lost_own_details)}")
+            logger.info(f"    Общая стоимость: ${float(lost_own_value):.2f}")
+        logger.info(f"  • Награда (90% от убитых): ${float(reward):.2f}")
+        logger.info(f"  • Чистая прибыль: ${float(net_profit):.2f}")
 
         self.db.commit()
         logger.info(f"✅ Игра #{game.id} успешно завершена")
 
-        return reward
+        # Вернуть награду и статистику
+        stats = {
+            'killed_enemy_value': killed_enemy_value,
+            'lost_own_value': lost_own_value,
+            'net_profit': net_profit,
+            'killed_enemy_details': killed_enemy_details,
+            'lost_own_details': lost_own_details
+        }
+
+        return reward, stats

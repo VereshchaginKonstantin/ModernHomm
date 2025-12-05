@@ -706,8 +706,22 @@ HELP_TEMPLATE = """
                 <p><strong>7.</strong> Если крит: <code>dmg = dmg × 2</code></p>
                 <p><strong>8.</strong> Проверка удачи: <code>if random() < luck: dmg = dmg × 1.5</code></p>
                 <p><strong>9.</strong> Умножение на количество атакующих: <code>dmg_multiplied = dmg × кол-во_атакующих</code></p>
-                <p><strong>10.</strong> Вычисляем защиту: <code>defense_reduction = defense × min(кол-во_обороняющихся, кол-во_атакующих)</code></p>
-                <p><strong>11.</strong> Итоговый урон: <code>total_dmg = dmg_multiplied - defense_reduction</code></p>
+                <p><strong>10.</strong> Расчет задетых юнитов: <code>задетые_юниты = 1 + floor(0.5 × (dmg_multiplied - здоровье) / здоровье)</code></p>
+                <p><strong>11.</strong> Применение защиты: <code>defense_reduction = defense × |задетые_юниты|</code></p>
+                <p><strong>12.</strong> Итоговый урон: <code>total_dmg = dmg_multiplied - defense_reduction</code></p>
+            </div>
+
+            <h2 style="margin-top: 40px;">Награда за победу</h2>
+            <div style="background-color: #f8f9fa; padding: 20px; border-radius: 8px;">
+                <p><strong>При завершении игры победитель получает награду:</strong></p>
+                <div style="background-color: white; padding: 15px; border-radius: 4px; margin: 10px 0; font-family: monospace;">
+                    <code>Награда = (Стоимость убитых юнитов противника) × 0.9</code>
+                </div>
+                <p><strong>Чистая прибыль рассчитывается как:</strong></p>
+                <div style="background-color: white; padding: 15px; border-radius: 4px; margin: 10px 0; font-family: monospace;">
+                    <code>Чистая прибыль = Награда - Стоимость потерянных своих юнитов</code>
+                </div>
+                <p style="color: #666; margin-top: 15px;"><em>Примечание: Учитываются все убитые юниты обеих сторон. Победитель получает 90% от стоимости убитых юнитов противника, но теряет стоимость своих погибших юнитов.</em></p>
             </div>
         </div>
     </div>
