@@ -704,6 +704,54 @@ class Database:
 
             return True
 
+    def sell_units(self, telegram_id: int, unit_type_id: int):
+        """
+        Продажа всех юнитов указанного типа
+
+        Args:
+            telegram_id: ID пользователя в Telegram
+            unit_type_id: ID типа юнита для продажи
+
+        Returns:
+            tuple: (количество проданных юнитов, полученные деньги) или (0, 0) если нет юнитов
+        """
+        from decimal import Decimal
+
+        with self.get_session() as session:
+            # Получаем игрового пользователя
+            game_user = session.query(GameUser).filter_by(telegram_id=telegram_id).first()
+
+            if not game_user:
+                return (0, Decimal('0'))
+
+            # Получаем юнит
+            user_unit = session.query(UserUnit).filter_by(
+                game_user_id=game_user.id,
+                unit_type_id=unit_type_id
+            ).first()
+
+            if not user_unit or user_unit.count <= 0:
+                return (0, Decimal('0'))
+
+            # Получаем информацию о типе юнита для расчета цены
+            unit = session.query(Unit).filter_by(id=unit_type_id).first()
+            if not unit:
+                return (0, Decimal('0'))
+
+            # Рассчитываем стоимость продажи (70% от цены)
+            count = user_unit.count
+            total_price = unit.price * count
+            sell_price = total_price * Decimal('0.7')
+
+            # Удаляем юниты
+            session.delete(user_unit)
+
+            # Начисляем деньги
+            game_user.balance += sell_price
+            session.flush()
+
+            return (count, sell_price)
+
     # ===== CRUD методы для Unit =====
 
     def initialize_base_units(self):

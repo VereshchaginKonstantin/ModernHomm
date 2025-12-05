@@ -270,6 +270,7 @@ class SimpleBot:
             user_units = self.db.get_user_units(user.id)
 
             units_text = ""
+            keyboard = []
             if user_units:
                 # Фильтруем юнитов с количеством > 0
                 active_units = [u for u in user_units if u.count > 0]
@@ -279,11 +280,21 @@ class SimpleBot:
                         # Получаем детали юнита
                         unit = self.db.get_unit_by_id(user_unit.unit_type_id)
                         if unit:
+                            total_price = unit.price * user_unit.count
+                            sell_price = total_price * Decimal('0.7')
                             units_text += (
                                 f"\n{unit.name} x{user_unit.count}\n"
                                 f"  ⚔️ Урон: {unit.damage} | 🛡️ Защита: {unit.defense} | 🎯 Дальность: {unit.range}\n"
                                 f"  ❤️ HP: {unit.health} | 🏃 Скорость: {unit.speed}\n"
+                                f"  💵 Цена продажи: ${sell_price:.2f}\n"
                             )
+                            # Добавляем кнопку продажи для этого юнита
+                            keyboard.append([
+                                InlineKeyboardButton(
+                                    f"💰 Продать {unit.name} ({user_unit.count} шт.)",
+                                    callback_data=f"sell_unit_{user_unit.unit_type_id}"
+                                )
+                            ])
                 else:
                     units_text = "\n\n🔰 У вас пока нет юнитов. Посетите /shop для покупки!"
             else:
@@ -297,12 +308,67 @@ class SimpleBot:
                 f"{units_text}"
             )
 
-            await update.message.reply_text(response, parse_mode=self.parse_mode)
+            reply_markup = InlineKeyboardMarkup(keyboard) if keyboard else None
+            await update.message.reply_text(response, parse_mode=self.parse_mode, reply_markup=reply_markup)
 
         except Exception as e:
             logger.error(f"Ошибка при получении профиля: {e}")
             await update.message.reply_text(
                 "Произошла ошибка при получении профиля. Попробуйте позже.",
+                parse_mode=self.parse_mode
+            )
+
+    async def sell_unit_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Обработчик callback для продажи юнита"""
+        query = update.callback_query
+        await query.answer()
+
+        # Парсим данные из callback (формат: sell_unit_unit_type_id)
+        data = query.data
+        if not data.startswith('sell_unit_'):
+            return
+
+        unit_type_id = int(data.split('_')[2])
+        user = update.effective_user
+
+        try:
+            # Получаем информацию о юните
+            unit = self.db.get_unit_by_id(unit_type_id)
+            if not unit:
+                await query.edit_message_text(
+                    "❌ Юнит не найден.",
+                    parse_mode=self.parse_mode
+                )
+                return
+
+            # Продаем юниты
+            count, money = self.db.sell_units(user.id, unit_type_id)
+
+            if count == 0:
+                await query.edit_message_text(
+                    "❌ У вас нет этих юнитов для продажи.",
+                    parse_mode=self.parse_mode
+                )
+                return
+
+            # Успешная продажа
+            response = (
+                f"✅ Успешно продано!\n\n"
+                f"🔰 Юнит: {unit.name}\n"
+                f"📦 Количество: {count} шт.\n"
+                f"💰 Получено: ${money:.2f}\n\n"
+                f"Используйте /profile чтобы увидеть обновленный профиль."
+            )
+
+            await query.edit_message_text(
+                response,
+                parse_mode=self.parse_mode
+            )
+
+        except Exception as e:
+            logger.error(f"Ошибка при продаже юнита: {e}")
+            await query.edit_message_text(
+                "Произошла ошибка при продаже. Попробуйте позже.",
                 parse_mode=self.parse_mode
             )
 
@@ -3163,6 +3229,7 @@ class SimpleBot:
         application.add_handler(CallbackQueryHandler(self.buy_unit_callback, pattern=r'^buy_unit:'))
         application.add_handler(CallbackQueryHandler(self.confirm_buy_callback, pattern=r'^confirm_buy:'))
         application.add_handler(CallbackQueryHandler(self.back_to_shop_callback, pattern=r'^back_to_shop$'))
+        application.add_handler(CallbackQueryHandler(self.sell_unit_callback, pattern=r'^sell_unit_'))
         application.add_handler(CallbackQueryHandler(self.show_profile_callback, pattern=r'^show_profile$'))
         application.add_handler(CallbackQueryHandler(self.search_pagination_callback, pattern=r'^search:'))
         application.add_handler(CallbackQueryHandler(self.users_pagination_callback, pattern=r'^users:'))
