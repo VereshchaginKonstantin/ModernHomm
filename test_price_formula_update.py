@@ -29,9 +29,9 @@ class TestPriceFormulaUpdate:
             is_kamikaze=0, counterattack_chance=counterattack_chance
         )
 
-        # Расчет: 100 + 20 + 150 + 100*1 + 100*2 + 1000*0.1 + 1000*0.15 + 5000*0.2 + 1000*0
-        # = 100 + 20 + 150 + 100 + 200 + 100 + 150 + 1000 + 0 = 1820.0
-        expected_price = Decimal("1820.00")
+        # Расчет: 100 + 20 + 150 + 2*1*(100+20) + 2*(100+20) + 2*0.1*100 + 2*0.15*100 + 10*0.2*(100+20) + 0
+        # = 100 + 20 + 150 + 240 + 240 + 20 + 30 + 240 + 0 = 1040.0
+        expected_price = Decimal("1040.00")
         assert price == expected_price, f"Ожидаемая цена {expected_price}, получено {price}"
 
     def test_kamikaze_unit_price_without_dodge(self):
@@ -52,9 +52,9 @@ class TestPriceFormulaUpdate:
             is_kamikaze=1, counterattack_chance=counterattack_chance
         )
 
-        # Расчет: 100/5 + 20 + 150 + 100*1 + 100*2 + 1000*0.1 + 1000*0.15 + 100*0.2 + 1000*0
-        # = 20 + 20 + 150 + 100 + 200 + 100 + 150 + 20 + 0 = 760.0
-        expected_price = Decimal("760.00")
+        # Расчет: 20 + 20 + 150 + 2*1*(20+20) + 2*(20+20) + 2*0.1*20 + 2*0.15*20 + 10*(0.2/50)*(20+20) + 0
+        # = 20 + 20 + 150 + 80 + 80 + 4 + 6 + 1.6 + 0 = 361.6
+        expected_price = Decimal("361.60")
         assert price == expected_price, f"Ожидаемая цена {expected_price}, получено {price}"
 
     def test_kamikaze_vs_normal_with_dodge(self):
@@ -81,10 +81,10 @@ class TestPriceFormulaUpdate:
             is_kamikaze=1, counterattack_chance=counterattack_chance
         )
 
-        # Обычный: 50 + 10 + 100 + 100*1 + 100*1 + 0 + 0 + 5000*0.3 + 0 = 1860.0
-        # Камикадзе: 50/5 + 10 + 100 + 100*1 + 100*1 + 0 + 0 + 100*0.3 + 0 = 350.0
-        assert normal_price == Decimal("1860.00")
-        assert kamikaze_price == Decimal("350.00")
+        # Обычный: 50 + 10 + 100 + 2*1*(50+10) + 1*(50+10) + 0 + 0 + 10*0.3*(50+10) + 0 = 520.0
+        # Камикадзе: 10 + 10 + 100 + 2*1*(10+10) + 1*(10+10) + 0 + 0 + 10*(0.3/50)*(10+10) + 0 = 181.2
+        assert normal_price == Decimal("520.00")
+        assert kamikaze_price == Decimal("181.20")
 
         # Проверяем что камикадзе дешевле из-за отсутствия уклонения в цене
         assert kamikaze_price < normal_price, "Камикадзе должен быть дешевле обычного юнита с уклонением"
@@ -112,10 +112,10 @@ class TestPriceFormulaUpdate:
             is_kamikaze=0, counterattack_chance=0.5
         )
 
-        # Без контратаки: 50 + 10 + 100 + 100*1 + 100*1 = 360.0
-        # С контратакой 0.5: 360 + 1000*0.5 = 860.0
-        assert price_without_counter == Decimal("360.00")
-        assert price_with_counter == Decimal("860.00")
+        # Без контратаки: 50 + 10 + 100 + 2*1*(50+10) + 1*(50+10) + 0 + 0 + 0 + 0 = 340.0
+        # С контратакой 0.5: 50 + 10 + 100 + 2*1*(50+10) + 1*(50+10) + 0 + 0 + 0 + 10*0.5*50 = 590.0
+        assert price_without_counter == Decimal("340.00")
+        assert price_with_counter == Decimal("590.00")
 
     def test_price_all_stats_zero(self):
         """Тест стоимости юнита с нулевыми характеристиками"""
@@ -125,8 +125,8 @@ class TestPriceFormulaUpdate:
             is_kamikaze=0, counterattack_chance=0
         )
 
-        # 0 + 0 + 0 + 100*1 + 100*1 + 0 + 0 + 0 + 0 = 200.0
-        expected_price = Decimal("200.00")
+        # 0 + 0 + 0 + 2*1*(0+0) + 1*(0+0) + 0 + 0 + 0 + 0 = 0.0
+        expected_price = Decimal("0.00")
         assert price == expected_price, f"Ожидаемая цена {expected_price}, получено {price}"
 
     def test_price_with_all_max_stats(self):
@@ -137,10 +137,10 @@ class TestPriceFormulaUpdate:
             is_kamikaze=0, counterattack_chance=1.0
         )
 
-        # 200 + 50 + 300 + 100*5 + 100*5 + 1000*1.0 + 1000*1.0 + 5000*0.9 + 1000*1.0
-        # = 200 + 50 + 300 + 500 + 500 + 1000 + 1000 + 4500 + 1000
-        # = 9050.0
-        expected_price = Decimal("9050.00")
+        # 200 + 50 + 300 + 2*5*(200+50) + 5*(200+50) + 2*1.0*200 + 2*1.0*200 + 10*0.9*(200+50) + 10*1.0*200
+        # = 200 + 50 + 300 + 2500 + 1250 + 400 + 400 + 2250 + 2000
+        # = 9350.0
+        expected_price = Decimal("9350.00")
         assert price == expected_price, f"Ожидаемая цена {expected_price}, получено {price}"
 
 

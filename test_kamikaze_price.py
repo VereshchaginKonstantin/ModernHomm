@@ -30,13 +30,13 @@ class TestKamikazePrice:
         kamikaze_price = calculate_unit_price(damage, defense, health, unit_range, speed, luck, crit_chance, dodge_chance, is_kamikaze=1, counterattack_chance=0)
 
         # Проверить точное значение
-        # Обычная: 100 + 20 + 150 + 100*1 + 100*2 + 1000*0.1 + 1000*0.15 + 5000*0.2 + 0 = 1820.0
-        # Камикадзе: 100/5 + 20 + 150 + 100*1 + 100*2 + 1000*0.1 + 1000*0.15 + 100*0.2 + 0 = 760.0
-        assert normal_price == Decimal("1820.00"), f"Обычная цена должна быть 1820.00, получено {normal_price}"
-        assert kamikaze_price == Decimal("760.00"), f"Цена камикадзе должна быть 760.00, получено {kamikaze_price}"
+        # Обычная: 100 + 20 + 150 + 2*1*(100+20) + 2*(100+20) + 2*0.1*100 + 2*0.15*100 + 10*0.2*(100+20) + 0 = 1040.0
+        # Камикадзе: 20 + 20 + 150 + 2*1*(20+20) + 2*(20+20) + 2*0.1*20 + 2*0.15*20 + 10*(0.2/50)*(20+20) + 0 = 361.6
+        assert normal_price == Decimal("1040.00"), f"Обычная цена должна быть 1040.00, получено {normal_price}"
+        assert kamikaze_price == Decimal("361.60"), f"Цена камикадзе должна быть 361.60, получено {kamikaze_price}"
 
         # Проверить что камикадзе дешевле (учитывается снижение урона и уклонения)
-        price_difference = Decimal("1060.00")  # (5000-100)*0.2 + (100-20) = 980 + 80 = 1060
+        price_difference = Decimal("678.40")
         assert normal_price - kamikaze_price == price_difference, f"Разница должна быть {price_difference}"
 
     def test_non_kamikaze_price_unchanged(self):
@@ -59,7 +59,7 @@ class TestKamikazePrice:
         # Проверить что цены одинаковые
         assert price1 == price2, "Цены должны быть одинаковыми для не-камикадзе"
 
-        # Проверить точное значение: 50 + 10 + 100 + 100*2 + 100*1 = 460.0
+        # Проверить точное значение: 50 + 10 + 100 + 2*2*(50+10) + 1*(50+10) + 0 + 0 + 0 + 0 = 460.0
         expected_price = Decimal("460.00")
         assert price1 == expected_price, f"Ожидаемая цена {expected_price}, получено {price1}"
 
@@ -76,8 +76,8 @@ class TestKamikazePrice:
 
         kamikaze_price = calculate_unit_price(damage, defense, health, unit_range, speed, luck, crit_chance, dodge_chance, is_kamikaze=1, counterattack_chance=0)
 
-        # Камикадзе: 200/5 + 50 + 300 + 100*5 + 100*5 + 1000*1.0 + 1000*1.0 + 100*0.9 + 0 = 3480.0
-        expected_price = Decimal("3480.00")
+        # Камикадзе: 40 + 50 + 300 + 2*5*(40+50) + 5*(40+50) + 2*1.0*40 + 2*1.0*40 + 10*(0.9/50)*(40+50) + 0 = 1916.2
+        expected_price = Decimal("1916.20")
         assert kamikaze_price == expected_price, f"Ожидаемая цена {expected_price}, получено {kamikaze_price}"
 
 

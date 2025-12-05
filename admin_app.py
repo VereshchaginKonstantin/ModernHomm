@@ -23,7 +23,8 @@ app.config['MAX_CONTENT_LENGTH'] = 5 * 1024 * 1024  # 5 MB max file size
 def calculate_unit_price(damage: int, defense: int, health: int, unit_range: int, speed: int, luck: float, crit_chance: float, dodge_chance: float, is_kamikaze: int = 0, counterattack_chance: float = 0) -> Decimal:
     """
     Автоматический расчет стоимости юнита по формуле:
-    (Урон + Защита + Здоровье + 100*Дальность + 100*Скорость + 1000*Удача + 1000*Крит + 5000*Уклонение + 1000*Контратака)
+    (Урон + Защита + Здоровье + 2*Дальность*(Урон + Защита) + Скорость*(Урон + Защита) +
+     2*Удача*Урон + 2*Крит*Урон + 10*Уклонение*(Урон + Защита) + 10*Контратака*Урон)
     Для камикадзе: Урон/5 и Уклонение/50
 
     Args:
@@ -43,18 +44,18 @@ def calculate_unit_price(damage: int, defense: int, health: int, unit_range: int
     """
     # Для камикадзе: урон делится на 5, уклонение делится на 50
     damage_value = damage / 5 if is_kamikaze else damage
-    dodge_multiplier = 5000 / 50 if is_kamikaze else 5000  # 100 для камикадзе, 5000 для обычного
+    dodge_value = dodge_chance / 50 if is_kamikaze else dodge_chance
 
     price = (
         damage_value +
         defense +
         health +
-        100 * unit_range +
-        100 * speed +
-        1000 * luck +
-        1000 * crit_chance +
-        dodge_multiplier * dodge_chance +
-        1000 * counterattack_chance
+        2 * unit_range * (damage_value + defense) +
+        speed * (damage_value + defense) +
+        2 * luck * damage_value +
+        2 * crit_chance * damage_value +
+        10 * dodge_value * (damage_value + defense) +
+        10 * counterattack_chance * damage_value
     )
 
     return Decimal(str(round(price, 2)))
@@ -520,7 +521,7 @@ UNIT_FORM_TEMPLATE = """
                 <div class="form-group">
                     <label>Цена (автоматически рассчитывается)</label>
                     <input type="text" class="form-control" value="{{ unit.price if unit else 'Рассчитается автоматически' }}" readonly disabled style="background-color: #e9ecef; cursor: not-allowed;">
-                    <small class="form-text text-muted">Формула: (Урон + Защита + Здоровье + 100×Дальность + 100×Скорость + 1000×Удача + 1000×Крит + 5000×Уклонение + 1000×Контратака). Для камикадзе: Урон/5 и Уклонение/50</small>
+                    <small class="form-text text-muted">Формула: (Урон + Защита + Здоровье + 2×Дальность×(Урон + Защита) + Скорость×(Урон + Защита) + 2×Удача×Урон + 2×Крит×Урон + 10×Уклонение×(Урон + Защита) + 10×Контратака×Урон). Для камикадзе: Урон/5 и Уклонение/50</small>
                 </div>
 
                 <div class="form-group">
@@ -681,17 +682,32 @@ HELP_TEMPLATE = """
                 </tr>
             </table>
 
+            <h2 style="margin-top: 40px;">Формула расчета стоимости юнита</h2>
+            <div style="background-color: #f8f9fa; padding: 20px; border-radius: 8px;">
+                <p><strong>Для обычных юнитов:</strong></p>
+                <div style="background-color: white; padding: 15px; border-radius: 4px; margin: 10px 0; font-family: monospace;">
+                    <code>Цена = Урон + Защита + Здоровье + 100×Дальность + 100×Скорость + 1000×Удача + 1000×Крит + 5000×Уклонение + 1000×Контратака</code>
+                </div>
+                <p><strong>Для камикадзе:</strong></p>
+                <div style="background-color: white; padding: 15px; border-radius: 4px; margin: 10px 0; font-family: monospace;">
+                    <code>Цена = (Урон/5) + Защита + Здоровье + 100×Дальность + 100×Скорость + 1000×Удача + 1000×Крит + 100×Уклонение + 1000×Контратака</code>
+                </div>
+                <p style="color: #666; margin-top: 15px;"><em>Примечание: Для камикадзе урон учитывается с коэффициентом 1/5, а уклонение с коэффициентом 1/50 (5000/50=100), так как эти юниты жертвуют собой после атаки.</em></p>
+            </div>
+
             <h2 style="margin-top: 40px;">Полная формула расчета урона</h2>
             <div style="background-color: #f8f9fa; padding: 20px; border-radius: 8px; font-family: monospace;">
                 <p><strong>1.</strong> Базовый урон со случайностью: <code>base = damage × random(0.9, 1.1)</code></p>
                 <p><strong>2.</strong> Модификатор усталости: <code>fatigue_mod = 1 - (усталость / 100) × 0.3</code></p>
-                <p><strong>3.</strong> Модификатор морали: <code>morale_mod = 1 + (мораль / 100) × 0.2</code></p>
+                <p><strong>3.</strong> Модификатор морали: <code>morale_mod = мораль / 100</code></p>
                 <p><strong>4.</strong> Урон с модификаторами: <code>dmg = base × fatigue_mod × morale_mod</code></p>
-                <p><strong>5.</strong> Проверка критического удара: <code>crit_chance_final = crit_chance + мораль×0.002 - усталость×0.002</code></p>
-                <p><strong>6.</strong> Если крит: <code>dmg = dmg × 2</code></p>
-                <p><strong>7.</strong> Проверка удачи: <code>if random() < luck: dmg = dmg × 1.5</code></p>
-                <p><strong>8.</strong> Применение защиты: <code>dmg_final = max(1, dmg - defense)</code></p>
-                <p><strong>9.</strong> Умножение на количество атакующих: <code>total_dmg = dmg_final × count</code></p>
+                <p><strong>5.</strong> Проверка эффективности: <code>if эффективен: dmg = dmg × 1.5</code></p>
+                <p><strong>6.</strong> Проверка критического удара: <code>crit_chance_final = crit_chance + (мораль/100)×0.2 - (усталость/100)×0.2</code></p>
+                <p><strong>7.</strong> Если крит: <code>dmg = dmg × 2</code></p>
+                <p><strong>8.</strong> Проверка удачи: <code>if random() < luck: dmg = dmg × 1.5</code></p>
+                <p><strong>9.</strong> Умножение на количество атакующих: <code>dmg_multiplied = dmg × кол-во_атакующих</code></p>
+                <p><strong>10.</strong> Применение защиты: <code>defense_reduction = defense × кол-во_обороняющихся</code></p>
+                <p><strong>11.</strong> Итоговый урон: <code>total_dmg = max(кол-во_атакующих, dmg_multiplied - defense_reduction)</code></p>
             </div>
         </div>
     </div>
