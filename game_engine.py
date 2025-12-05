@@ -461,9 +461,9 @@ class GameEngine:
         turn_switched = False
         winner_id = self._check_game_over(game)
         if winner_id:
-            self._complete_game(game, winner_id)
+            reward = self._complete_game(game, winner_id)
             winner_name = game.player1.name if winner_id == game.player1_id else game.player2.name
-            combat_log += f"\n\n🏆 Игра окончена! Победитель: {winner_name}"
+            combat_log += f"\n\n🏆 Игра окончена! Победитель: {winner_name}\n💰 Выигрыш: ${float(reward):.2f} (стоимость уничтоженных юнитов противника)"
         else:
             # Проверить, все ли юниты текущего игрока походили
             if self._all_units_moved(game, player_id):
@@ -894,9 +894,17 @@ class GameEngine:
         # Умножить на количество атакующих юнитов
         damage_multiplied = damage * alive_attackers
 
-        # Применить защиту (вычитаем защиту × минимум между атакующими и обороняющимися)
+        # Вычислить задетые юниты (сколько юнитов получит урон)
+        # Формула: задетые_юниты = 1 + (0.5 * (dmg_multiplied - target_health)) / target_health
+        target_health = target_unit.health
+        if damage_multiplied > target_health:
+            affected_units = 1 + (0.5 * (damage_multiplied - target_health)) / target_health
+        else:
+            affected_units = 1.0  # Если урон меньше здоровья одного юнита, задевается только 1
+
+        # Применить защиту (вычитаем защиту × минимум между задетыми юнитами и атакующими)
         alive_defenders = self._count_alive_units(target)
-        min_units = min(alive_attackers, alive_defenders)
+        min_units = min(affected_units, alive_attackers)
         defense_reduction = target_unit.defense * min_units
         total_damage = damage_multiplied - defense_reduction
 
@@ -940,10 +948,13 @@ class GameEngine:
         log += f"\n6️⃣ Количество атакующих: x{alive_attackers}\n"
         log += f"   Урон до защиты: {damage_multiplied}\n"
 
+        # Вычисление задетых юнитов
+        log += f"\n7️⃣ Задетые юниты: 1 + (0.5 * ({damage_multiplied} - {target_health}) / {target_health}) = {affected_units:.2f}\n"
+
         # Защита
-        log += f"\n7️⃣ Защита цели: {target_unit.defense} x min({alive_attackers}, {alive_defenders}) = {target_unit.defense} x {min_units} = {defense_reduction}\n"
-        log += f"   Урон после защиты: {damage_multiplied} - {defense_reduction} = {total_damage}\n"
-        log += f"   ⚡ ИТОГОВЫЙ УРОН: {total_damage}"
+        log += f"\n8️⃣ Защита цели: {target_unit.defense} x min({affected_units:.2f}, {alive_attackers}) = {target_unit.defense} x {min_units:.2f} = {defense_reduction:.2f}\n"
+        log += f"   Урон после защиты: {damage_multiplied} - {defense_reduction:.2f} = {total_damage:.2f}\n"
+        log += f"   ⚡ ИТОГОВЫЙ УРОН: {total_damage:.0f}"
 
         return total_damage, is_crit, log
 
@@ -1179,7 +1190,10 @@ class GameEngine:
 
             # Обновить количество юнитов у игрока
             user_unit = battle_unit.user_unit
+            old_count = user_unit.count
             user_unit.count = alive_count
+
+            logger.info(f"Обновление юнитов после игры: {user_unit.unit.name} игрока (ID: {battle_unit.player_id}) - было {old_count}, стало {alive_count}, потеряно {old_count - alive_count}")
 
             # Помечаем записи с count=0 для удаления
             if alive_count == 0:
@@ -1191,13 +1205,16 @@ class GameEngine:
 
         self.db.flush()
 
-    def _complete_game(self, game: Game, winner_id: int):
+    def _complete_game(self, game: Game, winner_id: int) -> Decimal:
         """
         Завершить игру
 
         Args:
             game: Игра
             winner_id: ID победителя
+
+        Returns:
+            Decimal: Награда победителя в деньгах
         """
         from decimal import Decimal
 
@@ -1258,3 +1275,5 @@ class GameEngine:
 
         self.db.commit()
         logger.info(f"✅ Игра #{game.id} успешно завершена")
+
+        return reward

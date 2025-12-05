@@ -231,7 +231,8 @@ class SimpleBot:
             "/version - Показать версию бота\n"
             "/profile - Посмотреть свой игровой профиль\n"
             "/top - Рейтинг игроков\n"
-            "/shop - Магазин юнитов (покупка армии)\n\n"
+            "/shop - Магазин юнитов (покупка армии)\n"
+            "/transfer - Перевести деньги другому игроку\n\n"
             "<b>Игровые команды:</b>\n"
             "/challenge &lt;username&gt; - Вызвать игрока на бой\n"
             "/accept - Принять вызов на бой\n"
@@ -369,6 +370,230 @@ class SimpleBot:
             logger.error(f"Ошибка при продаже юнита: {e}")
             await query.edit_message_text(
                 "Произошла ошибка при продаже. Попробуйте позже.",
+                parse_mode=self.parse_mode
+            )
+
+    async def transfer_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Команда для перевода денег другому игроку"""
+        user = update.effective_user
+        logger.info(f"Команда /transfer от пользователя {user.id}")
+
+        try:
+            # Проверяем что у пользователя есть игровой профиль
+            game_user = self.db.get_game_user(user.id)
+            if not game_user:
+                await update.message.reply_text(
+                    "❌ У вас нет игрового профиля.\nИспользуйте /start для создания профиля.",
+                    parse_mode=self.parse_mode
+                )
+                return
+
+            # Показать список всех пользователей для выбора
+            with self.db.get_session() as session:
+                from db.models import GameUser
+
+                # Получить всех пользователей кроме текущего
+                all_users = session.query(GameUser).filter(
+                    GameUser.telegram_id != user.id
+                ).order_by(GameUser.name).all()
+
+                if not all_users:
+                    await update.message.reply_text(
+                        "❌ Нет других игроков для перевода.",
+                        parse_mode=self.parse_mode
+                    )
+                    return
+
+                # Формируем сообщение со списком пользователей
+                response = (
+                    f"💰 <b>Перевод денег</b>\n\n"
+                    f"Ваш баланс: ${float(game_user.balance):.2f}\n\n"
+                    f"Выберите получателя:\n\n"
+                )
+
+                # Создаем кнопки для каждого пользователя
+                keyboard = []
+                for i, player in enumerate(all_users[:20], 1):  # Показываем первых 20
+                    safe_name = html.escape(player.name)
+
+                    keyboard.append([
+                        InlineKeyboardButton(
+                            f"👤 {player.name}",
+                            callback_data=f"transfer_user:{player.telegram_id}"
+                        )
+                    ])
+
+                await update.message.reply_text(
+                    response,
+                    parse_mode=self.parse_mode,
+                    reply_markup=InlineKeyboardMarkup(keyboard)
+                )
+
+        except Exception as e:
+            logger.error(f"Ошибка при выполнении команды /transfer: {e}")
+            await update.message.reply_text(
+                "❌ Произошла ошибка. Попробуйте позже.",
+                parse_mode=self.parse_mode
+            )
+
+    async def transfer_select_user_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Обработчик выбора пользователя для перевода денег"""
+        query = update.callback_query
+        await query.answer()
+
+        # Парсим данные из callback (формат: transfer_user:telegram_id)
+        data = query.data.split(':')
+        if len(data) != 2 or data[0] != 'transfer_user':
+            return
+
+        target_telegram_id = int(data[1])
+        user = update.effective_user
+
+        # Получить информацию о текущем пользователе
+        game_user = self.db.get_game_user(user.id)
+        if not game_user:
+            await query.edit_message_text("❌ Ваш профиль не найден.")
+            return
+
+        # Получить информацию о получателе
+        with self.db.get_session() as session:
+            from db.models import GameUser
+
+            target_user = session.query(GameUser).filter_by(telegram_id=target_telegram_id).first()
+
+            if not target_user:
+                await query.edit_message_text("❌ Получатель не найден.")
+                return
+
+            # Экранируем имя
+            safe_name = html.escape(target_user.name)
+
+            # Показать выбор суммы
+            response = (
+                f"💰 <b>Перевод денег для {safe_name}</b>\n\n"
+                f"Ваш баланс: ${float(game_user.balance):.2f}\n\n"
+                f"Выберите сумму перевода:"
+            )
+
+            keyboard = [
+                [InlineKeyboardButton("💵 $100", callback_data=f"transfer_amount:{target_telegram_id}:100")],
+                [InlineKeyboardButton("💵 $1000", callback_data=f"transfer_amount:{target_telegram_id}:1000")],
+                [InlineKeyboardButton("💵 $10000", callback_data=f"transfer_amount:{target_telegram_id}:10000")],
+                [InlineKeyboardButton("◀️ Назад", callback_data="transfer_back")]
+            ]
+
+            await query.edit_message_text(
+                response,
+                parse_mode=self.parse_mode,
+                reply_markup=InlineKeyboardMarkup(keyboard)
+            )
+
+    async def transfer_confirm_amount_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Обработчик подтверждения суммы перевода"""
+        query = update.callback_query
+        await query.answer()
+
+        # Парсим данные из callback (формат: transfer_amount:telegram_id:amount)
+        data = query.data.split(':')
+        if len(data) != 3 or data[0] != 'transfer_amount':
+            return
+
+        target_telegram_id = int(data[1])
+        amount = float(data[2])
+        user = update.effective_user
+
+        try:
+            # Выполнить перевод
+            success, message = self.db.transfer_money(user.id, target_telegram_id, amount)
+
+            if success:
+                await query.edit_message_text(
+                    message,
+                    parse_mode=self.parse_mode
+                )
+
+                # Уведомить получателя (если возможно)
+                try:
+                    game_user = self.db.get_game_user(user.id)
+                    if game_user:
+                        from telegram import Bot
+                        bot = context.bot
+                        notification = (
+                            f"💰 <b>Вам перевели деньги!</b>\n\n"
+                            f"От: {game_user.name}\n"
+                            f"Сумма: ${amount:.2f}\n\n"
+                            f"Используйте /profile чтобы увидеть обновленный баланс."
+                        )
+                        await bot.send_message(
+                            chat_id=target_telegram_id,
+                            text=notification,
+                            parse_mode=self.parse_mode
+                        )
+                except Exception as e:
+                    logger.warning(f"Не удалось отправить уведомление получателю: {e}")
+            else:
+                await query.edit_message_text(
+                    f"❌ {message}",
+                    parse_mode=self.parse_mode
+                )
+
+        except Exception as e:
+            logger.error(f"Ошибка при переводе денег: {e}")
+            await query.edit_message_text(
+                "❌ Произошла ошибка при переводе. Попробуйте позже.",
+                parse_mode=self.parse_mode
+            )
+
+    async def transfer_back_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Обработчик кнопки 'Назад' в меню перевода"""
+        query = update.callback_query
+        await query.answer()
+
+        # Возвращаемся к команде /transfer
+        user = update.effective_user
+
+        try:
+            game_user = self.db.get_game_user(user.id)
+            if not game_user:
+                await query.edit_message_text("❌ Ваш профиль не найден.")
+                return
+
+            with self.db.get_session() as session:
+                from db.models import GameUser
+
+                all_users = session.query(GameUser).filter(
+                    GameUser.telegram_id != user.id
+                ).order_by(GameUser.name).all()
+
+                if not all_users:
+                    await query.edit_message_text("❌ Нет других игроков для перевода.")
+                    return
+
+                response = (
+                    f"💰 <b>Перевод денег</b>\n\n"
+                    f"Ваш баланс: ${float(game_user.balance):.2f}\n\n"
+                    f"Выберите получателя:\n\n"
+                )
+
+                keyboard = []
+                for i, player in enumerate(all_users[:20], 1):
+                    keyboard.append([
+                        InlineKeyboardButton(
+                            f"👤 {player.name}",
+                            callback_data=f"transfer_user:{player.telegram_id}"
+                        )
+                    ])
+
+                await query.edit_message_text(
+                    response,
+                    parse_mode=self.parse_mode,
+                    reply_markup=InlineKeyboardMarkup(keyboard)
+                )
+
+        except Exception as e:
+            logger.error(f"Ошибка при возврате в меню перевода: {e}")
+            await query.edit_message_text(
+                "❌ Произошла ошибка.",
                 parse_mode=self.parse_mode
             )
 
@@ -1919,8 +2144,15 @@ class SimpleBot:
                         InlineKeyboardButton("🏃 Выйти из схватки", callback_data=f"surrender:{game_id}")
                     ])
 
+                    # Сохранить контекст для текстового ввода
+                    context.user_data['waiting_for_cell_input'] = {
+                        'game_id': game_id,
+                        'unit_id': unit_id,
+                        'available_cells': available_cells
+                    }
+
                     # Используем _edit_field для показа поля с доступными позициями
-                    caption = f"🏃 Выберите позицию для перемещения\n\nДоступно позиций: {len(available_cells)}"
+                    caption = f"🏃 Выберите позицию для перемещения\n\nДоступно позиций: {len(available_cells)}\n\n💬 Вы можете отправить название ячейки текстом (например: A1, B3)"
                     await self._edit_field(query, game_id, caption, keyboard)
 
             except Exception as e:
@@ -2545,6 +2777,82 @@ class SimpleBot:
             if context.user_data.get('waiting_for_start_amount') and self.is_admin(user.username):
                 await self.handle_start_amount_input(update, context)
                 return
+
+            # === GAME FUNCTIONS ===
+            # Обработка ввода ячейки при перемещении
+            if 'waiting_for_cell_input' in context.user_data:
+                cell_data = context.user_data['waiting_for_cell_input']
+                game_id = cell_data['game_id']
+                unit_id = cell_data['unit_id']
+                available_cells = cell_data['available_cells']
+
+                # Парсим ввод пользователя (например A1, B3)
+                cell_input = user_message.strip().upper()
+                try:
+                    # Преобразуем шахматную нотацию в координаты
+                    target_x, target_y = chess_to_coords(cell_input)
+
+                    # Проверяем что эта ячейка доступна
+                    if (target_x, target_y) not in available_cells:
+                        await update.message.reply_text(
+                            f"❌ Ячейка {cell_input} недоступна для перемещения!\n"
+                            f"Доступные ячейки: {', '.join([coords_to_chess(x, y) for x, y in available_cells[:10]])}",
+                            parse_mode=self.parse_mode
+                        )
+                        return
+
+                    # Очищаем контекст
+                    del context.user_data['waiting_for_cell_input']
+
+                    # Выполняем перемещение
+                    game_user = self.db.get_game_user(user.id)
+                    with self.db.get_session() as session:
+                        engine = GameEngine(session)
+                        success, message, turn_switched = engine.move_unit(game_id, game_user.id, unit_id, target_x, target_y)
+
+                        if success:
+                            # Получаем информацию о перемещенном юните
+                            battle_unit = session.query(BattleUnit).filter_by(id=unit_id).first()
+                            unit_name = battle_unit.user_unit.unit.name if battle_unit and battle_unit.user_unit else "Юнит"
+
+                            # Вычисляем старую и новую позицию
+                            match = re.search(r'\((\d+),\s*(\d+)\)\s+на\s+\((\d+),\s*(\d+)\)', message)
+                            if match:
+                                old_x, old_y = int(match.group(1)), int(match.group(2))
+                                new_x, new_y = int(match.group(3)), int(match.group(4))
+                                from_cell = coords_to_chess(old_x, old_y)
+                                to_cell = coords_to_chess(new_x, new_y)
+                                movement_message = f"📍 {unit_name} переместился с {from_cell} на {to_cell}"
+                            else:
+                                to_cell = cell_input
+                                movement_message = f"📍 {unit_name} переместился на {to_cell}"
+
+                            # Отправляем PNG поле
+                            actions = engine.get_available_actions(game_id, game_user.id)
+                            keyboard = self._create_game_keyboard(game_id, game_user.id, actions)
+
+                            await self._send_field_image(
+                                chat_id=update.effective_chat.id,
+                                game_id=game_id,
+                                caption=f"✅ {movement_message}",
+                                context=context,
+                                keyboard=keyboard
+                            )
+                        else:
+                            await update.message.reply_text(
+                                f"❌ {message}",
+                                parse_mode=self.parse_mode
+                            )
+                    return
+
+                except (ValueError, IndexError) as e:
+                    await update.message.reply_text(
+                        f"❌ Неверный формат ячейки!\n"
+                        f"Используйте формат: БукваЦифра (например: A1, B3)\n"
+                        f"Доступные ячейки: {', '.join([coords_to_chess(x, y) for x, y in available_cells[:10]])}",
+                        parse_mode=self.parse_mode
+                    )
+                    return
 
             # Обработка изменения эмодзи юнита
             if 'editing_icon_unit_id' in context.user_data and self.is_admin(user.username):
@@ -3219,6 +3527,7 @@ class SimpleBot:
         application.add_handler(CommandHandler("profile", self.profile_command))
         application.add_handler(CommandHandler("top", self.top_command))
         application.add_handler(CommandHandler("shop", self.shop_command))
+        application.add_handler(CommandHandler("transfer", self.transfer_command))
         application.add_handler(CommandHandler("search", self.search_command))
         application.add_handler(CommandHandler("users", self.users_command))
 
@@ -3244,6 +3553,11 @@ class SimpleBot:
         application.add_handler(CallbackQueryHandler(self.addmoney_select_user_callback, pattern=r'^addmoney_user:'))
         application.add_handler(CallbackQueryHandler(self.addmoney_confirm_amount_callback, pattern=r'^addmoney_amount:'))
         application.add_handler(CallbackQueryHandler(self.addmoney_back_callback, pattern=r'^addmoney_back$'))
+
+        # Transfer callback обработчики
+        application.add_handler(CallbackQueryHandler(self.transfer_select_user_callback, pattern=r'^transfer_user:'))
+        application.add_handler(CallbackQueryHandler(self.transfer_confirm_amount_callback, pattern=r'^transfer_amount:'))
+        application.add_handler(CallbackQueryHandler(self.transfer_back_callback, pattern=r'^transfer_back$'))
 
         # Регистрация обработчиков callback (порядок важен для правильной маршрутизации)
         application.add_handler(CallbackQueryHandler(self.buy_unit_callback, pattern=r'^buy_unit:'))

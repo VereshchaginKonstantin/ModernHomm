@@ -1121,3 +1121,48 @@ class Database:
                 session.expunge_all()
 
             return game_user
+
+    def transfer_money(self, from_telegram_id: int, to_telegram_id: int, amount: float) -> tuple:
+        """
+        Перевод денег от одного пользователя другому
+
+        Args:
+            from_telegram_id: ID отправителя в Telegram
+            to_telegram_id: ID получателя в Telegram
+            amount: Сумма перевода
+
+        Returns:
+            tuple: (success: bool, message: str)
+        """
+        from decimal import Decimal
+
+        if amount <= 0:
+            return False, "Сумма перевода должна быть положительной"
+
+        with self.get_session() as session:
+            # Получаем отправителя
+            sender = session.query(GameUser).filter_by(telegram_id=from_telegram_id).first()
+            if not sender:
+                return False, "Ваш профиль не найден"
+
+            # Получаем получателя
+            receiver = session.query(GameUser).filter_by(telegram_id=to_telegram_id).first()
+            if not receiver:
+                return False, "Получатель не найден"
+
+            # Проверяем что это не один и тот же человек
+            if sender.id == receiver.id:
+                return False, "Нельзя переводить деньги самому себе"
+
+            # Проверяем баланс отправителя
+            if sender.balance < Decimal(str(amount)):
+                return False, f"Недостаточно средств. Ваш баланс: ${sender.balance}"
+
+            # Выполняем перевод
+            sender.balance -= Decimal(str(amount))
+            receiver.balance += Decimal(str(amount))
+
+            session.flush()
+
+            message = f"✅ Перевод выполнен!\nВы перевели ${amount:.2f} пользователю {receiver.name}\nВаш новый баланс: ${sender.balance:.2f}"
+            return True, message
