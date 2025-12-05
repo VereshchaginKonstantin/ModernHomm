@@ -6,6 +6,7 @@
 import logging
 import random
 from datetime import datetime, timedelta
+from decimal import Decimal
 from typing import List, Tuple, Optional, Dict, Set
 from sqlalchemy.orm import Session
 from db.models import Game, GameStatus, BattleUnit, GameUser, UserUnit, Field, Unit, UnitCustomIcon, Obstacle
