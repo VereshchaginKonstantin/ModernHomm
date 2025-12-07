@@ -7,11 +7,13 @@ import os
 import json
 import zipfile
 import shutil
+import hashlib
 from io import BytesIO
-from flask import Flask, render_template_string, request, redirect, url_for, flash, send_file
+from functools import wraps
+from flask import Flask, render_template_string, request, redirect, url_for, flash, send_file, session
 from werkzeug.utils import secure_filename
 from db import Database
-from db.models import Unit
+from db.models import Unit, GameUser
 from decimal import Decimal
 
 # Создать Flask приложение
@@ -73,6 +75,15 @@ except FileNotFoundError:
 db_url = os.getenv('DATABASE_URL', config.get('database', {}).get('url'))
 db = Database(db_url)
 
+# Decorator для проверки аутентификации
+def login_required(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if 'username' not in session:
+            return redirect(url_for('login'))
+        return f(*args, **kwargs)
+    return decorated_function
+
 # HTML шаблоны для админки
 HEADER_TEMPLATE = """
 <nav class="navbar">
@@ -82,6 +93,7 @@ HEADER_TEMPLATE = """
         <a href="{{ url_for('admin_units_list') }}" class="nav-link {{ 'active' if active_page == 'units' else '' }}">Управление</a>
         <a href="{{ url_for('help_page') }}" class="nav-link {{ 'active' if active_page == 'help' else '' }}">Справка</a>
         <a href="{{ url_for('export_units') }}" class="nav-link">Экспорт</a>
+        <a href="{{ url_for('logout') }}" class="nav-link" style="margin-left: auto;">Выход ({{ session.username }})</a>
     </div>
 </nav>
 """
@@ -775,7 +787,179 @@ IMPORT_TEMPLATE = """
 """
 
 
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    """Страница логина"""
+    if request.method == 'POST':
+        username = request.form.get('username')
+        password = request.form.get('password')
+
+        if not username or not password:
+            flash('Введите username и пароль', 'error')
+            return redirect(url_for('login'))
+
+        # Проверяем пользователя и пароль
+        with db.get_session() as db_session:
+            user = db_session.query(GameUser).filter_by(name=username).first()
+
+            if not user:
+                flash('Неверный username или пароль', 'error')
+                return redirect(url_for('login'))
+
+            if not user.password_hash:
+                flash('Пароль не установлен. Используйте команду /password в боте.', 'error')
+                return redirect(url_for('login'))
+
+            # Проверяем хеш пароля
+            password_hash = hashlib.sha256(password.encode()).hexdigest()
+            if user.password_hash != password_hash:
+                flash('Неверный username или пароль', 'error')
+                return redirect(url_for('login'))
+
+            # Успешный логин
+            session['username'] = username
+            session['user_id'] = user.id
+            flash('Вход выполнен успешно!', 'success')
+            return redirect(url_for('index'))
+
+    # GET запрос - показываем форму
+    return render_template_string("""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Вход в админку</title>
+        <style>
+            body {
+                font-family: Arial, sans-serif;
+                background-color: #f5f5f5;
+                display: flex;
+                justify-content: center;
+                align-items: center;
+                min-height: 100vh;
+                margin: 0;
+            }
+            .login-container {
+                background: white;
+                padding: 40px;
+                border-radius: 8px;
+                box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+                width: 100%;
+                max-width: 400px;
+            }
+            h1 {
+                color: #2c3e50;
+                text-align: center;
+                margin-bottom: 30px;
+            }
+            .form-group {
+                margin-bottom: 20px;
+            }
+            label {
+                display: block;
+                margin-bottom: 5px;
+                color: #555;
+                font-weight: bold;
+            }
+            input[type="text"],
+            input[type="password"] {
+                width: 100%;
+                padding: 10px;
+                border: 1px solid #ddd;
+                border-radius: 4px;
+                font-size: 14px;
+                box-sizing: border-box;
+            }
+            input[type="text"]:focus,
+            input[type="password"]:focus {
+                outline: none;
+                border-color: #3498db;
+            }
+            button {
+                width: 100%;
+                padding: 12px;
+                background-color: #3498db;
+                color: white;
+                border: none;
+                border-radius: 4px;
+                font-size: 16px;
+                cursor: pointer;
+                font-weight: bold;
+            }
+            button:hover {
+                background-color: #2980b9;
+            }
+            .flash-messages {
+                margin-bottom: 20px;
+            }
+            .flash {
+                padding: 10px;
+                border-radius: 4px;
+                margin-bottom: 10px;
+            }
+            .flash.error {
+                background-color: #e74c3c;
+                color: white;
+            }
+            .flash.success {
+                background-color: #2ecc71;
+                color: white;
+            }
+            .info {
+                text-align: center;
+                margin-top: 20px;
+                color: #7f8c8d;
+                font-size: 14px;
+            }
+        </style>
+    </head>
+    <body>
+        <div class="login-container">
+            <h1>🔐 Вход в админку</h1>
+
+            {% with messages = get_flashed_messages(with_categories=true) %}
+                {% if messages %}
+                    <div class="flash-messages">
+                        {% for category, message in messages %}
+                            <div class="flash {{ category }}">{{ message }}</div>
+                        {% endfor %}
+                    </div>
+                {% endif %}
+            {% endwith %}
+
+            <form method="POST">
+                <div class="form-group">
+                    <label for="username">Username:</label>
+                    <input type="text" id="username" name="username" required autofocus>
+                </div>
+
+                <div class="form-group">
+                    <label for="password">Пароль:</label>
+                    <input type="password" id="password" name="password" required>
+                </div>
+
+                <button type="submit">Войти</button>
+            </form>
+
+            <div class="info">
+                Установите пароль через команду /password в боте
+            </div>
+        </div>
+    </body>
+    </html>
+    """)
+
+
+@app.route('/logout')
+def logout():
+    """Выход из системы"""
+    session.pop('username', None)
+    session.pop('user_id', None)
+    flash('Вы вышли из системы', 'success')
+    return redirect(url_for('login'))
+
+
 @app.route('/')
+@login_required
 def index():
     """Главная страница - полный список юнитов"""
     with db.get_session() as session:
@@ -810,6 +994,7 @@ def index():
 
 
 @app.route('/admin/images')
+@login_required
 def admin_images():
     """Управление картинками юнитов"""
     with db.get_session() as session:
@@ -845,6 +1030,7 @@ def admin_images():
 
 
 @app.route('/upload/<int:unit_id>', methods=['POST'])
+@login_required
 def upload_image(unit_id):
     """Загрузка картинки для юнита"""
     if 'image' not in request.files:
@@ -884,6 +1070,7 @@ def upload_image(unit_id):
 
 
 @app.route('/delete/<int:unit_id>', methods=['POST'])
+@login_required
 def delete_image(unit_id):
     """Удаление картинки юнита"""
     with db.get_session() as session:
@@ -908,6 +1095,7 @@ def delete_image(unit_id):
 
 
 @app.route('/admin/units')
+@login_required
 def admin_units_list():
     """Страница управления юнитами"""
     with db.get_session() as session:
@@ -918,6 +1106,7 @@ def admin_units_list():
 
 
 @app.route('/admin/units/create', methods=['GET', 'POST'])
+@login_required
 def admin_create_unit():
     """Создание нового юнита"""
     if request.method == 'POST':
@@ -971,6 +1160,7 @@ def admin_create_unit():
 
 
 @app.route('/admin/units/edit/<int:unit_id>', methods=['GET', 'POST'])
+@login_required
 def admin_edit_unit(unit_id):
     """Редактирование юнита"""
     with db.get_session() as session:
@@ -1043,12 +1233,14 @@ def admin_edit_unit(unit_id):
 
 
 @app.route('/help')
+@login_required
 def help_page():
     """Страница справки"""
     return render_template_string(HELP_TEMPLATE, active_page='help')
 
 
 @app.route('/export')
+@login_required
 def export_units():
     """Экспорт юнитов в ZIP архив"""
     try:
@@ -1113,6 +1305,7 @@ def export_units():
 
 
 @app.route('/import', methods=['GET', 'POST'])
+@login_required
 def import_page():
     """Импорт юнитов из ZIP архива"""
     if request.method == 'POST':
