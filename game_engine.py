@@ -1294,11 +1294,11 @@ class GameEngine:
                     lost_own_value += unit_value
                     lost_own_details.append(f"{unit_name} x{killed_count} = {format_coins(unit_value)}")
 
-        # Награда = 90% от стоимости убитых юнитов противника
-        reward = killed_enemy_value * Decimal('0.9')
+        # Награда = 70% от стоимости убитых юнитов противника + 100% стоимости потерянных своих юнитов
+        reward = killed_enemy_value * Decimal('0.7') + lost_own_value
 
-        # Чистая прибыль = Награда - Стоимость потерянных юнитов
-        net_profit = reward - lost_own_value
+        # Чистая прибыль = Награда - Стоимость потерянных юнитов = 70% от убитых (так как свои потери компенсированы)
+        net_profit = killed_enemy_value * Decimal('0.7')
 
         winner.balance += reward
 
@@ -1315,8 +1315,8 @@ class GameEngine:
         if lost_own_details:
             logger.info(f"  • Потеряно своих юнитов ({winner.name}): {', '.join(lost_own_details)}")
             logger.info(f"    Общая стоимость: {float(lost_own_value):.2f} монет")
-        logger.info(f"  • Награда (90% от убитых): {float(reward):.2f} монет")
-        logger.info(f"  • Чистая прибыль: {float(net_profit):.2f} монет")
+        logger.info(f"  • Награда (70% от убитых + 100% своих потерь): {float(reward):.2f} монет")
+        logger.info(f"  • Чистая прибыль (70% от убитых): {float(net_profit):.2f} монет")
 
         self.db.commit()
         logger.info(f"✅ Игра #{game.id} успешно завершена")
