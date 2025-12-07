@@ -209,10 +209,22 @@ class SimpleBot:
         logger.info(f"Команда /start от пользователя {user.id}")
 
         try:
-            # Получаем или создаем игрового пользователя
+            # Проверяем наличие username
+            if not user.username:
+                await update.message.reply_text(
+                    "❌ Для игры необходим username в Telegram.\n\n"
+                    "Пожалуйста, установите username в настройках Telegram:\n"
+                    "Настройки → Имя пользователя\n\n"
+                    "После этого используйте /start снова.",
+                    parse_mode=self.parse_mode
+                )
+                logger.warning(f"Попытка создания профиля без username от пользователя {user.id}")
+                return
+
+            # Получаем или создаем игрового пользователя (используем username как имя)
             game_user, created = self.db.get_or_create_game_user(
                 telegram_id=user.id,
-                name=user.first_name or user.username or f"User_{user.id}",
+                name=user.username,
                 initial_balance=self.get_initial_balance()
             )
 
