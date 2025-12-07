@@ -26,7 +26,7 @@ def calculate_unit_price(damage: int, defense: int, health: int, unit_range: int
     """
     Автоматический расчет стоимости юнита по формуле:
     (Урон + Защита + Здоровье + 2*Дальность*(Урон + Защита) + Скорость*(Урон + Защита) +
-     2*Удача*Урон + 2*Крит*Урон + 10*Уклонение*(Урон + Защита) + 10*Контратака*Урон)
+     2*Летающий*(Урон + Защита) + 2*Удача*Урон + 2*Крит*Урон + 10*Уклонение*(Урон + Защита) + 10*Контратака*Урон)
     Для камикадзе: Урон/5 и Уклонение/50
 
     Args:
@@ -49,12 +49,16 @@ def calculate_unit_price(damage: int, defense: int, health: int, unit_range: int
     damage_value = damage / 5 if is_kamikaze else damage
     dodge_value = dodge_chance / 50 if is_kamikaze else dodge_chance
 
+    # Бонус для летающих юнитов (могут двигаться через препятствия)
+    flying_bonus = 2 * (damage_value + defense) if is_flying else 0
+
     price = (
         damage_value +
         defense +
         health +
         2 * unit_range * (damage_value + defense) +
         speed * (damage_value + defense) +
+        flying_bonus +
         2 * luck * damage_value +
         2 * crit_chance * damage_value +
         10 * dodge_value * (damage_value + defense) +
