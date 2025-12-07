@@ -196,6 +196,7 @@ class Game(Base):
     winner = relationship("GameUser", foreign_keys=[winner_id])
     battle_units = relationship("BattleUnit", back_populates="game", cascade="all, delete-orphan")
     obstacles = relationship("Obstacle", back_populates="game", cascade="all, delete-orphan")
+    logs = relationship("GameLog", back_populates="game", cascade="all, delete-orphan")
 
     def __repr__(self):
         return f"<Game(id={self.id}, status={self.status.value}, player1_id={self.player1_id}, player2_id={self.player2_id})>"
@@ -258,3 +259,20 @@ class Obstacle(Base):
 
     def __repr__(self):
         return f"<Obstacle(id={self.id}, game_id={self.game_id}, position=({self.position_x}, {self.position_y}))>"
+
+
+class GameLog(Base):
+    """Модель для хранения лога событий игры"""
+    __tablename__ = 'game_logs'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    game_id = Column(Integer, ForeignKey('games.id', ondelete='CASCADE'), nullable=False, index=True)
+    event_type = Column(String(50), nullable=False)  # Тип события: move, attack, damage, dodge, crit, end_turn, game_start, game_end
+    message = Column(Text, nullable=False)  # Текст события для отображения
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    # Связь
+    game = relationship("Game", back_populates="logs")
+
+    def __repr__(self):
+        return f"<GameLog(id={self.id}, game_id={self.game_id}, event_type={self.event_type})>"

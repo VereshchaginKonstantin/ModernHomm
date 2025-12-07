@@ -9,7 +9,7 @@ from datetime import datetime, timedelta
 from decimal import Decimal
 from typing import List, Tuple, Optional, Dict, Set
 from sqlalchemy.orm import Session
-from db.models import Game, GameStatus, BattleUnit, GameUser, UserUnit, Field, Unit, UnitCustomIcon, Obstacle
+from db.models import Game, GameStatus, BattleUnit, GameUser, UserUnit, Field, Unit, UnitCustomIcon, Obstacle, GameLog
 
 logger = logging.getLogger(__name__)
 
@@ -71,6 +71,23 @@ class GameEngine:
 
     def __init__(self, db_session: Session):
         self.db = db_session
+
+    def _log_event(self, game_id: int, event_type: str, message: str):
+        """
+        Записать событие в лог игры
+
+        Args:
+            game_id: ID игры
+            event_type: Тип события
+            message: Текст события
+        """
+        log_entry = GameLog(
+            game_id=game_id,
+            event_type=event_type,
+            message=message
+        )
+        self.db.add(log_entry)
+        self.db.flush()
 
     def create_game(self, player1_id: int, player2_username: str, field_name: str = "7x7") -> Tuple[Optional[Game], str]:
         """
@@ -148,6 +165,9 @@ class GameEngine:
         # Сгенерировать препятствия
         self._generate_obstacles(game)
 
+        # Логировать создание игры
+        self._log_event(game.id, "game_created", f"⚔️ Игра создана! {player1.name} вызвал на бой {player2.name}")
+
         self.db.commit()
         return game, f"Игра создана! Ожидание принятия игроком {player2_username}"
 
@@ -177,6 +197,11 @@ class GameEngine:
         game.started_at = datetime.utcnow()
         game.current_player_id = game.player1_id  # Первый игрок ходит первым
         game.last_move_at = datetime.utcnow()
+
+        # Логировать начало игры
+        player1 = self.db.query(GameUser).filter_by(id=game.player1_id).first()
+        player2 = self.db.query(GameUser).filter_by(id=game.player2_id).first()
+        self._log_event(game.id, "game_started", f"🎮 Игра началась! Первый ход: {player1.name}")
 
         self.db.commit()
         return True, "Игра начата! Ходит первый игрок"
@@ -500,6 +525,11 @@ class GameEngine:
                 turn_switched = True
 
         game.last_move_at = datetime.utcnow()
+
+        # Логировать атаку
+        attacker_player = self.db.query(GameUser).filter_by(id=player_id).first()
+        self._log_event(game.id, "attack", f"⚔️ {attacker_player.name}: {combat_log}")
+
         self.db.commit()
 
         result_msg = f"Атака выполнена!\n{combat_log}\nУбито юнитов: {units_killed}"
@@ -1324,6 +1354,12 @@ class GameEngine:
             logger.info(f"    Общая стоимость: {float(lost_own_value):.2f} монет")
         logger.info(f"  • Награда (70% от убитых + 100% своих потерь): {float(reward):.2f} монет")
         logger.info(f"  • Чистая прибыль (70% от убитых): {float(net_profit):.2f} монет")
+
+        # Логировать завершение игры
+        self._log_event(game.id, "game_ended",
+                       f"🏆 Игра завершена! Победитель: {winner.name}\n"
+                       f"💰 Награда: {format_coins(reward)}\n"
+                       f"💹 Чистая прибыль: {format_coins(net_profit)}")
 
         self.db.commit()
         logger.info(f"✅ Игра #{game.id} успешно завершена")

@@ -1927,6 +1927,10 @@ class SimpleBot:
         if actions.get("action") != "none":
             keyboard.append([InlineKeyboardButton("🔄 Обновить", callback_data=f"game_refresh:{game_id}")])
             keyboard.append([InlineKeyboardButton("🏃 Выйти из схватки", callback_data=f"surrender:{game_id}")])
+
+        # Добавляем кнопку просмотра лога (всегда доступна)
+        keyboard.append([InlineKeyboardButton("📜 Показать лог игры", callback_data=f"game_log:{game_id}")])
+
         return keyboard
 
     async def _edit_message_universal(self, query, text: str, reply_markup=None, parse_mode=None):
@@ -2728,6 +2732,46 @@ class SimpleBot:
         except Exception as e:
             logger.error(f"Ошибка при выходе из игры: {e}")
             await self._edit_message_universal(query, f"❌ Ошибка: {e}", parse_mode=self.parse_mode)
+
+    async def game_log_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Обработчик callback для показа лога игры"""
+        query = update.callback_query
+        await query.answer()
+
+        # Парсим данные из callback (формат: game_log:game_id)
+        data = query.data.split(':')
+        if len(data) != 2 or data[0] != 'game_log':
+            return
+
+        game_id = int(data[1])
+
+        try:
+            # Получить лог игры из базы данных
+            from db.models import GameLog
+            with self.db.get_session() as session:
+                logs = session.query(GameLog).filter_by(game_id=game_id).order_by(GameLog.created_at).all()
+
+                if not logs:
+                    await query.answer("📜 Лог игры пуст", show_alert=True)
+                    return
+
+                # Формируем текст лога
+                log_text = f"📜 <b>Лог игры #{game_id}</b>\n\n"
+                for log in logs:
+                    timestamp = log.created_at.strftime("%H:%M:%S")
+                    log_text += f"[{timestamp}] {log.message}\n\n"
+
+                # Отправляем лог отдельным сообщением
+                await context.bot.send_message(
+                    chat_id=query.message.chat_id,
+                    text=log_text,
+                    parse_mode=self.parse_mode
+                )
+                await query.answer("📜 Лог отправлен")
+
+        except Exception as e:
+            logger.error(f"Ошибка при получении лога игры: {e}")
+            await query.answer(f"❌ Ошибка: {e}", show_alert=True)
 
     async def back_to_activegames_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Обработчик callback для возврата к списку активных игр"""
@@ -3816,6 +3860,7 @@ class SimpleBot:
         application.add_handler(CallbackQueryHandler(self.decline_challenge_callback, pattern=r'^decline_challenge:'))
         application.add_handler(CallbackQueryHandler(self.show_game_callback, pattern=r'^show_game:'))
         application.add_handler(CallbackQueryHandler(self.surrender_callback, pattern=r'^surrender:'))
+        application.add_handler(CallbackQueryHandler(self.game_log_callback, pattern=r'^game_log:'))
         application.add_handler(CallbackQueryHandler(self.back_to_activegames_callback, pattern=r'^back_to_activegames$'))
         application.add_handler(CallbackQueryHandler(self.game_unit_callback, pattern=r'^game_unit:'))
         application.add_handler(CallbackQueryHandler(self.game_move_callback, pattern=r'^game_move:'))
