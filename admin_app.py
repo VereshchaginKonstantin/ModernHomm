@@ -96,6 +96,7 @@ HEADER_TEMPLATE = """
         <a href="{{ url_for('index') }}" class="nav-link {{ 'active' if active_page == 'home' else '' }}">Список юнитов</a>
         <a href="{{ url_for('admin_images') }}" class="nav-link {{ 'active' if active_page == 'images' else '' }}">Картинки</a>
         <a href="{{ url_for('admin_units_list') }}" class="nav-link {{ 'active' if active_page == 'units' else '' }}">Управление</a>
+        <a href="{{ url_for('leaderboard') }}" class="nav-link {{ 'active' if active_page == 'leaderboard' else '' }}">Рейтинг</a>
         <a href="{{ url_for('help_page') }}" class="nav-link {{ 'active' if active_page == 'help' else '' }}">Справка</a>
         <a href="{{ url_for('export_units') }}" class="nav-link">Экспорт</a>
         <a href="{{ url_for('logout') }}" class="nav-link" style="margin-left: auto;">Выход ({{ session.username }})</a>
@@ -611,6 +612,113 @@ UNIT_FORM_TEMPLATE = """
                 </div>
             </form>
         </div>
+    </div>
+</body>
+</html>
+"""
+
+# Шаблон страницы рейтинга
+LEADERBOARD_TEMPLATE = """
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Рейтинг игроков - Админка</title>
+    """ + BASE_STYLE + """
+    <style>
+        .leaderboard-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+        .leaderboard-table th,
+        .leaderboard-table td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #ddd;
+        }
+        .leaderboard-table th {
+            background-color: #3498db;
+            color: white;
+            font-weight: bold;
+        }
+        .leaderboard-table tr:hover {
+            background-color: #f5f5f5;
+        }
+        .rank-gold { color: #FFD700; font-weight: bold; }
+        .rank-silver { color: #C0C0C0; font-weight: bold; }
+        .rank-bronze { color: #CD7F32; font-weight: bold; }
+        .pagination {
+            margin-top: 20px;
+            display: flex;
+            justify-content: center;
+            gap: 10px;
+        }
+        .pagination a {
+            padding: 8px 12px;
+            background-color: #3498db;
+            color: white;
+            text-decoration: none;
+            border-radius: 4px;
+        }
+        .pagination a.active {
+            background-color: #2980b9;
+        }
+        .pagination a:hover {
+            background-color: #2980b9;
+        }
+    </style>
+</head>
+<body>
+    """ + HEADER_TEMPLATE + """
+
+    <div class="container">
+        <h1>🏆 Рейтинг игроков</h1>
+
+        <table class="leaderboard-table">
+            <thead>
+                <tr>
+                    <th>#</th>
+                    <th>Игрок</th>
+                    <th>🏆 Побед</th>
+                    <th>💔 Поражений</th>
+                    <th>📊 Винрейт</th>
+                    <th>💰 Баланс</th>
+                    <th>⚔️ Армия</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for player in players %}
+                <tr>
+                    <td class="{% if player.rank == 1 %}rank-gold{% elif player.rank == 2 %}rank-silver{% elif player.rank == 3 %}rank-bronze{% endif %}">
+                        {{ player.rank }}
+                    </td>
+                    <td>{{ player.name }}</td>
+                    <td>{{ player.wins }}</td>
+                    <td>{{ player.losses }}</td>
+                    <td>{{ "%.1f"|format(player.win_rate) }}%</td>
+                    <td>{{ "%.2f"|format(player.balance) }}</td>
+                    <td>{{ "%.2f"|format(player.army_value) }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+
+        <!-- Пагинация -->
+        {% if total_pages > 1 %}
+        <div class="pagination">
+            {% if page > 1 %}
+            <a href="{{ url_for('leaderboard', page=page-1) }}">← Назад</a>
+            {% endif %}
+
+            <span style="padding: 8px 12px;">Страница {{ page }} из {{ total_pages }}</span>
+
+            {% if page < total_pages %}
+            <a href="{{ url_for('leaderboard', page=page+1) }}">Вперед →</a>
+            {% endif %}
+        </div>
+        {% endif %}
     </div>
 </body>
 </html>
@@ -1288,6 +1396,69 @@ def admin_edit_unit(unit_id):
         db_session.expunge_all()
 
     return render_template_string(UNIT_FORM_TEMPLATE, unit=unit, active_page='units')
+
+
+@app.route('/leaderboard')
+@login_required
+def leaderboard():
+    """Страница рейтинга игроков"""
+    page = request.args.get('page', 1, type=int)
+    per_page = 20  # Количество игроков на странице
+
+    with db.get_session() as db_session:
+        # Получаем всех игроков
+        query = db_session.query(GameUser)
+
+        # Общее количество игроков
+        total_count = query.count()
+
+        # Пагинация
+        offset = (page - 1) * per_page
+        players = query.order_by(GameUser.wins.desc()).offset(offset).limit(per_page).all()
+
+        # Загружаем атрибуты для каждого игрока
+        players_data = []
+        for player in players:
+            _ = player.id
+            _ = player.name
+            _ = player.wins
+            _ = player.losses
+            _ = player.balance
+
+            # Рассчитываем винрейт
+            total_games = player.wins + player.losses
+            win_rate = (player.wins / total_games * 100) if total_games > 0 else 0
+
+            # Рассчитываем стоимость армии
+            player_units = db_session.query(UserUnit).filter_by(game_user_id=player.id).all()
+            army_value = Decimal('0')
+            for user_unit in player_units:
+                unit = db_session.query(Unit).filter_by(id=user_unit.unit_type_id).first()
+                if unit:
+                    army_value += Decimal(str(unit.price)) * user_unit.count
+
+            players_data.append({
+                'rank': offset + len(players_data) + 1,
+                'name': player.name,
+                'wins': player.wins,
+                'losses': player.losses,
+                'win_rate': win_rate,
+                'balance': float(player.balance),
+                'army_value': float(army_value)
+            })
+
+        db_session.expunge_all()
+
+    # Пагинация
+    total_pages = (total_count + per_page - 1) // per_page
+
+    return render_template_string(
+        LEADERBOARD_TEMPLATE,
+        players=players_data,
+        page=page,
+        total_pages=total_pages,
+        active_page='leaderboard'
+    )
 
 
 @app.route('/help')
