@@ -261,6 +261,7 @@ class SimpleBot:
             "/start - Начать работу с ботом и инициализировать игровой профиль\n"
             "/help - Показать это сообщение\n"
             "/version - Показать версию бота\n"
+            "/password - Установить пароль для админки\n"
             "/profile - Посмотреть свой игровой профиль\n"
             "/top - Рейтинг игроков\n"
             "/shop - Магазин юнитов (покупка армии)\n"
@@ -282,6 +283,102 @@ class SimpleBot:
         )
         await update.message.reply_text(version_text, parse_mode=self.parse_mode)
         logger.info(f"Команда /version от пользователя {update.effective_user.id}")
+
+    async def password_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Обработчик команды /password - установка пароля для админки"""
+        user = update.effective_user
+        logger.info(f"Команда /password от пользователя {user.id}")
+
+        try:
+            # Проверяем наличие username
+            if not user.username:
+                await update.message.reply_text(
+                    "❌ Для установки пароля необходим username в Telegram.",
+                    parse_mode=self.parse_mode
+                )
+                return
+
+            game_user = self.db.get_game_user(user.id)
+            if not game_user:
+                await update.message.reply_text(
+                    "❌ У вас еще нет игрового профиля.\n"
+                    "Используйте /start для создания профиля.",
+                    parse_mode=self.parse_mode
+                )
+                return
+
+            # Устанавливаем флаг ожидания пароля
+            context.user_data['waiting_for_password'] = True
+
+            await update.message.reply_text(
+                "🔐 <b>Установка пароля для админки</b>\n\n"
+                "Введите пароль (минимум 6 символов):\n\n"
+                "⚠️ <i>Пароль будет сохранен в зашифрованном виде и потребуется для входа в админку.</i>",
+                parse_mode=self.parse_mode
+            )
+
+        except Exception as e:
+            logger.error(f"Ошибка при обработке команды /password: {e}")
+            await update.message.reply_text(
+                "Произошла ошибка. Попробуйте позже.",
+                parse_mode=self.parse_mode
+            )
+
+    async def handle_password_input(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Обработка ввода пароля"""
+        user = update.effective_user
+
+        # Проверяем, что мы ждем ввода пароля
+        if not context.user_data.get('waiting_for_password'):
+            return
+
+        try:
+            password = update.message.text.strip()
+
+            # Валидация пароля
+            if len(password) < 6:
+                await update.message.reply_text(
+                    "❌ Пароль должен быть не менее 6 символов. Попробуйте еще раз:",
+                    parse_mode=self.parse_mode
+                )
+                return
+
+            # Хешируем пароль
+            import hashlib
+            password_hash = hashlib.sha256(password.encode()).hexdigest()
+
+            # Сохраняем хеш в базу
+            with self.db.get_session() as session:
+                game_user = session.query(GameUser).filter_by(telegram_id=user.id).first()
+                if game_user:
+                    game_user.password_hash = password_hash
+                    session.commit()
+
+                    # Очищаем флаг ожидания
+                    context.user_data['waiting_for_password'] = False
+
+                    await update.message.reply_text(
+                        "✅ <b>Пароль успешно установлен!</b>\n\n"
+                        f"Теперь вы можете войти в админку:\n"
+                        f"Username: <code>{game_user.name}</code>\n\n"
+                        f"🌐 Админка: http://localhost/admin или http://ваш_адрес/admin",
+                        parse_mode=self.parse_mode
+                    )
+                    logger.info(f"Пользователь {user.username} ({user.id}) установил пароль")
+                else:
+                    await update.message.reply_text(
+                        "❌ Профиль не найден.",
+                        parse_mode=self.parse_mode
+                    )
+                    context.user_data['waiting_for_password'] = False
+
+        except Exception as e:
+            logger.error(f"Ошибка при установке пароля: {e}")
+            await update.message.reply_text(
+                "Произошла ошибка при установке пароля. Попробуйте позже.",
+                parse_mode=self.parse_mode
+            )
+            context.user_data['waiting_for_password'] = False
 
     async def profile_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Обработчик команды /profile - просмотр игрового профиля"""
@@ -318,7 +415,7 @@ class SimpleBot:
                             units_text += (
                                 f"\n{unit.name} x{user_unit.count}\n"
                                 f"  ⚔️ Урон: {unit.damage} | 🛡️ Защита: {unit.defense} | 🎯 Дальность: {unit.range}\n"
-                                f"  ❤️ HP: {unit.health} | 🏃 Скорость: {unit.speed}\n"
+                                f"  ❤️ HP: {unit.health} | 🏃 Скорость: {unit.speed} | 🌀 Уклонение: {float(unit.dodge_chance)*100:.0f}%\n"
                                 f"  💵 Цена продажи: {format_coins(sell_price)}\n"
                             )
                             # Добавляем кнопку продажи для этого юнита
@@ -801,7 +898,8 @@ class SimpleBot:
                 f"❤️ Здоровье: {unit.health}\n"
                 f"🏃 Скорость: {unit.speed}\n"
                 f"🍀 Удача: {float(unit.luck)*100:.0f}%\n"
-                f"💥 Крит: {float(unit.crit_chance)*100:.0f}%\n\n"
+                f"💥 Крит: {float(unit.crit_chance)*100:.0f}%\n"
+                f"🌀 Уклонение: {float(unit.dodge_chance)*100:.0f}%\n\n"
                 f"Выберите количество:"
             )
 
@@ -961,7 +1059,7 @@ class SimpleBot:
                         units_text += (
                             f"\n{unit.name} x{user_unit.count}\n"
                             f"  ⚔️ Урон: {unit.damage} | 🛡️ Защита: {unit.defense} | 🎯 Дальность: {unit.range}\n"
-                            f"  ❤️ HP: {unit.health} | 🏃 Скорость: {unit.speed}\n"
+                            f"  ❤️ HP: {unit.health} | 🏃 Скорость: {unit.speed} | 🌀 Уклонение: {float(unit.dodge_chance)*100:.0f}%\n"
                         )
             else:
                 units_text = "\n\n🔰 У вас пока нет юнитов. Посетите /shop для покупки!"
@@ -2810,6 +2908,11 @@ class SimpleBot:
                 await self.handle_start_amount_input(update, context)
                 return
 
+            # Обработка ввода пароля
+            if context.user_data.get('waiting_for_password'):
+                await self.handle_password_input(update, context)
+                return
+
             # === GAME FUNCTIONS ===
             # Обработка ввода ячейки при перемещении
             if 'waiting_for_cell_input' in context.user_data:
@@ -3556,6 +3659,7 @@ class SimpleBot:
         application.add_handler(CommandHandler("start", self.start_command))
         application.add_handler(CommandHandler("help", self.help_command))
         application.add_handler(CommandHandler("version", self.version_command))
+        application.add_handler(CommandHandler("password", self.password_command))
         application.add_handler(CommandHandler("profile", self.profile_command))
         application.add_handler(CommandHandler("top", self.top_command))
         application.add_handler(CommandHandler("shop", self.shop_command))
