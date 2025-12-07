@@ -2693,15 +2693,33 @@ class SimpleBot:
                 # Отправить уведомление противнику
                 if opponent_telegram_id:
                     try:
-                        notification = (
-                            f"🏃 Игрок {game_user.name} сбежал из игры #{game_id}!\n"
-                            f"Вы победили в этой игре!"
-                        )
-                        await context.bot.send_message(
-                            chat_id=opponent_telegram_id,
-                            text=notification,
-                            parse_mode=self.parse_mode
-                        )
+                        # Получить обновленную игру после surrender (может быть None если игра была удалена)
+                        updated_game = self.db.get_game_by_id(game_id)
+
+                        if updated_game and updated_game.status == GameStatus.COMPLETED:
+                            # Игра завершена (сдача в процессе игры) - отправляем поле с результатами
+                            notification = (
+                                f"🏃 Игрок {game_user.name} сдался в игре #{game_id}!\n\n"
+                                f"🏆 Вы победили!\n\n"
+                                f"{message.split('Урон юнитов зафиксирован. ')[1] if 'Урон юнитов зафиксирован. ' in message else ''}"
+                            )
+
+                            # Отправляем поле с результатами победителю
+                            await self._send_field_image(
+                                chat_id=opponent_telegram_id,
+                                game_id=game_id,
+                                caption=notification,
+                                context=context,
+                                keyboard=[]
+                            )
+                        else:
+                            # Игра была удалена (отклонение вызова) - просто текстовое уведомление
+                            notification = f"❌ Игрок {game_user.name} отклонил ваш вызов на бой (Игра #{game_id})"
+                            await context.bot.send_message(
+                                chat_id=opponent_telegram_id,
+                                text=notification,
+                                parse_mode=self.parse_mode
+                            )
                     except Exception as e:
                         logger.error(f"Ошибка при отправке уведомления противнику: {e}")
             else:

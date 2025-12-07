@@ -1157,11 +1157,11 @@ class GameEngine:
 
     def surrender_game(self, game_id: int, player_id: int) -> Tuple[bool, str, Optional[int]]:
         """
-        Выход из игры (сдаться)
+        Выход из игры (сдаться) или отклонение вызова
 
         Args:
             game_id: ID игры
-            player_id: ID игрока, который сдается
+            player_id: ID игрока, который сдается или отклоняет вызов
 
         Returns:
             Tuple[bool, str, int]: Успех, сообщение, telegram_id противника
@@ -1181,28 +1181,35 @@ class GameEngine:
         loser_id = player_id
         winner_id = game.player1_id if loser_id == game.player2_id else game.player2_id
 
-        # Сохранить текущее состояние юнитов (фиксация урона)
-        self._save_battle_units_damage(game)
-
-        # Завершить игру
-        game.status = GameStatus.COMPLETED
-        game.winner_id = winner_id
-        game.completed_at = datetime.utcnow()
-
-        # Обновить статистику (победа не засчитывается при сдаче противника)
-        loser = self.db.query(GameUser).filter_by(id=loser_id).first()
-        loser.losses += 1
-
         # Получить telegram_id противника для уведомления
         winner = self.db.query(GameUser).filter_by(id=winner_id).first()
         opponent_telegram_id = winner.telegram_id if winner else None
 
         # Получить имя сдавшегося игрока
+        loser = self.db.query(GameUser).filter_by(id=loser_id).first()
         loser_name = loser.name if loser else "Unknown"
+
+        # Если игра еще не началась (WAITING) - просто отменяем без наград и статистики
+        if game.status == GameStatus.WAITING:
+            # Удалить battle units
+            self.db.query(BattleUnit).filter_by(game_id=game_id).delete()
+
+            # Удалить препятствия
+            self.db.query(Obstacle).filter_by(game_id=game_id).delete()
+
+            # Удалить игру
+            self.db.delete(game)
+            self.db.commit()
+
+            message = f"Вызов на бой отклонен"
+            return True, message, opponent_telegram_id
+
+        # Если игра в процессе (IN_PROGRESS) - завершить с начислением наград победителю
+        reward, stats = self._complete_game(game, winner_id)
 
         self.db.commit()
 
-        message = f"Вы сдались в игре #{game_id}. Урон юнитов зафиксирован."
+        message = f"Вы сдались в игре #{game_id}. Урон юнитов зафиксирован. {winner.name} получил {format_coins(reward)} награды."
         return True, message, opponent_telegram_id
 
     def _save_battle_units_damage(self, game: Game):
