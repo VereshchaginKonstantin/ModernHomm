@@ -22,7 +22,7 @@ app.secret_key = 'your-secret-key-change-in-production'
 app.config['UPLOAD_FOLDER'] = 'static/unit_images'
 app.config['MAX_CONTENT_LENGTH'] = 5 * 1024 * 1024  # 5 MB max file size
 
-def calculate_unit_price(damage: int, defense: int, health: int, unit_range: int, speed: int, luck: float, crit_chance: float, dodge_chance: float, is_kamikaze: int = 0, counterattack_chance: float = 0) -> Decimal:
+def calculate_unit_price(damage: int, defense: int, health: int, unit_range: int, speed: int, luck: float, crit_chance: float, dodge_chance: float, is_kamikaze: int = 0, is_flying: int = 0, counterattack_chance: float = 0) -> Decimal:
     """
     Автоматический расчет стоимости юнита по формуле:
     (Урон + Защита + Здоровье + 2*Дальность*(Урон + Защита) + Скорость*(Урон + Защита) +
@@ -39,6 +39,7 @@ def calculate_unit_price(damage: int, defense: int, health: int, unit_range: int
         crit_chance: Вероятность критического удара (0-1)
         dodge_chance: Вероятность уклонения (0-0.9)
         is_kamikaze: Юнит-камикадзе (0 или 1)
+        is_flying: Летающий юнит (0 или 1)
         counterattack_chance: Доля контратаки (0-1)
 
     Returns:
@@ -405,6 +406,9 @@ COMPREHENSIVE_UNITS_TEMPLATE = """
                         {% if unit.is_kamikaze %}
                         <div><strong>💣 Камикадзе:</strong> Да</div>
                         {% endif %}
+                        {% if unit.is_flying %}
+                        <div><strong>🦅 Летающий:</strong> Да</div>
+                        {% endif %}
                         {% if unit.counterattack_chance > 0 %}
                         <div><strong>🔄 Контратака:</strong> {{ "%.2f"|format(unit.counterattack_chance|float * 100) }}%</div>
                         {% endif %}
@@ -581,6 +585,13 @@ UNIT_FORM_TEMPLATE = """
                     <input type="checkbox" name="is_kamikaze" class="form-check-input" id="is_kamikaze" value="1" {{ 'checked' if unit and unit.is_kamikaze else '' }}>
                     <label class="form-check-label" for="is_kamikaze">
                         💣 Камикадзе (урон за 1 юнита, -1 юнит после атаки)
+                    </label>
+                </div>
+
+                <div class="form-group form-check">
+                    <input type="checkbox" name="is_flying" class="form-check-input" id="is_flying" value="1" {{ 'checked' if unit and unit.is_flying else '' }}>
+                    <label class="form-check-label" for="is_flying">
+                        🦅 Летающий (может перемещаться через препятствия)
                     </label>
                 </div>
 
@@ -982,6 +993,7 @@ def index():
             _ = unit.crit_chance
             _ = unit.dodge_chance
             _ = unit.is_kamikaze
+            _ = unit.is_flying
             _ = unit.counterattack_chance
 
         session.expunge_all()
@@ -1138,6 +1150,7 @@ def admin_create_unit():
                 crit_chance = float(request.form['crit_chance'])
                 dodge_chance = float(request.form['dodge_chance'])
                 is_kamikaze = 1 if request.form.get('is_kamikaze') else 0
+                is_flying = 1 if request.form.get('is_flying') else 0
                 counterattack_chance = float(request.form['counterattack_chance'])
 
                 # Валидация: dodge_chance не более 0.9
@@ -1146,7 +1159,7 @@ def admin_create_unit():
                     return redirect(url_for('admin_create_unit'))
 
                 # Автоматически рассчитать стоимость
-                price = calculate_unit_price(damage, defense, health, unit_range, speed, luck, crit_chance, dodge_chance, is_kamikaze, counterattack_chance)
+                price = calculate_unit_price(damage, defense, health, unit_range, speed, luck, crit_chance, dodge_chance, is_kamikaze, is_flying, counterattack_chance)
 
                 # Определить owner_id: для okarien - NULL (базовый юнит), для остальных - их ID
                 owner_id = None if username == 'okarien' else (current_user.id if current_user else None)
@@ -1165,6 +1178,7 @@ def admin_create_unit():
                     crit_chance=Decimal(str(crit_chance)),
                     dodge_chance=Decimal(str(dodge_chance)),
                     is_kamikaze=is_kamikaze,
+                    is_flying=is_flying,
                     counterattack_chance=Decimal(str(counterattack_chance)),
                     owner_id=owner_id
                 )
@@ -1218,6 +1232,7 @@ def admin_edit_unit(unit_id):
                 crit_chance = float(request.form['crit_chance'])
                 dodge_chance = float(request.form['dodge_chance'])
                 is_kamikaze = 1 if request.form.get('is_kamikaze') else 0
+                is_flying = 1 if request.form.get('is_flying') else 0
                 counterattack_chance = float(request.form['counterattack_chance'])
 
                 # Валидация: dodge_chance не более 0.9
@@ -1226,7 +1241,7 @@ def admin_edit_unit(unit_id):
                     return redirect(url_for('admin_edit_unit', unit_id=unit_id))
 
                 # Автоматически рассчитать стоимость
-                price = calculate_unit_price(damage, defense, health, unit_range, speed, luck, crit_chance, dodge_chance, is_kamikaze, counterattack_chance)
+                price = calculate_unit_price(damage, defense, health, unit_range, speed, luck, crit_chance, dodge_chance, is_kamikaze, is_flying, counterattack_chance)
 
                 unit.name = request.form['name']
                 unit.icon = request.form['icon']
@@ -1241,6 +1256,7 @@ def admin_edit_unit(unit_id):
                 unit.crit_chance = Decimal(str(crit_chance))
                 unit.dodge_chance = Decimal(str(dodge_chance))
                 unit.is_kamikaze = is_kamikaze
+                unit.is_flying = is_flying
                 unit.counterattack_chance = Decimal(str(counterattack_chance))
                 db_session.flush()
 
@@ -1263,6 +1279,7 @@ def admin_edit_unit(unit_id):
         _ = unit.crit_chance
         _ = unit.dodge_chance
         _ = unit.is_kamikaze
+        _ = unit.is_flying
         _ = unit.counterattack_chance
         db_session.expunge_all()
 
