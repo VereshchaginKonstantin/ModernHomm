@@ -1831,19 +1831,24 @@ class SimpleBot:
             # Обновить поле атакующего (убрать кнопки)
             await self._edit_field(query, game.id, result_message, keyboard=[])
 
-            # Отправить результаты противнику
-            opponent_id = loser_id if query.from_user.id == winner.telegram_id else winner.telegram_id
-            opponent = self.db.get_game_user_by_id(loser_id if opponent_id == loser.telegram_id else game.winner_id)
+            # Отправить результаты противнику и убрать у него поле
+            current_player_game_user = self.db.get_game_user(query.from_user.id)
+            if current_player_game_user:
+                opponent_id = loser_id if current_player_game_user.id == game.winner_id else game.winner_id
+                opponent = self.db.get_game_user_by_id(opponent_id)
 
-            if opponent and opponent.telegram_id:
-                try:
-                    await context.bot.send_message(
-                        chat_id=opponent.telegram_id,
-                        text=result_message,
-                        parse_mode=self.parse_mode
-                    )
-                except Exception as e:
-                    logger.error(f"Ошибка при отправке результатов противнику: {e}")
+                if opponent and opponent.telegram_id:
+                    try:
+                        # Отправляем поле без кнопок противнику
+                        await self._send_field_image(
+                            chat_id=opponent.telegram_id,
+                            game_id=game.id,
+                            caption=result_message,
+                            context=context,
+                            keyboard=[]
+                        )
+                    except Exception as e:
+                        logger.error(f"Ошибка при отправке результатов противнику: {e}")
 
         except Exception as e:
             logger.error(f"Ошибка при обработке завершения игры: {e}")
