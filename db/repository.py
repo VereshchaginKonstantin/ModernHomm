@@ -10,6 +10,27 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, Session
 
 from .models import Base, User, Message, Config, GameUser, Unit, UserUnit, Game, GameStatus, Field, BattleUnit
+from decimal import Decimal
+
+
+def format_coins(amount):
+    """Форматирование монет с правильным склонением"""
+    # Получаем последнюю цифру и две последние цифры
+    amount_int = int(amount) if isinstance(amount, (int, float, Decimal)) else int(float(amount))
+    last_digit = amount_int % 10
+    last_two_digits = amount_int % 100
+
+    # Определяем правильное склонение
+    if last_two_digits >= 11 and last_two_digits <= 19:
+        word = "монет"
+    elif last_digit == 1:
+        word = "монета"
+    elif last_digit >= 2 and last_digit <= 4:
+        word = "монеты"
+    else:
+        word = "монет"
+
+    return f"{amount} {word}"
 
 
 class Database:
@@ -910,7 +931,7 @@ class Database:
 
             # Проверяем баланс
             if game_user.balance < total_cost:
-                return False, f"Недостаточно средств. Требуется: ${total_cost:.2f}, доступно: ${game_user.balance:.2f}"
+                return False, f"Недостаточно средств. Требуется: {format_coins(total_cost)}, доступно: {format_coins(game_user.balance)}"
 
             # Списываем средства
             game_user.balance -= total_cost
@@ -933,7 +954,7 @@ class Database:
 
             session.flush()
 
-            return True, f"Успешно куплено {quantity} x {unit.name} за ${total_cost:.2f}"
+            return True, f"Успешно куплено {quantity} x {unit.name} за {format_coins(total_cost)}"
 
     # ===== CRUD методы для Game =====
 
@@ -1156,7 +1177,7 @@ class Database:
 
             # Проверяем баланс отправителя
             if sender.balance < Decimal(str(amount)):
-                return False, f"Недостаточно средств. Ваш баланс: ${sender.balance}"
+                return False, f"Недостаточно средств. Ваш баланс: {format_coins(sender.balance)}"
 
             # Выполняем перевод
             sender.balance -= Decimal(str(amount))
@@ -1164,5 +1185,5 @@ class Database:
 
             session.flush()
 
-            message = f"✅ Перевод выполнен!\nВы перевели ${amount:.2f} пользователю {receiver.name}\nВаш новый баланс: ${sender.balance:.2f}"
+            message = f"✅ Перевод выполнен!\nВы перевели {format_coins(amount)} пользователю {receiver.name}\nВаш новый баланс: {format_coins(sender.balance)}"
             return True, message

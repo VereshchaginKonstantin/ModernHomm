@@ -27,6 +27,26 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
+def format_coins(amount):
+    """Форматирование монет с правильным склонением"""
+    # Получаем последнюю цифру и две последние цифры
+    amount_int = int(amount) if isinstance(amount, (int, float, Decimal)) else int(float(amount))
+    last_digit = amount_int % 10
+    last_two_digits = amount_int % 100
+
+    # Определяем правильное склонение
+    if last_two_digits >= 11 and last_two_digits <= 19:
+        word = "монет"
+    elif last_digit == 1:
+        word = "монета"
+    elif last_digit >= 2 and last_digit <= 4:
+        word = "монеты"
+    else:
+        word = "монет"
+
+    return f"{amount} {word}"
+
+
 class SimpleBot:
     def __init__(self, config_path='config.json', db=None):
         """Инициализация бота с загрузкой конфигурации"""
@@ -199,7 +219,7 @@ class SimpleBot:
             if created:
                 response = (
                     f"🎮 Добро пожаловать в игру, {game_user.name}!\n\n"
-                    f"💰 Ваш начальный баланс: ${game_user.balance}\n"
+                    f"💰 Ваш начальный баланс: {format_coins(game_user.balance)}\n"
                     f"🏆 Побед: {game_user.wins}\n"
                     f"💔 Поражений: {game_user.losses}\n\n"
                     "Используйте /help для просмотра команд."
@@ -207,7 +227,7 @@ class SimpleBot:
             else:
                 response = (
                     f"👋 С возвращением, {game_user.name}!\n\n"
-                    f"💰 Текущий баланс: ${game_user.balance}\n"
+                    f"💰 Текущий баланс: {format_coins(game_user.balance)}\n"
                     f"🏆 Побед: {game_user.wins}\n"
                     f"💔 Поражений: {game_user.losses}\n\n"
                     "Используйте /help для просмотра команд."
@@ -287,7 +307,7 @@ class SimpleBot:
                                 f"\n{unit.name} x{user_unit.count}\n"
                                 f"  ⚔️ Урон: {unit.damage} | 🛡️ Защита: {unit.defense} | 🎯 Дальность: {unit.range}\n"
                                 f"  ❤️ HP: {unit.health} | 🏃 Скорость: {unit.speed}\n"
-                                f"  💵 Цена продажи: ${sell_price:.2f}\n"
+                                f"  💵 Цена продажи: {format_coins(sell_price)}\n"
                             )
                             # Добавляем кнопку продажи для этого юнита
                             keyboard.append([
@@ -303,7 +323,7 @@ class SimpleBot:
 
             response = (
                 f"👤 Профиль игрока {game_user.name}\n\n"
-                f"💰 Баланс: ${game_user.balance}\n"
+                f"💰 Баланс: {format_coins(game_user.balance)}\n"
                 f"🏆 Побед: {game_user.wins}\n"
                 f"💔 Поражений: {game_user.losses}"
                 f"{units_text}"
@@ -357,7 +377,7 @@ class SimpleBot:
                 f"✅ Успешно продано!\n\n"
                 f"🔰 Юнит: {unit.name}\n"
                 f"📦 Количество: {count} шт.\n"
-                f"💰 Получено: ${money:.2f}\n\n"
+                f"💰 Получено: {format_coins(money)}\n\n"
                 f"Используйте /profile чтобы увидеть обновленный профиль."
             )
 
@@ -407,7 +427,7 @@ class SimpleBot:
                 # Формируем сообщение со списком пользователей
                 response = (
                     f"💰 <b>Перевод денег</b>\n\n"
-                    f"Ваш баланс: ${float(game_user.balance):.2f}\n\n"
+                    f"Ваш баланс: {format_coins(game_user.balance)}\n\n"
                     f"Выберите получателя:\n\n"
                 )
 
@@ -471,14 +491,14 @@ class SimpleBot:
             # Показать выбор суммы
             response = (
                 f"💰 <b>Перевод денег для {safe_name}</b>\n\n"
-                f"Ваш баланс: ${float(game_user.balance):.2f}\n\n"
+                f"Ваш баланс: {format_coins(game_user.balance)}\n\n"
                 f"Выберите сумму перевода:"
             )
 
             keyboard = [
-                [InlineKeyboardButton("💵 $100", callback_data=f"transfer_amount:{target_telegram_id}:100")],
-                [InlineKeyboardButton("💵 $1000", callback_data=f"transfer_amount:{target_telegram_id}:1000")],
-                [InlineKeyboardButton("💵 $10000", callback_data=f"transfer_amount:{target_telegram_id}:10000")],
+                [InlineKeyboardButton("💵 100 монет", callback_data=f"transfer_amount:{target_telegram_id}:100")],
+                [InlineKeyboardButton("💵 1000 монет", callback_data=f"transfer_amount:{target_telegram_id}:1000")],
+                [InlineKeyboardButton("💵 10000 монет", callback_data=f"transfer_amount:{target_telegram_id}:10000")],
                 [InlineKeyboardButton("◀️ Назад", callback_data="transfer_back")]
             ]
 
@@ -521,7 +541,7 @@ class SimpleBot:
                         notification = (
                             f"💰 <b>Вам перевели деньги!</b>\n\n"
                             f"От: {game_user.name}\n"
-                            f"Сумма: ${amount:.2f}\n\n"
+                            f"Сумма: {format_coins(amount)}\n\n"
                             f"Используйте /profile чтобы увидеть обновленный баланс."
                         )
                         await bot.send_message(
@@ -571,7 +591,7 @@ class SimpleBot:
 
                 response = (
                     f"💰 <b>Перевод денег</b>\n\n"
-                    f"Ваш баланс: ${float(game_user.balance):.2f}\n\n"
+                    f"Ваш баланс: {format_coins(game_user.balance)}\n\n"
                     f"Выберите получателя:\n\n"
                 )
 
@@ -653,7 +673,7 @@ class SimpleBot:
                 response += (
                     f"{medal}<b>{html.escape(player['name'])}</b>\n"
                     f"  🏆 Побед: {player['wins']} | 💔 Поражений: {player['losses']}\n"
-                    f"  ⚔️ Стоимость армии: ${player['army_cost']}\n\n"
+                    f"  ⚔️ Стоимость армии: {format_coins(player['army_cost'])}\n\n"
                 )
 
             await update.message.reply_text(response, parse_mode=self.parse_mode)
@@ -692,14 +712,14 @@ class SimpleBot:
                 return
 
             # Формируем сообщение с магазином
-            response = f"🏪 <b>Магазин юнитов</b>\n\n💰 Ваш баланс: ${game_user.balance}\n\n"
+            response = f"🏪 <b>Магазин юнитов</b>\n\n💰 Ваш баланс: {format_coins(game_user.balance)}\n\n"
             response += "Выберите юнита для покупки:\n"
 
             # Создаем кнопки для каждого юнита
             keyboard = []
             for unit in units:
                 unit_info = (
-                    f"{unit.name} - ${unit.price}\n"
+                    f"{unit.name} - {format_coins(unit.price)}\n"
                     f"⚔️ {unit.damage} | 🛡️ {unit.defense} | 🎯 {unit.range} | ❤️ {unit.health} | 🏃 {unit.speed}\n"
                     f"🍀 {float(unit.luck)*100:.0f}% | 💥 {float(unit.crit_chance)*100:.0f}%"
                 )
@@ -760,8 +780,8 @@ class SimpleBot:
             # Показываем информацию о юните и кнопки для выбора количества
             response = (
                 f"🛒 <b>Покупка: {unit.name}</b>\n\n"
-                f"💰 Цена за 1 шт: ${unit.price}\n"
-                f"💵 Ваш баланс: ${game_user.balance}\n\n"
+                f"💰 Цена за 1 шт: {format_coins(unit.price)}\n"
+                f"💵 Ваш баланс: {format_coins(game_user.balance)}\n\n"
                 f"<b>Характеристики:</b>\n"
                 f"⚔️ Урон: {unit.damage}\n"
                 f"🛡️ Защита: {unit.defense}\n"
@@ -781,7 +801,7 @@ class SimpleBot:
                 total = float(unit.price) * qty
                 if total <= float(game_user.balance):
                     row.append(InlineKeyboardButton(
-                        f"{qty} шт (${total:.0f})",
+                        f"{qty} шт ({format_coins(total)})",
                         callback_data=f"confirm_buy:{unit_id}:{qty}"
                     ))
             if row:
@@ -827,7 +847,7 @@ class SimpleBot:
                 game_user = self.db.get_game_user(user.id)
                 response = (
                     f"✅ {message}\n\n"
-                    f"💰 Новый баланс: ${game_user.balance}"
+                    f"💰 Новый баланс: {format_coins(game_user.balance)}"
                 )
             else:
                 response = f"❌ {message}"
@@ -871,14 +891,14 @@ class SimpleBot:
             units = self.db.get_all_units()
 
             # Формируем сообщение с магазином
-            response = f"🏪 <b>Магазин юнитов</b>\n\n💰 Ваш баланс: ${game_user.balance}\n\n"
+            response = f"🏪 <b>Магазин юнитов</b>\n\n💰 Ваш баланс: {format_coins(game_user.balance)}\n\n"
             response += "Выберите юнита для покупки:\n"
 
             # Создаем кнопки для каждого юнита
             keyboard = []
             for unit in units:
                 unit_info = (
-                    f"{unit.name} - ${unit.price}\n"
+                    f"{unit.name} - {format_coins(unit.price)}\n"
                     f"⚔️ {unit.damage} | 🛡️ {unit.defense} | 🎯 {unit.range} | ❤️ {unit.health} | 🏃 {unit.speed}\n"
                     f"🍀 {float(unit.luck)*100:.0f}% | 💥 {float(unit.crit_chance)*100:.0f}%"
                 )
@@ -936,7 +956,7 @@ class SimpleBot:
 
             response = (
                 f"👤 Профиль игрока {game_user.name}\n\n"
-                f"💰 Баланс: ${game_user.balance}\n"
+                f"💰 Баланс: {format_coins(game_user.balance)}\n"
                 f"🏆 Побед: {game_user.wins}\n"
                 f"💔 Поражений: {game_user.losses}"
                 f"{units_text}"
@@ -1429,8 +1449,8 @@ class SimpleBot:
                     await update.message.reply_text(
                         f"❌ <b>Невозможно начать бой!</b>\n\n"
                         f"Разница в стоимости армий слишком большая ({difference_percent:.0f}%).\n\n"
-                        f"💰 Ваша армия: <code>${challenger_army_cost}</code>\n"
-                        f"💰 Армия противника: <code>${opponent_army_cost}</code>\n\n"
+                        f"💰 Ваша армия: <code>{format_coins(challenger_army_cost)}</code>\n"
+                        f"💰 Армия противника: <code>{format_coins(opponent_army_cost)}</code>\n\n"
                         f"Максимально допустимая разница: 50%\n"
                         f"Купите или продайте юнитов, чтобы уравнять армии.",
                         parse_mode=self.parse_mode
@@ -1744,13 +1764,13 @@ class SimpleBot:
 
         # Статистика победителя
         result += f"📊 <b>Статистика {html.escape(winner.name)}:</b>\n"
-        result += f"   💰 Баланс: ${winner.balance}\n"
+        result += f"   💰 Баланс: {format_coins(winner.balance)}\n"
         result += f"   🏆 Побед: {winner.wins}\n"
         result += f"   💔 Поражений: {winner.losses}\n\n"
 
         # Статистика проигравшего
         result += f"📊 <b>Статистика {html.escape(loser.name)}:</b>\n"
-        result += f"   💰 Баланс: ${loser.balance}\n"
+        result += f"   💰 Баланс: {format_coins(loser.balance)}\n"
         result += f"   🏆 Побед: {loser.wins}\n"
         result += f"   💔 Поражений: {loser.losses}\n\n"
 
@@ -2400,8 +2420,8 @@ class SimpleBot:
                     await query.edit_message_text(
                         f"❌ <b>Невозможно начать бой с {safe_opponent_name}!</b>\n\n"
                         f"Разница в стоимости армий слишком большая ({difference_percent:.0f}%).\n\n"
-                        f"💰 Ваша армия: <code>${challenger_army_cost}</code>\n"
-                        f"💰 Армия противника: <code>${opponent_army_cost}</code>\n\n"
+                        f"💰 Ваша армия: <code>{format_coins(challenger_army_cost)}</code>\n"
+                        f"💰 Армия противника: <code>{format_coins(opponent_army_cost)}</code>\n\n"
                         f"Максимально допустимая разница: 50%\n"
                         f"Купите или продайте юнитов, чтобы уравнять армии.",
                         parse_mode=self.parse_mode
@@ -2954,7 +2974,7 @@ class SimpleBot:
                             f"Новый тип юнита '{unit_data['name']}' успешно создан!\n\n"
                             f"Характеристики:\n"
                             f"Эмодзи: {unit_data['icon']}\n"
-                            f"Цена: ${unit_data['price']}\n"
+                            f"Цена: {format_coins(unit_data['price'])}\n"
                             f"Урон: {unit_data['damage']}\n"
                             f"Защита: {unit_data['defense']}\n"
                             f"Дальность: {unit_data['range']}\n"
@@ -2994,7 +3014,7 @@ class SimpleBot:
                 # Пользователь написал "Играть" вместо команды /play
                 response = (
                     f"🎮 Добро пожаловать в игру, {game_user.name}!\n\n"
-                    f"💰 Ваш баланс: ${game_user.balance}\n"
+                    f"💰 Ваш баланс: {format_coins(game_user.balance)}\n"
                     f"🏆 Побед: {game_user.wins}\n"
                     f"💔 Поражений: {game_user.losses}\n\n"
                     "Используйте /profile для просмотра профиля!"
@@ -3073,13 +3093,13 @@ class SimpleBot:
 
                         response += (
                             f"{i}. {safe_name}\n"
-                            f"   💵 Баланс: ${float(player.balance):.2f}\n"
+                            f"   💵 Баланс: {format_coins(player.balance)}\n"
                             f"   🏆 {player.wins}W / 💔 {player.losses}L\n\n"
                         )
 
                         keyboard.append([
                             InlineKeyboardButton(
-                                f"💰 {player.name} (${float(player.balance):.2f})",
+                                f"💰 {player.name} ({format_coins(player.balance)})",
                                 callback_data=f"addmoney_user:{player.telegram_id}"
                             )
                         ])
@@ -3149,12 +3169,12 @@ class SimpleBot:
 
             # Отправить подтверждение
             await update.message.reply_text(
-                f"✅ Успешно добавлено ${amount:.2f} игроку {target_name}.\n"
-                f"Баланс: ${old_balance:.2f} → ${new_balance:.2f}",
+                f"✅ Успешно добавлено {format_coins(amount)} игроку {target_name}.\n"
+                f"Баланс: {format_coins(old_balance)} → {format_coins(new_balance)}",
                 parse_mode=self.parse_mode
             )
 
-            logger.info(f"Администратор {username} добавил ${amount} игроку {target_name} (ID: {target_user.telegram_id})")
+            logger.info(f"Администратор {username} добавил {amount} монет игроку {target_name} (ID: {target_user.telegram_id})")
 
     async def addmoney_select_user_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Обработчик выбора пользователя для добавления денег"""
@@ -3209,7 +3229,7 @@ class SimpleBot:
             await query.edit_message_text(
                 f"💰 <b>Добавление средств игроку</b>\n\n"
                 f"Игрок: {safe_name}\n"
-                f"Текущий баланс: ${float(target_user.balance):.2f}\n\n"
+                f"Текущий баланс: {format_coins(target_user.balance)}\n\n"
                 f"Выберите сумму для добавления:",
                 parse_mode=self.parse_mode,
                 reply_markup=InlineKeyboardMarkup(keyboard)
@@ -3258,12 +3278,12 @@ class SimpleBot:
             await query.edit_message_text(
                 f"✅ <b>Средства успешно добавлены!</b>\n\n"
                 f"Игрок: {safe_name}\n"
-                f"Сумма: +${amount:.2f}\n"
-                f"Баланс: ${old_balance:.2f} → ${new_balance:.2f}",
+                f"Сумма: +{format_coins(amount)}\n"
+                f"Баланс: {format_coins(old_balance)} → {format_coins(new_balance)}",
                 parse_mode=self.parse_mode
             )
 
-            logger.info(f"Администратор {username} добавил ${amount} игроку {target_user.name} (ID: {target_telegram_id})")
+            logger.info(f"Администратор {username} добавил {amount} монет игроку {target_user.name} (ID: {target_telegram_id})")
 
     async def addmoney_back_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Обработчик кнопки 'Назад' в addmoney"""
@@ -3293,13 +3313,13 @@ class SimpleBot:
 
                 response += (
                     f"{i}. {safe_name}\n"
-                    f"   💵 Баланс: ${float(player.balance):.2f}\n"
+                    f"   💵 Баланс: {format_coins(player.balance)}\n"
                     f"   🏆 {player.wins}W / 💔 {player.losses}L\n\n"
                 )
 
                 keyboard.append([
                     InlineKeyboardButton(
-                        f"💰 {player.name} (${float(player.balance):.2f})",
+                        f"💰 {player.name} ({format_coins(player.balance)})",
                         callback_data=f"addmoney_user:{player.telegram_id}"
                     )
                 ])
@@ -3331,7 +3351,7 @@ class SimpleBot:
 
         await update.message.reply_text(
             f"💰 <b>Настройка стартовой суммы при регистрации</b>\n\n"
-            f"Текущая стартовая сумма: <b>${current_amount:.2f}</b>\n\n"
+            f"Текущая стартовая сумма: <b>{format_coins(current_amount)}</b>\n\n"
             f"Введите новую сумму (число):",
             parse_mode=self.parse_mode
         )
@@ -3382,13 +3402,13 @@ class SimpleBot:
         # Отправить подтверждение
         await update.message.reply_text(
             f"✅ <b>Стартовая сумма обновлена!</b>\n\n"
-            f"Старое значение: ${old_amount:.2f}\n"
-            f"Новое значение: ${new_amount:.2f}\n\n"
-            f"Новые пользователи будут получать ${new_amount:.2f} при регистрации.",
+            f"Старое значение: {format_coins(old_amount)}\n"
+            f"Новое значение: {format_coins(new_amount)}\n\n"
+            f"Новые пользователи будут получать {format_coins(new_amount)} при регистрации.",
             parse_mode=self.parse_mode
         )
 
-        logger.info(f"Администратор {username} изменил стартовую сумму с ${old_amount} на ${new_amount}")
+        logger.info(f"Администратор {username} изменил стартовую сумму с {old_amount} на {new_amount} монет")
 
     async def admin_unit_icons_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Показать список юнитов для настройки эмодзи"""

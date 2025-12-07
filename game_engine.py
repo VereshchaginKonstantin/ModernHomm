@@ -14,6 +14,26 @@ from db.models import Game, GameStatus, BattleUnit, GameUser, UserUnit, Field, U
 logger = logging.getLogger(__name__)
 
 
+def format_coins(amount):
+    """Форматирование монет с правильным склонением"""
+    # Получаем последнюю цифру и две последние цифры
+    amount_int = int(amount) if isinstance(amount, (int, float, Decimal)) else int(float(amount))
+    last_digit = amount_int % 10
+    last_two_digits = amount_int % 100
+
+    # Определяем правильное склонение
+    if last_two_digits >= 11 and last_two_digits <= 19:
+        word = "монет"
+    elif last_digit == 1:
+        word = "монета"
+    elif last_digit >= 2 and last_digit <= 4:
+        word = "монеты"
+    else:
+        word = "монет"
+
+    return f"{amount} {word}"
+
+
 def coords_to_chess(x: int, y: int) -> str:
     """
     Преобразование координат (x, y) в шахматную нотацию (A1, B3, etc.)
@@ -468,11 +488,11 @@ class GameEngine:
 
             combat_log += f"\n\n🏆 Игра окончена! Победитель: {winner_name}\n\n"
             combat_log += f"💰 Финансовая статистика:\n"
-            combat_log += f"   📦 Убито юнитов {loser_name}: ${float(stats['killed_enemy_value']):.2f}\n"
+            combat_log += f"   📦 Убито юнитов {loser_name}: {format_coins(stats['killed_enemy_value'])}\n"
             if stats['lost_own_value'] > 0:
-                combat_log += f"   ⚰️ Потеряно своих юнитов: ${float(stats['lost_own_value']):.2f}\n"
-            combat_log += f"   💵 Награда (90%): +${float(reward):.2f}\n"
-            combat_log += f"   💹 Чистая прибыль: ${float(stats['net_profit']):.2f}"
+                combat_log += f"   ⚰️ Потеряно своих юнитов: {format_coins(stats['lost_own_value'])}\n"
+            combat_log += f"   💵 Награда (90%): +{format_coins(reward)}\n"
+            combat_log += f"   💹 Чистая прибыль: {format_coins(stats['net_profit'])}"
         else:
             # Проверить, все ли юниты текущего игрока походили
             if self._all_units_moved(game, player_id):
@@ -1268,11 +1288,11 @@ class GameEngine:
                 if battle_unit.player_id == loser_id:
                     # Юниты проигравшего
                     killed_enemy_value += unit_value
-                    killed_enemy_details.append(f"{unit_name} x{killed_count} = ${float(unit_value):.2f}")
+                    killed_enemy_details.append(f"{unit_name} x{killed_count} = {format_coins(unit_value)}")
                 elif battle_unit.player_id == winner_id:
                     # Юниты победителя
                     lost_own_value += unit_value
-                    lost_own_details.append(f"{unit_name} x{killed_count} = ${float(unit_value):.2f}")
+                    lost_own_details.append(f"{unit_name} x{killed_count} = {format_coins(unit_value)}")
 
         # Награда = 90% от стоимости убитых юнитов противника
         reward = killed_enemy_value * Decimal('0.9')
@@ -1286,17 +1306,17 @@ class GameEngine:
         self._save_battle_units_damage(game)
 
         logger.info(f"📊 Статистика обновлена:")
-        logger.info(f"  • {winner.name}: Побед {old_winner_wins} → {winner.wins}, Баланс ${old_winner_balance:.2f} → ${float(winner.balance):.2f} (+${float(reward):.2f})")
+        logger.info(f"  • {winner.name}: Побед {old_winner_wins} → {winner.wins}, Баланс {old_winner_balance:.2f} → {float(winner.balance):.2f} монет (+{float(reward):.2f})")
         logger.info(f"  • {loser.name}: Поражений {old_loser_losses} → {loser.losses}")
         logger.info(f"\n💰 Финансовая статистика:")
         if killed_enemy_details:
             logger.info(f"  • Убито юнитов противника ({loser.name}): {', '.join(killed_enemy_details)}")
-            logger.info(f"    Общая стоимость: ${float(killed_enemy_value):.2f}")
+            logger.info(f"    Общая стоимость: {float(killed_enemy_value):.2f} монет")
         if lost_own_details:
             logger.info(f"  • Потеряно своих юнитов ({winner.name}): {', '.join(lost_own_details)}")
-            logger.info(f"    Общая стоимость: ${float(lost_own_value):.2f}")
-        logger.info(f"  • Награда (90% от убитых): ${float(reward):.2f}")
-        logger.info(f"  • Чистая прибыль: ${float(net_profit):.2f}")
+            logger.info(f"    Общая стоимость: {float(lost_own_value):.2f} монет")
+        logger.info(f"  • Награда (90% от убитых): {float(reward):.2f} монет")
+        logger.info(f"  • Чистая прибыль: {float(net_profit):.2f} монет")
 
         self.db.commit()
         logger.info(f"✅ Игра #{game.id} успешно завершена")
