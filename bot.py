@@ -2562,6 +2562,7 @@ class SimpleBot:
                 try:
                     challenge_keyboard = InlineKeyboardMarkup([
                         [InlineKeyboardButton("✅ Принять бой", callback_data=f"accept_challenge:{game_id}")],
+                        [InlineKeyboardButton("📊 Показать детали", callback_data=f"show_opponent_details:{game_id}")],
                         [InlineKeyboardButton("❌ Отклонить", callback_data=f"decline_challenge:{game_id}")]
                     ])
 
@@ -2571,6 +2572,8 @@ class SimpleBot:
                             f"⚔️ <b>Вызов на бой!</b>\n\n"
                             f"Игрок {safe_challenger_name} вызывает вас на бой!\n"
                             f"Игра #{game_id}\n\n"
+                            f"💰 Стоимость вашей армии: {format_coins(opponent_army_cost)}\n"
+                            f"💰 Стоимость армии противника: {format_coins(challenger_army_cost)}\n\n"
                             f"Будете сражаться?"
                         ),
                         parse_mode=self.parse_mode,
@@ -2837,6 +2840,84 @@ class SimpleBot:
         except Exception as e:
             logger.error(f"Ошибка при принятии вызова: {e}")
             await self._edit_message_universal(query, f"❌ Ошибка: {e}", parse_mode=self.parse_mode)
+
+    async def show_opponent_details_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Обработчик callback для показа деталей армии противника"""
+        query = update.callback_query
+        await query.answer()
+
+        # Парсим данные из callback (формат: show_opponent_details:game_id)
+        data = query.data.split(':')
+        if len(data) != 2 or data[0] != 'show_opponent_details':
+            return
+
+        game_id = int(data[1])
+        user = update.effective_user
+
+        try:
+            game = self.db.get_game_by_id(game_id)
+            if not game:
+                await query.answer("❌ Игра не найдена", show_alert=True)
+                return
+
+            game_user = self.db.get_game_user(user.id)
+            if not game_user:
+                await query.answer("❌ Игровой профиль не найден", show_alert=True)
+                return
+
+            # Определяем, кто противник
+            if game.player2_id == game_user.id:
+                opponent_id = game.player1_id
+            else:
+                await query.answer("❌ Вы не участник этой игры", show_alert=True)
+                return
+
+            opponent = self.db.get_game_user_by_id(opponent_id)
+            if not opponent:
+                await query.answer("❌ Противник не найден", show_alert=True)
+                return
+
+            # Получаем юниты противника
+            opponent_units = self.db.get_user_units_by_game_user_id(opponent_id)
+
+            if not opponent_units or len(opponent_units) == 0:
+                details_text = f"📊 <b>Армия {html.escape(opponent.name)}</b>\n\nУ противника нет юнитов!"
+            else:
+                details_text = f"📊 <b>Армия {html.escape(opponent.name)}</b>\n\n"
+                total_cost = Decimal('0')
+
+                for user_unit in opponent_units:
+                    if user_unit.count > 0:
+                        unit = self.db.get_unit_by_id(user_unit.unit_type_id)
+                        if unit:
+                            unit_total = unit.price * user_unit.count
+                            total_cost += unit_total
+                            details_text += (
+                                f"{unit.icon} <b>{unit.name}</b> x{user_unit.count}\n"
+                                f"  ⚔️ Урон: {unit.damage} | 🛡️ Защита: {unit.defense} | 🎯 Дальность: {unit.range}\n"
+                                f"  ❤️ HP: {unit.health} | 🏃 Скорость: {unit.speed}\n"
+                                f"  🍀 Удача: {float(unit.luck)*100:.0f}% | 💥 Крит: {float(unit.crit_chance)*100:.0f}% | 🌀 Уклонение: {float(unit.dodge_chance)*100:.0f}%\n"
+                                f"  💰 Стоимость: {format_coins(unit_total)}\n\n"
+                            )
+
+                details_text += f"💵 <b>Общая стоимость армии:</b> {format_coins(total_cost)}"
+
+            # Возвращаем клавиатуру с исходными кнопками
+            challenge_keyboard = InlineKeyboardMarkup([
+                [InlineKeyboardButton("✅ Принять бой", callback_data=f"accept_challenge:{game_id}")],
+                [InlineKeyboardButton("📊 Показать детали", callback_data=f"show_opponent_details:{game_id}")],
+                [InlineKeyboardButton("❌ Отклонить", callback_data=f"decline_challenge:{game_id}")]
+            ])
+
+            await query.edit_message_text(
+                details_text,
+                parse_mode=self.parse_mode,
+                reply_markup=challenge_keyboard
+            )
+
+        except Exception as e:
+            logger.error(f"Ошибка при показе деталей противника: {e}")
+            await query.answer(f"❌ Ошибка: {e}", show_alert=True)
 
     async def decline_challenge_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Обработчик callback для отклонения вызова на бой"""
@@ -3708,6 +3789,7 @@ class SimpleBot:
         # Игровые callback обработчики
         application.add_handler(CallbackQueryHandler(self.challenge_user_callback, pattern=r'^challenge_user:'))
         application.add_handler(CallbackQueryHandler(self.accept_challenge_callback, pattern=r'^accept_challenge:'))
+        application.add_handler(CallbackQueryHandler(self.show_opponent_details_callback, pattern=r'^show_opponent_details:'))
         application.add_handler(CallbackQueryHandler(self.decline_challenge_callback, pattern=r'^decline_challenge:'))
         application.add_handler(CallbackQueryHandler(self.show_game_callback, pattern=r'^show_game:'))
         application.add_handler(CallbackQueryHandler(self.surrender_callback, pattern=r'^surrender:'))
