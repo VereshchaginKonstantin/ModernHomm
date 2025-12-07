@@ -67,6 +67,7 @@ class GameUser(Base):
     balance = Column(Numeric(12, 2), nullable=False, default=1000)
     wins = Column(Integer, nullable=False, default=0)
     losses = Column(Integer, nullable=False, default=0)
+    password_hash = Column(String(255), nullable=True)  # Хеш пароля для входа в админку
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 
@@ -98,11 +99,14 @@ class Unit(Base):
     is_kamikaze = Column(Integer, nullable=False, default=0)  # Флаг камикадзе (0 - нет, 1 - да): наносит урон 1 юнитом и уменьшается на 1 после атаки
     counterattack_chance = Column(Numeric(5, 4), nullable=False, default=0)  # Доля контратаки (0-1): при получении урона наносит ответный урон с этим коэффициентом
     effective_against_unit_id = Column(Integer, ForeignKey('units.id'), nullable=True)  # Юнит, против которого эффективен (x1.5 урона)
+    owner_id = Column(Integer, ForeignKey('game_users.id'), nullable=True)  # Владелец юнита (None - базовый юнит, иначе - пользовательский)
 
     # Связь с пользовательской иконкой
     custom_icon = relationship("UnitCustomIcon", back_populates="unit", uselist=False)
     # Связь с эффективностью против другого юнита
     effective_against = relationship("Unit", remote_side=[id], uselist=False)
+    # Связь с владельцем юнита
+    owner = relationship("GameUser", foreign_keys=[owner_id])
 
     def __repr__(self):
         return f"<Unit(id={self.id}, name={self.name}, price={self.price})>"

@@ -1098,20 +1098,36 @@ def delete_image(unit_id):
 @login_required
 def admin_units_list():
     """Страница управления юнитами"""
-    with db.get_session() as session:
-        units = session.query(Unit).all()
-        session.expunge_all()
+    username = session.get('username')
+    with db.get_session() as db_session:
+        # Получить текущего пользователя
+        current_user = db_session.query(GameUser).filter_by(name=username).first()
 
-    return render_template_string(UNITS_TEMPLATE, units=units, active_page='units')
+        # Показать базовые юниты (owner_id IS NULL) и юниты текущего пользователя
+        if current_user:
+            units = db_session.query(Unit).filter(
+                (Unit.owner_id == None) | (Unit.owner_id == current_user.id)
+            ).all()
+        else:
+            # Если пользователь не найден, показать только базовые юниты
+            units = db_session.query(Unit).filter(Unit.owner_id == None).all()
+
+        db_session.expunge_all()
+
+    return render_template_string(UNITS_TEMPLATE, units=units, active_page='units', current_user_id=current_user.id if current_user else None, username=username)
 
 
 @app.route('/admin/units/create', methods=['GET', 'POST'])
 @login_required
 def admin_create_unit():
     """Создание нового юнита"""
+    username = session.get('username')
     if request.method == 'POST':
         try:
-            with db.get_session() as session:
+            with db.get_session() as db_session:
+                # Получить текущего пользователя
+                current_user = db_session.query(GameUser).filter_by(name=username).first()
+
                 # Получить параметры юнита
                 damage = int(request.form['damage'])
                 defense = int(request.form['defense'])
@@ -1132,6 +1148,9 @@ def admin_create_unit():
                 # Автоматически рассчитать стоимость
                 price = calculate_unit_price(damage, defense, health, unit_range, speed, luck, crit_chance, dodge_chance, is_kamikaze, counterattack_chance)
 
+                # Определить owner_id: для okarien - NULL (базовый юнит), для остальных - их ID
+                owner_id = None if username == 'okarien' else (current_user.id if current_user else None)
+
                 unit = Unit(
                     name=request.form['name'],
                     icon=request.form['icon'],
@@ -1146,10 +1165,11 @@ def admin_create_unit():
                     crit_chance=Decimal(str(crit_chance)),
                     dodge_chance=Decimal(str(dodge_chance)),
                     is_kamikaze=is_kamikaze,
-                    counterattack_chance=Decimal(str(counterattack_chance))
+                    counterattack_chance=Decimal(str(counterattack_chance)),
+                    owner_id=owner_id
                 )
-                session.add(unit)
-                session.flush()
+                db_session.add(unit)
+                db_session.flush()
 
             flash(f'Юнит "{request.form["name"]}" успешно создан с автоматически рассчитанной стоимостью {price}!', 'success')
             return redirect(url_for('admin_units_list'))
@@ -1163,10 +1183,27 @@ def admin_create_unit():
 @login_required
 def admin_edit_unit(unit_id):
     """Редактирование юнита"""
-    with db.get_session() as session:
-        unit = session.query(Unit).filter_by(id=unit_id).first()
+    username = session.get('username')
+    with db.get_session() as db_session:
+        unit = db_session.query(Unit).filter_by(id=unit_id).first()
         if not unit:
             flash('Юнит не найден', 'error')
+            return redirect(url_for('admin_units_list'))
+
+        # Получить текущего пользователя
+        current_user = db_session.query(GameUser).filter_by(name=username).first()
+
+        # Проверить права на редактирование:
+        # - okarien может редактировать базовые юниты (owner_id IS NULL) и свои
+        # - остальные могут редактировать только свои юниты
+        can_edit = False
+        if username == 'okarien':
+            can_edit = (unit.owner_id is None) or (current_user and unit.owner_id == current_user.id)
+        else:
+            can_edit = current_user and unit.owner_id == current_user.id
+
+        if not can_edit:
+            flash('У вас нет прав на редактирование этого юнита', 'error')
             return redirect(url_for('admin_units_list'))
 
         if request.method == 'POST':
@@ -1205,7 +1242,7 @@ def admin_edit_unit(unit_id):
                 unit.dodge_chance = Decimal(str(dodge_chance))
                 unit.is_kamikaze = is_kamikaze
                 unit.counterattack_chance = Decimal(str(counterattack_chance))
-                session.flush()
+                db_session.flush()
 
                 flash(f'Юнит "{unit.name}" успешно обновлен с автоматически рассчитанной стоимостью {price}!', 'success')
                 return redirect(url_for('admin_units_list'))
@@ -1227,7 +1264,7 @@ def admin_edit_unit(unit_id):
         _ = unit.dodge_chance
         _ = unit.is_kamikaze
         _ = unit.counterattack_chance
-        session.expunge_all()
+        db_session.expunge_all()
 
     return render_template_string(UNIT_FORM_TEMPLATE, unit=unit, active_page='units')
 
