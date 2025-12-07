@@ -1459,13 +1459,13 @@ class SimpleBot:
             )
             return
 
-        # Если не указан username, показываем список случайных пользователей
+        # Если не указан username, показываем список игроков с близкой стоимостью армии
         if not context.args:
             try:
-                # Получаем случайных пользователей (исключая текущего)
-                random_users = self.db.get_random_game_users(limit=10, exclude_telegram_id=user.id)
+                # Получаем 3 игроков с близкой стоимостью армии
+                players_with_value = self.db.get_players_by_army_value(user.id, limit=3, variance=0.3)
 
-                if not random_users:
+                if not players_with_value:
                     await update.message.reply_text(
                         "❌ Нет доступных игроков для вызова.\n"
                         "Или используйте: /challenge username",
@@ -1474,11 +1474,12 @@ class SimpleBot:
                     return
 
                 # Формируем сообщение со списком пользователей
-                response = "⚔️ <b>Выберите противника для боя:</b>\n\n"
+                response = "⚔️ <b>Выберите противника для боя:</b>\n"
+                response += "<i>Игроки с близкой стоимостью армии (±30%)</i>\n\n"
 
                 # Создаем кнопки для каждого пользователя
                 keyboard = []
-                for i, opponent in enumerate(random_users, 1):
+                for i, (opponent, army_value) in enumerate(players_with_value, 1):
                     win_rate = 0
                     if opponent.wins + opponent.losses > 0:
                         win_rate = (opponent.wins / (opponent.wins + opponent.losses)) * 100
@@ -1488,6 +1489,7 @@ class SimpleBot:
 
                     response += (
                         f"{i}. {safe_name}\n"
+                        f"   💰 Армия: {format_coins(army_value)}\n"
                         f"   🏆 {opponent.wins} | 💔 {opponent.losses} | "
                         f"📊 {win_rate:.0f}% побед\n\n"
                     )
