@@ -26,8 +26,8 @@ RUN mkdir -p static/unit_images
 RUN useradd -m -u 1000 appuser && chown -R appuser:appuser /app
 USER appuser
 
-# Expose порт 80 (Flask будет слушать на 80)
-EXPOSE 80
+# Expose порт 5000 (Flask будет слушать на 5000)
+EXPOSE 5000
 
 # Запуск приложения
 CMD ["python", "admin_app.py"]
