@@ -113,6 +113,39 @@ python3 bot.py
 
 Stop the bot with `Ctrl+C`.
 
+### Nginx Reverse Proxy
+
+The project uses nginx as a reverse proxy for the admin panel. Nginx is configured in Docker and handles requests on port 80.
+
+**Configuration:**
+- `nginx/nginx.conf` - Nginx configuration file
+- Proxies requests to admin panel (port 5000)
+- Supports domains: `modernhomm.ru`, `www.modernhomm.ru`
+- Supports IP access: `130.49.176.128`
+
+**Access admin panel:**
+- http://modernhomm.ru (requires DNS setup)
+- http://www.modernhomm.ru (requires DNS setup)
+- http://130.49.176.128
+- http://localhost (on server)
+
+**Nginx management:**
+```bash
+# Restart nginx
+docker compose restart nginx
+
+# View nginx logs
+docker compose logs nginx
+
+# Test nginx configuration
+docker compose exec nginx nginx -t
+
+# Reload configuration
+docker compose exec nginx nginx -s reload
+```
+
+See [NGINX_README.md](NGINX_README.md) for detailed nginx configuration and troubleshooting.
+
 ### Running Tests
 ```bash
 # Start test database
