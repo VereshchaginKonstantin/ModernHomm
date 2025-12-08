@@ -114,6 +114,10 @@ class Database:
 
             session.flush()
             session.refresh(user)
+            # Eager load attributes before session closes
+            _ = (user.id, user.telegram_id, user.username, user.first_name,
+                 user.last_seen, user.first_seen)
+            session.expunge(user)
             return user
 
     def save_message(self, telegram_user_id: int, message_text: str,
@@ -138,6 +142,10 @@ class Database:
             session.add(message)
             session.flush()
             session.refresh(message)
+            # Eager load attributes before session closes
+            _ = (message.id, message.telegram_user_id, message.message_text,
+                 message.username, message.message_date)
+            session.expunge(message)
             return message
 
     def get_user_messages(self, telegram_id: int) -> list:

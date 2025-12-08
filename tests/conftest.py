@@ -1,0 +1,58 @@
+#!/usr/bin/env python3
+"""
+Pytest fixtures for test suite
+"""
+
+import pytest
+from db import Database, Base, User, Message, GameUser, UserUnit, Game
+from sqlalchemy import create_engine, text
+
+
+@pytest.fixture(scope="function")
+def db():
+    """
+    Database fixture for tests.
+    Creates a fresh database connection for each test.
+    Only cleans transactional data (users, messages), not reference data.
+    """
+    # Use test database
+    db_url = "postgresql://postgres:postgres@localhost:5433/telegram_bot_test"
+    database = Database(db_url)
+    engine = create_engine(db_url)
+
+    # Clean transactional data before test (but keep reference data from migrations)
+    # Only clean if tables exist (they should from migrations)
+    try:
+        with database.get_session() as session:
+            # Clean game-related data (in correct order due to foreign keys)
+            session.execute(text("DELETE FROM battle_units"))
+            session.execute(text("DELETE FROM game_logs"))
+            session.execute(text("DELETE FROM games"))
+            session.execute(text("DELETE FROM user_units"))
+            session.execute(text("DELETE FROM game_users"))
+            # Clean user data from old simple bot
+            session.execute(text("DELETE FROM messages"))
+            session.execute(text("DELETE FROM users"))
+            session.commit()
+    except Exception:
+        # Tables might not exist yet, that's OK
+        pass
+
+    yield database
+
+    # Clean up after test
+    try:
+        with database.get_session() as session:
+            session.execute(text("DELETE FROM battle_units"))
+            session.execute(text("DELETE FROM game_logs"))
+            session.execute(text("DELETE FROM games"))
+            session.execute(text("DELETE FROM user_units"))
+            session.execute(text("DELETE FROM game_users"))
+            session.execute(text("DELETE FROM messages"))
+            session.execute(text("DELETE FROM users"))
+            session.commit()
+    except Exception:
+        # Tables might not exist, that's OK
+        pass
+
+    engine.dispose()
