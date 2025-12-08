@@ -147,7 +147,7 @@ class TestUnitImageModel:
         """Тест: применимость изображения к летающим юнитам"""
         with db.get_session() as session:
             # Создаем сеттинг и изображение для летающих юнитов
-            setting = Setting(name="Test", is_tournament=False, unlock_cost=Decimal('0'), subscription_only=False)
+            setting = Setting(name="Test Flying", is_tournament=False, unlock_cost=Decimal('0'), subscription_only=False)
             session.add(setting)
             session.commit()
 
@@ -203,7 +203,7 @@ class TestUnitImageModel:
         """Тест: применимость изображения по диапазону урона"""
         with db.get_session() as session:
             # Создаем сеттинг и изображение с диапазоном урона
-            setting = Setting(name="Test", is_tournament=False, unlock_cost=Decimal('0'), subscription_only=False)
+            setting = Setting(name="Test Damage Range", is_tournament=False, unlock_cost=Decimal('0'), subscription_only=False)
             session.add(setting)
             session.commit()
 
@@ -250,7 +250,7 @@ class TestUnitImageModel:
         """Тест: применимость изображения по диапазону защиты"""
         with db.get_session() as session:
             # Создаем сеттинг и изображение с диапазоном защиты
-            setting = Setting(name="Test", is_tournament=False, unlock_cost=Decimal('0'), subscription_only=False)
+            setting = Setting(name="Test Defense Range", is_tournament=False, unlock_cost=Decimal('0'), subscription_only=False)
             session.add(setting)
             session.commit()
 
@@ -297,7 +297,7 @@ class TestUnitImageModel:
         """Тест: применимость изображения к камикадзе"""
         with db.get_session() as session:
             # Создаем сеттинг и изображение для камикадзе
-            setting = Setting(name="Test", is_tournament=False, unlock_cost=Decimal('0'), subscription_only=False)
+            setting = Setting(name="Test Kamikaze", is_tournament=False, unlock_cost=Decimal('0'), subscription_only=False)
             session.add(setting)
             session.commit()
 
@@ -335,7 +335,7 @@ class TestUnitImageModel:
         """Тест: применимость изображения со всеми параметрами"""
         with db.get_session() as session:
             # Создаем сеттинг и изображение со всеми параметрами
-            setting = Setting(name="Test", is_tournament=False, unlock_cost=Decimal('0'), subscription_only=False)
+            setting = Setting(name="Test All Params", is_tournament=False, unlock_cost=Decimal('0'), subscription_only=False)
             session.add(setting)
             session.commit()
 
@@ -379,7 +379,7 @@ class TestUnitImageModel:
         """Тест: изображение с None параметрами применимо к любым юнитам"""
         with db.get_session() as session:
             # Создаем сеттинг и изображение без ограничений
-            setting = Setting(name="Test", is_tournament=False, unlock_cost=Decimal('0'), subscription_only=False)
+            setting = Setting(name="Test None Params", is_tournament=False, unlock_cost=Decimal('0'), subscription_only=False)
             session.add(setting)
             session.commit()
 

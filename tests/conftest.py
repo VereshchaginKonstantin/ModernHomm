@@ -33,6 +33,9 @@ def db():
             # Clean user data from old simple bot
             session.execute(text("DELETE FROM messages"))
             session.execute(text("DELETE FROM users"))
+            # Clean image-related data
+            session.execute(text("DELETE FROM unit_images"))
+            session.execute(text("DELETE FROM settings"))
             session.commit()
     except Exception:
         # Tables might not exist yet, that's OK
@@ -48,6 +51,9 @@ def db():
             session.execute(text("DELETE FROM games"))
             session.execute(text("DELETE FROM user_units"))
             session.execute(text("DELETE FROM game_users"))
+            # Clean image-related data
+            session.execute(text("DELETE FROM unit_images"))
+            session.execute(text("DELETE FROM settings"))
             session.execute(text("DELETE FROM messages"))
             session.execute(text("DELETE FROM users"))
             session.commit()
