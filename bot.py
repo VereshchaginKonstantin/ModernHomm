@@ -231,7 +231,7 @@ class SimpleBot:
 
             if created:
                 response = (
-                    f"🎮 Добро пожаловать в игру, {game_user.name}!\n\n"
+                    f"🎮 Добро пожаловать в игру, @{game_user.username}!\n\n"
                     f"💰 Ваш начальный баланс: {format_coins(game_user.balance)}\n"
                     f"🏆 Побед: {game_user.wins}\n"
                     f"💔 Поражений: {game_user.losses}\n\n"
@@ -239,7 +239,7 @@ class SimpleBot:
                 )
             else:
                 response = (
-                    f"👋 С возвращением, {game_user.name}!\n\n"
+                    f"👋 С возвращением, @{game_user.username}!\n\n"
                     f"💰 Текущий баланс: {format_coins(game_user.balance)}\n"
                     f"🏆 Побед: {game_user.wins}\n"
                     f"💔 Поражений: {game_user.losses}\n\n"
@@ -438,7 +438,7 @@ class SimpleBot:
                 units_text = "\n\n🔰 У вас пока нет юнитов. Посетите /shop для покупки!"
 
             response = (
-                f"👤 Профиль игрока {game_user.name}\n\n"
+                f"👤 Профиль игрока @{game_user.username}\n\n"
                 f"💰 Баланс: {format_coins(game_user.balance)}\n"
                 f"🏆 Побед: {game_user.wins}\n"
                 f"💔 Поражений: {game_user.losses}"
@@ -656,7 +656,7 @@ class SimpleBot:
                         bot = context.bot
                         notification = (
                             f"💰 <b>Вам перевели деньги!</b>\n\n"
-                            f"От: {game_user.name}\n"
+                            f"От: @{game_user.username}\n"
                             f"Сумма: {format_coins(amount)}\n\n"
                             f"Используйте /profile чтобы увидеть обновленный баланс."
                         )
@@ -763,7 +763,7 @@ class SimpleBot:
                             army_cost += unit.price * user_unit.count
 
                 player_stats.append({
-                    'name': game_user.name,
+                    'name': f"@{game_user.username}",
                     'wins': game_user.wins,
                     'losses': game_user.losses,
                     'army_cost': army_cost
@@ -1072,7 +1072,7 @@ class SimpleBot:
                 units_text = "\n\n🔰 У вас пока нет юнитов. Посетите /shop для покупки!"
 
             response = (
-                f"👤 Профиль игрока {game_user.name}\n\n"
+                f"👤 Профиль игрока @{game_user.username}\n\n"
                 f"💰 Баланс: {format_coins(game_user.balance)}\n"
                 f"🏆 Побед: {game_user.wins}\n"
                 f"💔 Поражений: {game_user.losses}"
@@ -2565,8 +2565,8 @@ class SimpleBot:
                 game_id = game.id if game else None
 
             if game_id:
-                safe_opponent_name = html.escape(opponent.name)
-                safe_challenger_name = html.escape(game_user.name)
+                safe_opponent_name = html.escape(f"@{opponent.username}")
+                safe_challenger_name = html.escape(f"@{game_user.username}")
                 safe_message = html.escape(message)
 
                 response = (
@@ -2712,7 +2712,7 @@ class SimpleBot:
                         if updated_game and updated_game.status == GameStatus.COMPLETED:
                             # Игра завершена (сдача в процессе игры) - отправляем поле с результатами
                             notification = (
-                                f"🏃 Игрок {game_user.name} сдался в игре #{game_id}!\n\n"
+                                f"🏃 Игрок @{game_user.username} сдался в игре #{game_id}!\n\n"
                                 f"🏆 Вы победили!\n\n"
                                 f"{message.split('Урон юнитов зафиксирован. ')[1] if 'Урон юнитов зафиксирован. ' in message else ''}"
                             )
@@ -2727,7 +2727,7 @@ class SimpleBot:
                             )
                         else:
                             # Игра была удалена (отклонение вызова) - просто текстовое уведомление
-                            notification = f"❌ Игрок {game_user.name} отклонил ваш вызов на бой (Игра #{game_id})"
+                            notification = f"❌ Игрок @{game_user.username} отклонил ваш вызов на бой (Игра #{game_id})"
                             await context.bot.send_message(
                                 chat_id=opponent_telegram_id,
                                 text=notification,
@@ -3039,7 +3039,7 @@ class SimpleBot:
                     try:
                         await context.bot.send_message(
                             chat_id=opponent.telegram_id,
-                            text=f"❌ Игрок {html.escape(game_user.name)} отклонил ваш вызов на бой (Игра #{game_id})",
+                            text=f"❌ Игрок {html.escape(f'@{game_user.username}')} отклонил ваш вызов на бой (Игра #{game_id})",
                             parse_mode=self.parse_mode
                         )
                     except Exception as e:
@@ -3298,7 +3298,7 @@ class SimpleBot:
             if user_message.lower() in ['играть', 'play', 'start game']:
                 # Пользователь написал "Играть" вместо команды /play
                 response = (
-                    f"🎮 Добро пожаловать в игру, {game_user.name}!\n\n"
+                    f"🎮 Добро пожаловать в игру, @{game_user.username}!\n\n"
                     f"💰 Ваш баланс: {format_coins(game_user.balance)}\n"
                     f"🏆 Побед: {game_user.wins}\n"
                     f"💔 Поражений: {game_user.losses}\n\n"
