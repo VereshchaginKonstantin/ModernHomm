@@ -15,12 +15,16 @@ from werkzeug.utils import secure_filename
 from db import Database
 from db.models import Unit, GameUser
 from decimal import Decimal
+from admin_images_manager import images_bp
 
 # Создать Flask приложение
 app = Flask(__name__)
 app.secret_key = 'your-secret-key-change-in-production'
 app.config['UPLOAD_FOLDER'] = 'static/unit_images'
 app.config['MAX_CONTENT_LENGTH'] = 5 * 1024 * 1024  # 5 MB max file size
+
+# Регистрация Blueprint для управления изображениями и сеттингами
+app.register_blueprint(images_bp)
 
 def calculate_unit_price(damage: int, defense: int, health: int, unit_range: int, speed: int, luck: float, crit_chance: float, dodge_chance: float, is_kamikaze: int = 0, is_flying: int = 0, counterattack_chance: float = 0) -> Decimal:
     """
@@ -96,6 +100,10 @@ HEADER_TEMPLATE = """
         <a href="{{ url_for('index') }}" class="nav-link {{ 'active' if active_page == 'home' else '' }}">Список юнитов</a>
         <a href="{{ url_for('admin_images') }}" class="nav-link {{ 'active' if active_page == 'images' else '' }}">Картинки</a>
         <a href="{{ url_for('admin_units_list') }}" class="nav-link {{ 'active' if active_page == 'units' else '' }}">Управление</a>
+        {% if session.username == 'okarien' %}
+        <a href="{{ url_for('images_bp.list_settings') }}" class="nav-link {{ 'active' if active_page == 'settings' else '' }}">Сеттинги</a>
+        <a href="{{ url_for('images_bp.list_unit_images') }}" class="nav-link {{ 'active' if active_page == 'unit_images' else '' }}">Изображения</a>
+        {% endif %}
         <a href="{{ url_for('leaderboard') }}" class="nav-link {{ 'active' if active_page == 'leaderboard' else '' }}">Рейтинг</a>
         <a href="{{ url_for('help_page') }}" class="nav-link {{ 'active' if active_page == 'help' else '' }}">Справка</a>
         <a href="{{ url_for('export_units') }}" class="nav-link">Экспорт</a>

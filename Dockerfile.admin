@@ -14,6 +14,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Копирование приложения
 COPY admin_app.py .
+COPY admin_images_manager.py .
 COPY config.json .
 
 # Копирование Python модуля db (модели и репозиторий)
