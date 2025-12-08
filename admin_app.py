@@ -923,7 +923,7 @@ def login():
 
         # Проверяем пользователя и пароль
         with db.get_session() as db_session:
-            user = db_session.query(GameUser).filter_by(name=username).first()
+            user = db_session.query(GameUser).filter_by(username=username).first()
 
             if not user:
                 flash('Неверный username или пароль', 'error')
@@ -1225,7 +1225,7 @@ def admin_units_list():
     username = session.get('username')
     with db.get_session() as db_session:
         # Получить текущего пользователя
-        current_user = db_session.query(GameUser).filter_by(name=username).first()
+        current_user = db_session.query(GameUser).filter_by(username=username).first()
 
         # Показать базовые юниты (owner_id IS NULL) и юниты текущего пользователя
         if current_user:
@@ -1250,7 +1250,7 @@ def admin_create_unit():
         try:
             with db.get_session() as db_session:
                 # Получить текущего пользователя
-                current_user = db_session.query(GameUser).filter_by(name=username).first()
+                current_user = db_session.query(GameUser).filter_by(username=username).first()
 
                 # Получить параметры юнита
                 damage = int(request.form['damage'])
@@ -1317,7 +1317,7 @@ def admin_edit_unit(unit_id):
             return redirect(url_for('admin_units_list'))
 
         # Получить текущего пользователя
-        current_user = db_session.query(GameUser).filter_by(name=username).first()
+        current_user = db_session.query(GameUser).filter_by(username=username).first()
 
         # Проверить права на редактирование:
         # - okarien может редактировать базовые юниты (owner_id IS NULL) и свои

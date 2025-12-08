@@ -221,10 +221,11 @@ class SimpleBot:
                 logger.warning(f"Попытка создания профиля без username от пользователя {user.id}")
                 return
 
-            # Получаем или создаем игрового пользователя (используем username как имя)
+            # Получаем или создаем игрового пользователя
             game_user, created = self.db.get_or_create_game_user(
                 telegram_id=user.id,
-                name=user.username,
+                name=user.first_name or user.username,
+                username=user.username,
                 initial_balance=self.get_initial_balance()
             )
 
@@ -3272,10 +3273,23 @@ class SimpleBot:
             # Проверяем, есть ли у пользователя игровой профиль, и создаем его при необходимости
             game_user = self.db.get_game_user(user.id)
             if not game_user:
+                # Проверяем наличие username
+                if not user.username:
+                    await update.message.reply_text(
+                        "❌ Для игры необходим username в Telegram.\n\n"
+                        "Пожалуйста, установите username в настройках Telegram:\n"
+                        "Настройки → Имя пользователя\n\n"
+                        "После этого используйте /start для начала игры.",
+                        parse_mode=self.parse_mode
+                    )
+                    logger.warning(f"Попытка создания профиля без username от пользователя {user.id}")
+                    return
+
                 # Автоматически создаем игровой профиль при первом сообщении
                 game_user, created = self.db.get_or_create_game_user(
                     telegram_id=user.id,
-                    name=user.first_name or user.username or f"User_{user.id}",
+                    name=user.first_name or user.username,
+                    username=user.username,
                     initial_balance=self.get_initial_balance()
                 )
                 logger.info(f"Создан игровой профиль для пользователя {user.id}")
