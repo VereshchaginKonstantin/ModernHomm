@@ -5,7 +5,7 @@
 
 from flask import Blueprint, render_template_string, request, redirect, url_for, flash, send_file, session as flask_session
 from functools import wraps
-from db.database import Database
+from db import Database
 from db.image_models import Setting, UnitImage
 from decimal import Decimal
 import io
