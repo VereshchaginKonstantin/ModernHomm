@@ -1,6 +1,6 @@
 -- +goose Up
 -- Добавление unique constraint для username
-ALTER TABLE game_users DROP INDEX IF EXISTS idx_game_users_username;
+DROP INDEX IF EXISTS idx_game_users_username;
 CREATE UNIQUE INDEX idx_game_users_username_unique ON game_users(username);
 
 -- +goose Down
