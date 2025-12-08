@@ -64,7 +64,7 @@ class GameUser(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     telegram_id = Column(BigInteger, unique=True, nullable=False, index=True)
     name = Column(String(255), nullable=False)  # first_name пользователя
-    username = Column(String(255), unique=True, nullable=False, index=True)  # username из Telegram (уникальный идентификатор для входа в админку)
+    username = Column(String(255), unique=True, nullable=True, index=True)  # username из Telegram (уникальный идентификатор, требуется для входа в админку)
     balance = Column(Numeric(12, 2), nullable=False, default=1000)
     wins = Column(Integer, nullable=False, default=0)
     losses = Column(Integer, nullable=False, default=0)

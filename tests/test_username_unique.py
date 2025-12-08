@@ -11,18 +11,21 @@ from db.models import GameUser
 class TestUsernameUniqueness:
     """Тесты для проверки уникальности username"""
 
-    def test_username_is_required(self, db):
-        """Тест: username обязателен при создании пользователя"""
+    def test_username_can_be_null_for_backward_compatibility(self, db):
+        """Тест: username может быть NULL для обратной совместимости"""
         with db.get_session() as session:
-            # Попытка создать пользователя без username
-            with pytest.raises(IntegrityError):
-                game_user = GameUser(
-                    telegram_id=123456789,
-                    name="TestUser",
-                    balance=1000
-                )
-                session.add(game_user)
-                session.commit()
+            # Создаем пользователя без username (для обратной совместимости)
+            game_user = GameUser(
+                telegram_id=123456789,
+                name="TestUser",
+                balance=1000
+            )
+            session.add(game_user)
+            session.commit()
+
+            # Проверяем, что пользователь создан
+            assert game_user.id is not None
+            assert game_user.username is None
 
     def test_username_must_be_unique(self, db):
         """Тест: username должен быть уникальным"""
