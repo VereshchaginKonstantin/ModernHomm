@@ -101,8 +101,8 @@ HEADER_TEMPLATE = """
         <a href="{{ url_for('admin_images') }}" class="nav-link {{ 'active' if active_page == 'images' else '' }}">Картинки</a>
         <a href="{{ url_for('admin_units_list') }}" class="nav-link {{ 'active' if active_page == 'units' else '' }}">Управление</a>
         {% if session.username == 'okarien' %}
-        <a href="{{ url_for('images_bp.list_settings') }}" class="nav-link {{ 'active' if active_page == 'settings' else '' }}">Сеттинги</a>
-        <a href="{{ url_for('images_bp.list_unit_images') }}" class="nav-link {{ 'active' if active_page == 'unit_images' else '' }}">Изображения</a>
+        <a href="{{ url_for('images_manager.settings_list') }}" class="nav-link {{ 'active' if active_page == 'settings' else '' }}">Сеттинги</a>
+        <a href="{{ url_for('images_manager.unit_images_list') }}" class="nav-link {{ 'active' if active_page == 'unit_images' else '' }}">Изображения</a>
         {% endif %}
         <a href="{{ url_for('leaderboard') }}" class="nav-link {{ 'active' if active_page == 'leaderboard' else '' }}">Рейтинг</a>
         <a href="{{ url_for('help_page') }}" class="nav-link {{ 'active' if active_page == 'help' else '' }}">Справка</a>
