@@ -5,33 +5,15 @@
 
 import pytest
 import hashlib
-from db import Database
 from db.models import GameUser
 
 
 class TestPasswordFunctionality:
     """Тесты для функции установки пароля"""
 
-    @pytest.fixture(autouse=True)
-    def setup(self):
-        """Подготовка тестовой базы данных"""
-        self.db = Database("postgresql://postgres:postgres@localhost:5433/telegram_bot_test")
-
-        # Очистка данных перед тестом
-        with self.db.get_session() as session:
-            session.query(GameUser).delete()
-            session.commit()
-
-        yield
-
-        # Очистка после теста
-        with self.db.get_session() as session:
-            session.query(GameUser).delete()
-            session.commit()
-
-    def test_password_hash_column_exists(self):
+    def test_password_hash_column_exists(self, db):
         """Тест: колонка password_hash существует в таблице game_users"""
-        with self.db.get_session() as session:
+        with db.get_session() as session:
             # Создаем тестового пользователя
             game_user = GameUser(
                 telegram_id=123456789,
@@ -48,13 +30,13 @@ class TestPasswordFunctionality:
             assert game_user.id is not None
             assert game_user.password_hash is None
 
-    def test_set_password_hash(self):
+    def test_set_password_hash(self, db):
         """Тест: установка хеша пароля для пользователя"""
         telegram_id = 987654321
         password = "test_password_123"
 
         # Создаем пользователя
-        with self.db.get_session() as session:
+        with db.get_session() as session:
             game_user = GameUser(
                 telegram_id=telegram_id,
                 name="PasswordTestUser",
@@ -68,7 +50,7 @@ class TestPasswordFunctionality:
         # Устанавливаем пароль
         password_hash = hashlib.sha256(password.encode()).hexdigest()
 
-        with self.db.get_session() as session:
+        with db.get_session() as session:
             game_user = session.query(GameUser).filter_by(telegram_id=telegram_id).first()
             assert game_user is not None
 
@@ -76,11 +58,11 @@ class TestPasswordFunctionality:
             session.commit()
 
         # Проверяем, что пароль сохранен
-        with self.db.get_session() as session:
+        with db.get_session() as session:
             game_user = session.query(GameUser).filter_by(telegram_id=telegram_id).first()
             assert game_user.password_hash == password_hash
 
-    def test_password_hash_format(self):
+    def test_password_hash_format(self, db):
         """Тест: формат хеша пароля (SHA256)"""
         password = "secure_password_456"
         password_hash = hashlib.sha256(password.encode()).hexdigest()
@@ -91,7 +73,7 @@ class TestPasswordFunctionality:
         # Проверяем, что хеш содержит только hex символы
         assert all(c in '0123456789abcdef' for c in password_hash)
 
-    def test_password_validation_min_length(self):
+    def test_password_validation_min_length(self, db):
         """Тест: валидация минимальной длины пароля (6 символов)"""
         # Короткие пароли
         short_passwords = ["12345", "abc", "a", ""]
@@ -107,7 +89,7 @@ class TestPasswordFunctionality:
             # Проверяем, что валидный пароль проходит валидацию
             assert len(password) >= 6
 
-    def test_password_hash_uniqueness(self):
+    def test_password_hash_uniqueness(self, db):
         """Тест: разные пароли дают разные хеши"""
         password1 = "password123"
         password2 = "password124"
@@ -118,7 +100,7 @@ class TestPasswordFunctionality:
         # Разные пароли должны давать разные хеши
         assert hash1 != hash2
 
-    def test_password_hash_consistency(self):
+    def test_password_hash_consistency(self, db):
         """Тест: один и тот же пароль дает одинаковый хеш"""
         password = "consistent_password"
 
@@ -128,7 +110,7 @@ class TestPasswordFunctionality:
         # Один и тот же пароль должен давать одинаковый хеш
         assert hash1 == hash2
 
-    def test_multiple_users_different_passwords(self):
+    def test_multiple_users_different_passwords(self, db):
         """Тест: несколько пользователей с разными паролями"""
         users_data = [
             (111111111, "User1", "password1"),
@@ -140,7 +122,7 @@ class TestPasswordFunctionality:
         for telegram_id, name, password in users_data:
             password_hash = hashlib.sha256(password.encode()).hexdigest()
 
-            with self.db.get_session() as session:
+            with db.get_session() as session:
                 game_user = GameUser(
                     telegram_id=telegram_id,
                     name=name,
@@ -153,7 +135,7 @@ class TestPasswordFunctionality:
                 session.commit()
 
         # Проверяем, что все пользователи созданы с разными хешами
-        with self.db.get_session() as session:
+        with db.get_session() as session:
             users = session.query(GameUser).all()
             assert len(users) == 3
 
@@ -161,7 +143,7 @@ class TestPasswordFunctionality:
             password_hashes = [user.password_hash for user in users]
             assert len(set(password_hashes)) == 3
 
-    def test_update_existing_password(self):
+    def test_update_existing_password(self, db):
         """Тест: обновление существующего пароля"""
         telegram_id = 444444444
         old_password = "old_password"
@@ -171,7 +153,7 @@ class TestPasswordFunctionality:
         new_hash = hashlib.sha256(new_password.encode()).hexdigest()
 
         # Создаем пользователя со старым паролем
-        with self.db.get_session() as session:
+        with db.get_session() as session:
             game_user = GameUser(
                 telegram_id=telegram_id,
                 name="UpdatePasswordUser",
@@ -184,7 +166,7 @@ class TestPasswordFunctionality:
             session.commit()
 
         # Обновляем пароль
-        with self.db.get_session() as session:
+        with db.get_session() as session:
             game_user = session.query(GameUser).filter_by(telegram_id=telegram_id).first()
             assert game_user.password_hash == old_hash
 
@@ -192,12 +174,12 @@ class TestPasswordFunctionality:
             session.commit()
 
         # Проверяем, что пароль обновлен
-        with self.db.get_session() as session:
+        with db.get_session() as session:
             game_user = session.query(GameUser).filter_by(telegram_id=telegram_id).first()
             assert game_user.password_hash == new_hash
             assert game_user.password_hash != old_hash
 
-    def test_password_verification(self):
+    def test_password_verification(self, db):
         """Тест: проверка пароля при входе"""
         telegram_id = 555555555
         correct_password = "correct_password"
@@ -207,7 +189,7 @@ class TestPasswordFunctionality:
         wrong_hash = hashlib.sha256(wrong_password.encode()).hexdigest()
 
         # Создаем пользователя с паролем
-        with self.db.get_session() as session:
+        with db.get_session() as session:
             game_user = GameUser(
                 telegram_id=telegram_id,
                 name="VerifyPasswordUser",
@@ -220,7 +202,7 @@ class TestPasswordFunctionality:
             session.commit()
 
         # Проверяем верификацию пароля
-        with self.db.get_session() as session:
+        with db.get_session() as session:
             game_user = session.query(GameUser).filter_by(telegram_id=telegram_id).first()
 
             # Правильный пароль должен совпадать
