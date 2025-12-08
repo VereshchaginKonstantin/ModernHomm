@@ -354,14 +354,20 @@ class SimpleBot:
                     game_user.password_hash = password_hash
                     session.commit()
 
+                    # Удаляем сообщение с паролем для безопасности
+                    try:
+                        await update.message.delete()
+                    except Exception as e:
+                        logger.warning(f"Не удалось удалить сообщение с паролем: {e}")
+
                     # Очищаем флаг ожидания
                     context.user_data['waiting_for_password'] = False
 
                     await update.message.reply_text(
                         "✅ <b>Пароль успешно установлен!</b>\n\n"
                         f"Теперь вы можете войти в админку:\n"
-                        f"Username: <code>{game_user.name}</code>\n\n"
-                        f"🌐 Админка: http://localhost/admin или http://ваш_адрес/admin",
+                        f"Username: <code>{user.username}</code>\n\n"
+                        f"🌐 Админка: http://modernhomm.ru",
                         parse_mode=self.parse_mode
                     )
                     logger.info(f"Пользователь {user.username} ({user.id}) установил пароль")
