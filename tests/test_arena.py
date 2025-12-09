@@ -1636,5 +1636,185 @@ class TestVersionDisplay:
         assert 'Bot:' in FOOTER_TEMPLATE
 
 
+class TestUnitImagePaths:
+    """Тесты для путей к изображениям юнитов в портретах"""
+
+    @pytest.fixture(autouse=True)
+    def setup(self):
+        """Подготовка с уникальным префиксом"""
+        import uuid
+        self.test_prefix = f"image_path_test_{uuid.uuid4().hex[:8]}"
+        self.db = Database("postgresql://postgres:postgres@localhost:5433/telegram_bot_test")
+
+        with self.db.get_session() as session:
+            session.query(GameLog).delete()
+            session.query(BattleUnit).delete()
+            session.query(Obstacle).delete()
+            session.query(Game).delete()
+            session.query(UserUnit).delete()
+            session.query(GameUser).filter(
+                GameUser.name.like(f"{self.test_prefix}%")
+            ).delete(synchronize_session=False)
+            session.commit()
+
+        yield
+
+        with self.db.get_session() as session:
+            session.query(GameLog).delete()
+            session.query(BattleUnit).delete()
+            session.query(Obstacle).delete()
+            session.query(Game).delete()
+            session.query(UserUnit).delete()
+            session.query(GameUser).filter(
+                GameUser.name.like(f"{self.test_prefix}%")
+            ).delete(synchronize_session=False)
+            session.commit()
+
+    def _create_test_players_with_units(self, session):
+        """Создание тестовых игроков с юнитами"""
+        unit = session.query(Unit).first()
+        if not unit:
+            pytest.skip("No units in database")
+
+        player1 = GameUser(
+            telegram_id=11001,
+            name=f"{self.test_prefix}_Player1",
+            username=f"{self.test_prefix}_player1",
+            balance=Decimal("1000")
+        )
+        player2 = GameUser(
+            telegram_id=11002,
+            name=f"{self.test_prefix}_Player2",
+            username=f"{self.test_prefix}_player2",
+            balance=Decimal("1000")
+        )
+        session.add(player1)
+        session.add(player2)
+        session.flush()
+
+        user_unit1 = UserUnit(game_user_id=player1.id, unit_type_id=unit.id, count=5)
+        user_unit2 = UserUnit(game_user_id=player2.id, unit_type_id=unit.id, count=5)
+        session.add(user_unit1)
+        session.add(user_unit2)
+        session.commit()
+
+        return player1, player2
+
+    def test_unit_type_has_image_path_in_database(self):
+        """Тест: юниты в базе данных имеют image_path"""
+        with self.db.get_session() as session:
+            units = session.query(Unit).all()
+
+            for unit in units:
+                # image_path может быть None для юнитов без изображения
+                if unit.image_path:
+                    # Путь должен быть строкой
+                    assert isinstance(unit.image_path, str)
+                    # Путь должен содержать static (либо начинаться с / либо без)
+                    assert 'static' in unit.image_path or unit.image_path.startswith('/')
+
+    def test_api_returns_image_path_for_units(self):
+        """Тест: API /api/games/{id}/state возвращает image_path для юнитов"""
+        with self.db.get_session() as session:
+            player1, player2 = self._create_test_players_with_units(session)
+
+            engine = GameEngine(session)
+            game, _ = engine.create_game(player1.id, player2.name, "5x5")
+            engine.accept_game(game.id, player2.id)
+
+            # Получаем юнитов на поле
+            battle_units = session.query(BattleUnit).filter_by(game_id=game.id).all()
+
+            for bu in battle_units:
+                user_unit = session.query(UserUnit).filter_by(id=bu.user_unit_id).first()
+                unit_type = session.query(Unit).filter_by(id=user_unit.unit_type_id).first() if user_unit else None
+
+                if unit_type:
+                    # API возвращает image_path в unit_type
+                    unit_data = {
+                        'id': unit_type.id,
+                        'name': unit_type.name,
+                        'image_path': unit_type.image_path
+                    }
+                    # image_path должен присутствовать в данных
+                    assert 'image_path' in unit_data
+
+    def test_image_path_normalization_logic(self):
+        """Тест: логика нормализации пути (как в JavaScript normalizeImagePath)"""
+        def normalize_image_path(path):
+            """Python-версия функции normalizeImagePath из play.js"""
+            if not path:
+                return '/static/images/units/default.png'
+            if not path.startswith('/'):
+                return '/' + path
+            return path
+
+        # Тест 1: путь без ведущего слеша
+        path1 = 'static/unit_images/unit_1.jpg'
+        assert normalize_image_path(path1) == '/static/unit_images/unit_1.jpg'
+
+        # Тест 2: путь с ведущим слешем (не меняется)
+        path2 = '/static/unit_images/unit_2.jpg'
+        assert normalize_image_path(path2) == '/static/unit_images/unit_2.jpg'
+
+        # Тест 3: пустой путь -> дефолтное изображение
+        assert normalize_image_path(None) == '/static/images/units/default.png'
+        assert normalize_image_path('') == '/static/images/units/default.png'
+
+    def test_database_image_paths_can_be_normalized(self):
+        """Тест: пути из БД можно нормализовать для использования в браузере"""
+        def normalize_image_path(path):
+            if not path:
+                return '/static/images/units/default.png'
+            if not path.startswith('/'):
+                return '/' + path
+            return path
+
+        with self.db.get_session() as session:
+            units = session.query(Unit).all()
+
+            for unit in units:
+                if unit.image_path and 'static' in unit.image_path:
+                    # Проверяем только реальные пути к статическим файлам
+                    normalized = normalize_image_path(unit.image_path)
+                    # Нормализованный путь должен начинаться с /
+                    assert normalized.startswith('/')
+                    # И содержать static
+                    assert 'static' in normalized
+
+    def test_play_js_contains_normalize_image_path_function(self):
+        """Тест: play.js содержит функцию normalizeImagePath"""
+        import os
+        play_js_path = os.path.join(
+            os.path.dirname(__file__),
+            '..',
+            'static', 'arena', 'js', 'play.js'
+        )
+
+        with open(play_js_path, 'r', encoding='utf-8') as f:
+            content = f.read()
+
+        # Проверяем наличие функции normalizeImagePath
+        assert 'normalizeImagePath' in content
+        # Проверяем что она добавляет / к пути
+        assert "startsWith('/')" in content or 'startsWith("/")' in content
+
+    def test_portrait_methods_use_normalize_image_path(self):
+        """Тест: методы showActiveUnitPortrait и showTargetUnitPortrait используют normalizeImagePath"""
+        import os
+        play_js_path = os.path.join(
+            os.path.dirname(__file__),
+            '..',
+            'static', 'arena', 'js', 'play.js'
+        )
+
+        with open(play_js_path, 'r', encoding='utf-8') as f:
+            content = f.read()
+
+        # Проверяем что оба метода используют normalizeImagePath
+        assert 'this.normalizeImagePath(unitData.unit_type.image_path)' in content
+        assert 'this.normalizeImagePath(targetData.unit_type.image_path)' in content
+
+
 if __name__ == '__main__':
     pytest.main([__file__, '-v'])

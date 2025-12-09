@@ -639,6 +639,18 @@ class PlayScene extends Phaser.Scene {
     }
 
     /**
+     * Нормализация пути к изображению (добавляет / в начало если отсутствует)
+     */
+    normalizeImagePath(path) {
+        if (!path) return '/static/images/units/default.png';
+        // Если путь не начинается с /, добавляем его
+        if (!path.startsWith('/')) {
+            return '/' + path;
+        }
+        return path;
+    }
+
+    /**
      * Показать портрет активного юнита (слева)
      */
     showActiveUnitPortrait(unitData) {
@@ -648,8 +660,8 @@ class PlayScene extends Phaser.Scene {
         const stats = document.getElementById('active-unit-stats');
 
         if (portrait && unitData.unit_type) {
-            // Устанавливаем изображение
-            const imagePath = unitData.unit_type.image_path || '/static/images/units/default.png';
+            // Устанавливаем изображение (нормализуем путь)
+            const imagePath = this.normalizeImagePath(unitData.unit_type.image_path);
             img.src = imagePath;
             img.onerror = () => { img.src = '/static/images/units/default.png'; };
 
@@ -678,8 +690,8 @@ class PlayScene extends Phaser.Scene {
         const stats = document.getElementById('target-unit-stats');
 
         if (portrait && targetData.unit_type) {
-            // Устанавливаем изображение
-            const imagePath = targetData.unit_type.image_path || '/static/images/units/default.png';
+            // Устанавливаем изображение (нормализуем путь)
+            const imagePath = this.normalizeImagePath(targetData.unit_type.image_path);
             img.src = imagePath;
             img.onerror = () => { img.src = '/static/images/units/default.png'; };
 
