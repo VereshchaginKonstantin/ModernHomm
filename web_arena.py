@@ -407,6 +407,7 @@ PLAY_TEMPLATE = """
                         <div id="p1-turn" class="turn-indicator" style="display:none">Ваш ход!</div>
 
                         <div class="action-panel" id="action-panel" style="display: none;">
+                            <div id="selected-unit-info" class="selected-unit-info"></div>
                             <div class="action-buttons-main">
                                 <button id="btn-move" class="btn btn-primary btn-action">🚶 Двигаться</button>
                                 <button id="btn-attack" class="btn btn-danger btn-action">⚔️ Атаковать</button>
@@ -507,6 +508,7 @@ PLAY_GAME_TEMPLATE = """
                         <div id="p1-turn" class="turn-indicator" style="display:none">Ваш ход!</div>
 
                         <div class="action-panel" id="action-panel" style="display: none;">
+                            <div id="selected-unit-info" class="selected-unit-info"></div>
                             <div class="action-buttons-main">
                                 <button id="btn-move" class="btn btn-primary btn-action">🚶 Двигаться</button>
                                 <button id="btn-attack" class="btn btn-danger btn-action">⚔️ Атаковать</button>
