@@ -3127,6 +3127,128 @@ class SimpleBot:
             logger.error(f"Ошибка при отклонении вызова: {e}")
             await self._edit_message_universal(query, f"❌ Ошибка: {e}", parse_mode=self.parse_mode)
 
+    async def accept_game_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Обработчик callback для принятия вызова из веб-интерфейса (accept_game:game_id)"""
+        query = update.callback_query
+        await query.answer()
+
+        # Парсим данные из callback (формат: accept_game:game_id)
+        data = query.data.split(':')
+        if len(data) != 2 or data[0] != 'accept_game':
+            return
+
+        game_id = int(data[1])
+        user = update.effective_user
+
+        try:
+            game_user = self.db.get_game_user(user.id)
+            if not game_user:
+                await self._edit_message_universal(query, "❌ Игровой профиль не найден", parse_mode=self.parse_mode)
+                return
+
+            game = self.db.get_game_by_id(game_id)
+            if not game:
+                await self._edit_message_universal(query, "❌ Игра не найдена", parse_mode=self.parse_mode)
+                return
+
+            # Принятие игры через игровой движок
+            with self.db.get_session() as session:
+                engine = GameEngine(session)
+                success, message = engine.accept_game(game_id, game_user.id)
+
+            if success:
+                # Показать поле принявшему игроку
+                with self.db.get_session() as session:
+                    engine = GameEngine(session)
+                    actions = engine.get_available_actions(game_id, game_user.id)
+
+                keyboard = self._create_game_keyboard(game_id, game_user.id, actions)
+
+                # Используем _edit_field для показа поля
+                await self._edit_field(query, game_id, f"✅ {message}", keyboard)
+
+                # Отправить уведомление и поле игроку, создавшему вызов
+                opponent_id = game.player1_id if game.player2_id == game_user.id else game.player2_id
+                opponent = self.db.get_game_user_by_id(opponent_id)
+
+                if opponent and opponent.telegram_id:
+                    try:
+                        opponent_actions = engine.get_available_actions(game_id, opponent_id)
+                        opponent_keyboard = self._create_game_keyboard(game_id, opponent_id, opponent_actions)
+
+                        # Отправляем PNG поле противнику
+                        await self._send_field_image(
+                            chat_id=opponent.telegram_id,
+                            game_id=game_id,
+                            caption="🎮 Игра началась!",
+                            context=context,
+                            keyboard=opponent_keyboard
+                        )
+                    except Exception as e:
+                        logger.error(f"Ошибка при отправке уведомления о начале игры: {e}")
+            else:
+                await self._edit_message_universal(query, f"❌ {message}", parse_mode=self.parse_mode)
+
+        except Exception as e:
+            logger.error(f"Ошибка при принятии вызова из веб-интерфейса: {e}")
+            await self._edit_message_universal(query, f"❌ Ошибка: {e}", parse_mode=self.parse_mode)
+
+    async def decline_game_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Обработчик callback для отклонения вызова из веб-интерфейса (decline_game:game_id)"""
+        query = update.callback_query
+        await query.answer()
+
+        # Парсим данные из callback (формат: decline_game:game_id)
+        data = query.data.split(':')
+        if len(data) != 2 or data[0] != 'decline_game':
+            return
+
+        game_id = int(data[1])
+        user = update.effective_user
+
+        try:
+            game_user = self.db.get_game_user(user.id)
+            if not game_user:
+                await self._edit_message_universal(query, "❌ Игровой профиль не найден", parse_mode=self.parse_mode)
+                return
+
+            game = self.db.get_game_by_id(game_id)
+            if not game:
+                await self._edit_message_universal(query, "❌ Игра не найдена", parse_mode=self.parse_mode)
+                return
+
+            # Отклонение вызова - удаляем игру
+            with self.db.get_session() as session:
+                engine = GameEngine(session)
+                success, msg, opponent_telegram_id = engine.surrender_game(game_id, game_user.id)
+
+            if success:
+                await self._edit_message_universal(
+                    query,
+                    "❌ Вы отклонили вызов на бой",
+                    parse_mode=self.parse_mode
+                )
+
+                # Уведомить вызывавшего игрока
+                opponent_id = game.player1_id if game.player2_id == game_user.id else game.player2_id
+                opponent = self.db.get_game_user_by_id(opponent_id)
+
+                if opponent and opponent.telegram_id:
+                    try:
+                        await context.bot.send_message(
+                            chat_id=opponent.telegram_id,
+                            text=f"❌ Игрок {html.escape(f'@{game_user.username}')} отклонил ваш вызов на бой (Игра #{game_id})",
+                            parse_mode=self.parse_mode
+                        )
+                    except Exception as e:
+                        logger.error(f"Ошибка при отправке уведомления об отклонении: {e}")
+            else:
+                await self._edit_message_universal(query, f"❌ Ошибка: {msg}", parse_mode=self.parse_mode)
+
+        except Exception as e:
+            logger.error(f"Ошибка при отклонении вызова из веб-интерфейса: {e}")
+            await self._edit_message_universal(query, f"❌ Ошибка: {e}", parse_mode=self.parse_mode)
+
     async def handle_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Обработчик всех текстовых сообщений"""
         user_message = update.message.text
@@ -3969,6 +4091,8 @@ class SimpleBot:
         application.add_handler(CallbackQueryHandler(self.accept_challenge_callback, pattern=r'^accept_challenge:'))
         application.add_handler(CallbackQueryHandler(self.show_opponent_details_callback, pattern=r'^show_opponent_details:'))
         application.add_handler(CallbackQueryHandler(self.decline_challenge_callback, pattern=r'^decline_challenge:'))
+        application.add_handler(CallbackQueryHandler(self.accept_game_callback, pattern=r'^accept_game:'))
+        application.add_handler(CallbackQueryHandler(self.decline_game_callback, pattern=r'^decline_game:'))
         application.add_handler(CallbackQueryHandler(self.show_game_callback, pattern=r'^show_game:'))
         application.add_handler(CallbackQueryHandler(self.show_board_callback, pattern=r'^show_board:'))
         application.add_handler(CallbackQueryHandler(self.surrender_callback, pattern=r'^surrender:'))

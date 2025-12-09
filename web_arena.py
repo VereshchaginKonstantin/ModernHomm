@@ -867,6 +867,32 @@ def api_create_game():
         game, message = engine.create_game(player1_id, player2_name, field_size)
 
         if game:
+            # Отправляем уведомление противнику в Telegram
+            player1 = session_db.query(GameUser).filter_by(id=player1_id).first()
+            player2 = session_db.query(GameUser).filter_by(id=game.player2_id).first()
+
+            if player2 and player2.telegram_id:
+                challenger_name = (player1.username or player1.name) if player1 else 'Неизвестный'
+                reply_markup = {
+                    'inline_keyboard': [
+                        [
+                            {'text': '✅ Принять', 'callback_data': f'accept_game:{game.id}'},
+                            {'text': '❌ Отклонить', 'callback_data': f'decline_game:{game.id}'}
+                        ],
+                        [
+                            {'text': '🎮 Открыть арену', 'url': 'https://modernhomm.ru/arena/play'}
+                        ]
+                    ]
+                }
+                send_telegram_notification(
+                    player2.telegram_id,
+                    f"⚔️ <b>Вызов на бой!</b>\n\n"
+                    f"<b>{challenger_name}</b> вызывает вас на бой!\n"
+                    f"Размер поля: {field_size}\n"
+                    f"Игра #{game.id}",
+                    reply_markup
+                )
+
             return jsonify({
                 'success': True,
                 'game_id': game.id,
@@ -892,6 +918,24 @@ def api_accept_game(game_id):
         success, message = engine.accept_game(game_id, player_id)
 
         if success:
+            # Отправляем уведомление создателю игры о принятии
+            game = session_db.query(Game).filter_by(id=game_id).first()
+            if game:
+                player1 = session_db.query(GameUser).filter_by(id=game.player1_id).first()
+                player2 = session_db.query(GameUser).filter_by(id=game.player2_id).first()
+                if player1 and player1.telegram_id:
+                    opponent_name = (player2.username or player2.name) if player2 else 'Противник'
+                    reply_markup = {
+                        'inline_keyboard': [[
+                            {'text': '🎮 К игре', 'callback_data': f'show_game:{game_id}'}
+                        ]]
+                    }
+                    send_telegram_notification(
+                        player1.telegram_id,
+                        f"✅ <b>{opponent_name}</b> принял ваш вызов!\n\nИгра #{game_id} началась!",
+                        reply_markup
+                    )
+
             return jsonify({
                 'success': True,
                 'message': message
@@ -901,6 +945,110 @@ def api_accept_game(game_id):
                 'success': False,
                 'message': message
             }), 400
+
+
+@arena_bp.route('/api/games/pending')
+@login_required
+def api_pending_games():
+    """Получить ожидающие вызовы для текущего пользователя"""
+    current_username = session.get('username')
+
+    with db.get_session() as session_db:
+        # Находим текущего пользователя
+        current_user = session_db.query(GameUser).filter_by(username=current_username).first()
+        if not current_user:
+            return jsonify({'challenges': []})
+
+        # Ищем игры в статусе WAITING, где текущий пользователь - player2
+        waiting_games = session_db.query(Game).filter(
+            Game.status == GameStatus.WAITING,
+            Game.player2_id == current_user.id
+        ).all()
+
+        challenges = []
+        for game in waiting_games:
+            challenger = session_db.query(GameUser).filter_by(id=game.player1_id).first()
+            field = session_db.query(Field).filter_by(id=game.field_id).first()
+
+            challenges.append({
+                'game_id': game.id,
+                'challenger_id': game.player1_id,
+                'challenger_name': (challenger.username or challenger.name) if challenger else 'Неизвестный',
+                'field_size': field.name if field else 'Unknown',
+                'created_at': game.created_at.isoformat() if game.created_at else None
+            })
+
+        return jsonify({'challenges': challenges})
+
+
+@arena_bp.route('/api/games/<int:game_id>/cancel', methods=['POST'])
+@login_required
+def api_cancel_game(game_id):
+    """Отменить вызов (создатель игры)"""
+    current_username = session.get('username')
+
+    with db.get_session() as session_db:
+        game = session_db.query(Game).filter_by(id=game_id).first()
+        if not game:
+            return jsonify({'success': False, 'message': 'Игра не найдена'}), 404
+
+        if game.status != GameStatus.WAITING:
+            return jsonify({'success': False, 'message': 'Можно отменить только ожидающую игру'}), 400
+
+        # Проверяем что текущий пользователь - создатель
+        current_user = session_db.query(GameUser).filter_by(username=current_username).first()
+        if not current_user or current_user.id != game.player1_id:
+            return jsonify({'success': False, 'message': 'Только создатель может отменить вызов'}), 403
+
+        # Уведомляем противника об отмене
+        player2 = session_db.query(GameUser).filter_by(id=game.player2_id).first()
+        if player2 and player2.telegram_id:
+            challenger_name = (current_user.username or current_user.name)
+            send_telegram_notification(
+                player2.telegram_id,
+                f"❌ <b>{challenger_name}</b> отменил вызов на бой.\n\nИгра #{game_id} отменена."
+            )
+
+        # Удаляем игру
+        session_db.delete(game)
+        session_db.commit()
+
+        return jsonify({'success': True, 'message': 'Вызов отменён'})
+
+
+@arena_bp.route('/api/games/<int:game_id>/decline', methods=['POST'])
+@login_required
+def api_decline_game(game_id):
+    """Отклонить вызов (противник)"""
+    current_username = session.get('username')
+
+    with db.get_session() as session_db:
+        game = session_db.query(Game).filter_by(id=game_id).first()
+        if not game:
+            return jsonify({'success': False, 'message': 'Игра не найдена'}), 404
+
+        if game.status != GameStatus.WAITING:
+            return jsonify({'success': False, 'message': 'Можно отклонить только ожидающую игру'}), 400
+
+        # Проверяем что текущий пользователь - противник
+        current_user = session_db.query(GameUser).filter_by(username=current_username).first()
+        if not current_user or current_user.id != game.player2_id:
+            return jsonify({'success': False, 'message': 'Только приглашённый игрок может отклонить вызов'}), 403
+
+        # Уведомляем создателя об отклонении
+        player1 = session_db.query(GameUser).filter_by(id=game.player1_id).first()
+        if player1 and player1.telegram_id:
+            opponent_name = (current_user.username or current_user.name)
+            send_telegram_notification(
+                player1.telegram_id,
+                f"❌ <b>{opponent_name}</b> отклонил ваш вызов на бой.\n\nИгра #{game_id} отменена."
+            )
+
+        # Удаляем игру
+        session_db.delete(game)
+        session_db.commit()
+
+        return jsonify({'success': True, 'message': 'Вызов отклонён'})
 
 
 @arena_bp.route('/api/games/<int:game_id>/state')

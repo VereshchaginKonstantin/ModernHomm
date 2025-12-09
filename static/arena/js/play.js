@@ -39,8 +39,125 @@ document.addEventListener('DOMContentLoaded', () => {
     } else {
         setupGameSetup();
         setupExistingGameLoader();
+        // Проверяем наличие ожидающих вызовов (challenges)
+        checkPendingChallenges();
     }
 });
+
+/**
+ * Проверка наличия ожидающих вызовов на бой
+ */
+async function checkPendingChallenges() {
+    try {
+        const response = await fetch(`${apiBase}/games/pending`);
+        const data = await response.json();
+
+        if (data.challenges && data.challenges.length > 0) {
+            // Есть ожидающие вызовы - показываем модальное окно
+            showChallengeModal(data.challenges[0]);
+        }
+    } catch (error) {
+        console.error('Error checking pending challenges:', error);
+    }
+}
+
+/**
+ * Показать модальное окно вызова на бой
+ */
+function showChallengeModal(challenge) {
+    // Создаём модальное окно если его нет
+    let modal = document.getElementById('challenge-modal');
+    if (!modal) {
+        modal = document.createElement('div');
+        modal.id = 'challenge-modal';
+        modal.className = 'modal-overlay';
+        document.body.appendChild(modal);
+    }
+
+    modal.innerHTML = `
+        <div class="modal-content challenge-modal-content">
+            <h2>⚔️ Вызов на бой!</h2>
+            <div class="challenge-info">
+                <p><strong>${challenge.challenger_name}</strong> вызывает вас на бой!</p>
+                <p>Размер поля: <strong>${challenge.field_size}</strong></p>
+                <p style="color: #888; font-size: 14px;">Игра #${challenge.game_id}</p>
+            </div>
+            <div class="challenge-actions">
+                <button onclick="acceptChallenge(${challenge.game_id})" class="btn btn-success">✅ Принять</button>
+                <button onclick="declineChallenge(${challenge.game_id})" class="btn btn-danger">❌ Отклонить</button>
+            </div>
+        </div>
+    `;
+
+    modal.style.display = 'flex';
+}
+
+/**
+ * Принять вызов на бой
+ */
+async function acceptChallenge(gameId) {
+    try {
+        // Получаем ID текущего игрока
+        const player1Input = document.getElementById('player1-id');
+        const playerId = player1Input ? parseInt(player1Input.value) : null;
+
+        if (!playerId) {
+            alert('Ошибка: не удалось определить ID игрока');
+            return;
+        }
+
+        const response = await fetch(`${apiBase}/games/${gameId}/accept`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ player_id: playerId })
+        });
+
+        const data = await response.json();
+        if (data.success) {
+            // Скрываем модальное окно
+            const modal = document.getElementById('challenge-modal');
+            if (modal) modal.style.display = 'none';
+
+            // Редирект на игру
+            window.location.href = `/arena/play/${gameId}`;
+        } else {
+            alert('Ошибка принятия вызова: ' + data.message);
+        }
+    } catch (error) {
+        console.error('Error accepting challenge:', error);
+        alert('Ошибка: ' + error.message);
+    }
+}
+
+/**
+ * Отклонить вызов на бой
+ */
+async function declineChallenge(gameId) {
+    if (!confirm('Вы уверены, что хотите отклонить вызов?')) {
+        return;
+    }
+
+    try {
+        const response = await fetch(`${apiBase}/games/${gameId}/decline`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+        });
+
+        const data = await response.json();
+        if (data.success) {
+            // Скрываем модальное окно
+            const modal = document.getElementById('challenge-modal');
+            if (modal) modal.style.display = 'none';
+
+            alert('Вызов отклонён');
+        } else {
+            alert('Ошибка отклонения вызова: ' + data.message);
+        }
+    } catch (error) {
+        console.error('Error declining challenge:', error);
+        alert('Ошибка: ' + error.message);
+    }
+}
 
 /**
  * Настройка формы создания игры
@@ -118,7 +235,7 @@ async function startNewGame() {
     }
 
     try {
-        // Создаём игру
+        // Создаём игру (без автоматического принятия)
         const createResponse = await fetch(`${apiBase}/games/create`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -138,32 +255,104 @@ async function startNewGame() {
         currentGameId = createData.game_id;
         currentPlayerId = player1Id;
 
-        // Принимаем игру от имени player2
-        const acceptResponse = await fetch(`${apiBase}/games/${currentGameId}/accept`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ player_id: player2Id })
-        });
+        // Показываем сообщение о создании вызова
+        showChallengeWaitingUI(player2Name, currentGameId);
 
-        const acceptData = await acceptResponse.json();
-        if (!acceptData.success) {
-            alert('Ошибка принятия игры: ' + acceptData.message);
-            return;
-        }
-
-        // Скрываем форму, показываем игру
-        document.getElementById('game-setup').style.display = 'none';
-        document.getElementById('game-container').style.display = 'block';
-
-        // Устанавливаем имена игроков
-        document.getElementById('p1-name').textContent = player1Name;
-        document.getElementById('p2-name').textContent = player2Name;
-
-        // Инициализируем Phaser игру
-        await initPlayGame();
+        // Начинаем polling для проверки принятия игры
+        startChallengePolling(currentGameId, player1Name, player2Name);
 
     } catch (error) {
         console.error('Error starting game:', error);
+        alert('Ошибка: ' + error.message);
+    }
+}
+
+/**
+ * Показать UI ожидания принятия вызова
+ */
+function showChallengeWaitingUI(opponentName, gameId) {
+    const gameSetup = document.getElementById('game-setup');
+    gameSetup.innerHTML = `
+        <h2>⏳ Ожидание противника</h2>
+        <div class="challenge-waiting">
+            <p>Вы вызвали <strong>${opponentName}</strong> на бой!</p>
+            <p>Ожидание принятия вызова...</p>
+            <p style="color: #888; font-size: 14px;">Противник получит уведомление в Telegram и веб-версии.</p>
+            <div class="waiting-spinner"></div>
+            <button onclick="cancelChallenge(${gameId})" class="btn btn-danger" style="margin-top: 20px;">Отменить вызов</button>
+        </div>
+    `;
+}
+
+/**
+ * Polling для проверки принятия вызова
+ */
+let challengePollingInterval = null;
+
+function startChallengePolling(gameId, player1Name, player2Name) {
+    if (challengePollingInterval) {
+        clearInterval(challengePollingInterval);
+    }
+
+    challengePollingInterval = setInterval(async () => {
+        try {
+            const response = await fetch(`${apiBase}/games/${gameId}/state`);
+            const gameState = await response.json();
+
+            if (gameState.status === 'in_progress') {
+                // Игра принята - запускаем игровой процесс
+                clearInterval(challengePollingInterval);
+                challengePollingInterval = null;
+
+                // Скрываем форму, показываем игру
+                document.getElementById('game-setup').style.display = 'none';
+                document.getElementById('game-container').style.display = 'block';
+
+                // Устанавливаем имена игроков
+                document.getElementById('p1-name').textContent = player1Name;
+                document.getElementById('p2-name').textContent = player2Name;
+
+                // Инициализируем Phaser игру
+                await initPlayGame();
+            } else if (gameState.status === 'completed' || gameState.error) {
+                // Игра отменена или ошибка
+                clearInterval(challengePollingInterval);
+                challengePollingInterval = null;
+                alert('Вызов был отклонён или отменён.');
+                window.location.reload();
+            }
+        } catch (error) {
+            console.error('Error checking game status:', error);
+        }
+    }, 2000);
+}
+
+/**
+ * Отмена вызова
+ */
+async function cancelChallenge(gameId) {
+    if (!confirm('Вы уверены, что хотите отменить вызов?')) {
+        return;
+    }
+
+    try {
+        const response = await fetch(`${apiBase}/games/${gameId}/cancel`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+        });
+
+        const data = await response.json();
+        if (data.success) {
+            if (challengePollingInterval) {
+                clearInterval(challengePollingInterval);
+                challengePollingInterval = null;
+            }
+            window.location.reload();
+        } else {
+            alert('Ошибка отмены: ' + data.message);
+        }
+    } catch (error) {
+        console.error('Error canceling challenge:', error);
         alert('Ошибка: ' + error.message);
     }
 }
@@ -1617,10 +1806,28 @@ class PlayScene extends Phaser.Scene {
      * Показ окончания игры
      */
     showGameOver(winnerId) {
-        // Используем player1_id/player2_id из состояния игры
+        // Скрываем все кнопки действий
+        const actionPanel = document.getElementById('action-panel');
+        if (actionPanel) {
+            actionPanel.style.display = 'none';
+        }
+
+        // Останавливаем polling
+        stopPolling();
+
+        // Определяем победителя и проигравшего
         const winnerName = winnerId === this.gameState.player1_id ?
             document.getElementById('p1-name').textContent :
             document.getElementById('p2-name').textContent;
+
+        const loserName = winnerId === this.gameState.player1_id ?
+            document.getElementById('p2-name').textContent :
+            document.getElementById('p1-name').textContent;
+
+        // Определяем, является ли текущий игрок победителем
+        const isCurrentPlayerWinner = winnerId === currentPlayerId;
+        const resultTitle = isCurrentPlayerWinner ? '🏆 ПОБЕДА!' : '💀 ПОРАЖЕНИЕ';
+        const resultClass = isCurrentPlayerWinner ? 'victory' : 'defeat';
 
         // Ищем game_ended лог для получения финансовой статистики
         let gameEndStats = '';
@@ -1651,9 +1858,14 @@ class PlayScene extends Phaser.Scene {
         const gameOverOverlay = document.createElement('div');
         gameOverOverlay.className = 'game-over-overlay';
         gameOverOverlay.innerHTML = `
-            <div class="game-over-content">
-                <div class="game-over-title">🏆 ПОБЕДА!</div>
-                <div class="game-over-winner">${winnerName}</div>
+            <div class="game-over-content ${resultClass}">
+                <div class="game-over-title ${resultClass}">${resultTitle}</div>
+                <div class="game-over-winner">
+                    ${isCurrentPlayerWinner ?
+                        `Вы победили <strong>${loserName}</strong>!` :
+                        `<strong>${winnerName}</strong> одержал победу`
+                    }
+                </div>
                 ${gameEndStats ? `
                 <div class="game-over-stats">
                     ${gameEndStats}
@@ -1666,7 +1878,7 @@ class PlayScene extends Phaser.Scene {
                     </div>
                 </div>
                 <button class="game-over-close-btn" onclick="window.location.href='/arena/'">
-                    ✖ Закрыть
+                    ✖ Закрыть и вернуться к арене
                 </button>
             </div>
         `;
@@ -1678,7 +1890,10 @@ class PlayScene extends Phaser.Scene {
             logScroll.scrollTop = logScroll.scrollHeight;
         }
 
-        this.showHint(`🏆 Игра завершена! Победитель: ${winnerName}`);
+        this.showHint(isCurrentPlayerWinner ?
+            `🏆 Победа! Вы победили ${loserName}!` :
+            `💀 Поражение. ${winnerName} победил.`
+        );
     }
 
     /**
