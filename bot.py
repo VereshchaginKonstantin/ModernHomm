@@ -2973,20 +2973,19 @@ class SimpleBot:
 
                 if opponent and opponent.telegram_id:
                     try:
-                        # Создаём новую сессию для получения действий противника
-                        with self.db.get_session() as session:
-                            engine_for_opponent = GameEngine(session)
-                            opponent_actions = engine_for_opponent.get_available_actions(game_id, opponent_id)
+                        # Получаем имя принявшего игру
+                        accepter_name = game_user.username or game_user.name or "Противник"
 
-                        opponent_keyboard = self._create_game_keyboard(game_id, opponent_id, opponent_actions)
+                        # Отправляем текстовое уведомление создателю игры
+                        notification_keyboard = InlineKeyboardMarkup([
+                            [InlineKeyboardButton("🎮 К игре", callback_data=f"show_game:{game_id}")]
+                        ])
 
-                        # Отправляем PNG поле противнику
-                        await self._send_field_image(
+                        await context.bot.send_message(
                             chat_id=opponent.telegram_id,
-                            game_id=game_id,
-                            caption="🎮 Игра началась!",
-                            context=context,
-                            keyboard=opponent_keyboard
+                            text=f"✅ <b>{html.escape(accepter_name)}</b> принял ваш вызов!\n\nИгра #{game_id} началась!",
+                            parse_mode=self.parse_mode,
+                            reply_markup=notification_keyboard
                         )
                     except Exception as e:
                         logger.error(f"Ошибка при отправке уведомления о начале игры: {e}")
@@ -3177,20 +3176,19 @@ class SimpleBot:
 
                 if opponent and opponent.telegram_id:
                     try:
-                        # Создаём новую сессию для получения действий противника
-                        with self.db.get_session() as session:
-                            engine_for_opponent = GameEngine(session)
-                            opponent_actions = engine_for_opponent.get_available_actions(game_id, opponent_id)
+                        # Получаем имя принявшего игру
+                        accepter_name = game_user.username or game_user.name or "Противник"
 
-                        opponent_keyboard = self._create_game_keyboard(game_id, opponent_id, opponent_actions)
+                        # Отправляем текстовое уведомление создателю игры
+                        notification_keyboard = InlineKeyboardMarkup([
+                            [InlineKeyboardButton("🎮 К игре", callback_data=f"show_game:{game_id}")]
+                        ])
 
-                        # Отправляем PNG поле противнику
-                        await self._send_field_image(
+                        await context.bot.send_message(
                             chat_id=opponent.telegram_id,
-                            game_id=game_id,
-                            caption="🎮 Игра началась!",
-                            context=context,
-                            keyboard=opponent_keyboard
+                            text=f"✅ <b>{html.escape(accepter_name)}</b> принял ваш вызов!\n\nИгра #{game_id} началась!",
+                            parse_mode=self.parse_mode,
+                            reply_markup=notification_keyboard
                         )
                     except Exception as e:
                         logger.error(f"Ошибка при отправке уведомления о начале игры: {e}")
