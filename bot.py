@@ -2344,11 +2344,24 @@ class SimpleBot:
                 success, message, turn_switched = engine.skip_unit_turn(game_id, game_user.id, unit_id)
 
                 if success:
-                    # Обновить поле
+                    # Обновить только кнопки, не показывать доску
                     actions = engine.get_available_actions(game_id, game_user.id)
                     keyboard = self._create_game_keyboard(game_id, game_user.id, actions)
 
-                    await self._edit_field(query, game_id, "⏭️ Ход пропущен", keyboard)
+                    # Просто обновляем caption без перерисовки доски
+                    try:
+                        await query.edit_message_caption(
+                            caption="⏭️ Ход пропущен",
+                            parse_mode=self.parse_mode,
+                            reply_markup=InlineKeyboardMarkup(keyboard) if keyboard else None
+                        )
+                    except Exception:
+                        # Если сообщение текстовое, редактируем текст
+                        await query.edit_message_text(
+                            text="⏭️ Ход пропущен",
+                            parse_mode=self.parse_mode,
+                            reply_markup=InlineKeyboardMarkup(keyboard) if keyboard else None
+                        )
 
                     # Если ход сменился, отправить уведомление противнику
                     if turn_switched:
@@ -2364,10 +2377,11 @@ class SimpleBot:
                                 opponent_actions = engine.get_available_actions(game_id, opponent_id)
                                 opponent_keyboard = self._create_game_keyboard(game_id, opponent_id, opponent_actions)
 
-                                # Отправляем PNG поле противнику
-                                await self._send_field_image(
+                                # Отправляем статус игры противнику (без доски)
+                                await self._send_game_status(
                                     chat_id=opponent.telegram_id,
                                     game_id=game_id,
+                                    player_id=opponent_id,
                                     caption="🎮 Теперь ваш ход!",
                                     context=context,
                                     keyboard=opponent_keyboard

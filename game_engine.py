@@ -510,17 +510,9 @@ class GameEngine:
         turn_switched = False
         winner_id = self._check_game_over(game)
         if winner_id:
+            # Завершение игры - _complete_game создаст отдельный лог game_ended
             reward, stats = self._complete_game(game, winner_id)
-            winner_name = game.player1.name if winner_id == game.player1_id else game.player2.name
-            loser_name = game.player2.name if winner_id == game.player1_id else game.player1.name
-
-            combat_log += f"\n\n🏆 Игра окончена! Победитель: {winner_name}\n\n"
-            combat_log += f"💰 Финансовая статистика:\n"
-            combat_log += f"   📦 Убито юнитов {loser_name}: {format_coins(stats['killed_enemy_value'])}\n"
-            if stats['lost_own_value'] > 0:
-                combat_log += f"   ⚰️ Потеряно своих юнитов: {format_coins(stats['lost_own_value'])}\n"
-            combat_log += f"   💵 Награда (90%): +{format_coins(reward)}\n"
-            combat_log += f"   💹 Чистая прибыль: {format_coins(stats['net_profit'])}"
+            # Не добавляем результаты игры в combat_log - они будут в отдельном сообщении
         else:
             # Проверить, все ли юниты текущего игрока походили
             if self._all_units_moved(game, player_id):
@@ -1422,11 +1414,15 @@ class GameEngine:
         logger.info(f"  • Награда (70% от убитых + 100% своих потерь): {float(reward):.2f} монет")
         logger.info(f"  • Чистая прибыль (70% от убитых): {float(net_profit):.2f} монет")
 
-        # Логировать завершение игры
-        self._log_event(game.id, "game_ended",
-                       f"🏆 Игра завершена! Победитель: {winner.name}\n"
-                       f"💰 Награда: {format_coins(reward)}\n"
-                       f"💹 Чистая прибыль: {format_coins(net_profit)}")
+        # Логировать завершение игры с полной статистикой
+        game_end_log = f"🏆 Игра завершена! Победитель: {winner.name}\n\n"
+        game_end_log += f"💰 Финансовая статистика:\n"
+        game_end_log += f"   📦 Убито юнитов {loser.name}: {format_coins(killed_enemy_value)}\n"
+        if lost_own_value > 0:
+            game_end_log += f"   ⚰️ Потеряно своих юнитов: {format_coins(lost_own_value)}\n"
+        game_end_log += f"   💵 Награда (70% + потери): +{format_coins(reward)}\n"
+        game_end_log += f"   💹 Чистая прибыль: {format_coins(net_profit)}"
+        self._log_event(game.id, "game_ended", game_end_log)
 
         self.db.commit()
         logger.info(f"✅ Игра #{game.id} успешно завершена")

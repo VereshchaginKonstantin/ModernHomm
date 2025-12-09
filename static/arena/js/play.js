@@ -1610,25 +1610,43 @@ class PlayScene extends Phaser.Scene {
             document.getElementById('p1-name').textContent :
             document.getElementById('p2-name').textContent;
 
-        // Собираем полный лог игры
+        // Ищем game_ended лог для получения финансовой статистики
+        let gameEndStats = '';
         let logsHtml = '';
+
         if (this.gameState.logs && this.gameState.logs.length > 0) {
             for (const log of this.gameState.logs) {
-                const icon = log.event_type === 'attack' ? '⚔️' :
-                            log.event_type === 'move' ? '🚶' :
-                            log.event_type === 'game_start' ? '🎮' :
-                            log.event_type === 'game_end' ? '🏆' : '📝';
-                logsHtml += `<div class="game-over-log-entry">${icon} ${log.message}</div>`;
+                // Извлекаем статистику из game_ended лога
+                if (log.event_type === 'game_ended') {
+                    // Парсим статистику из сообщения
+                    const statsMatch = log.message.match(/💰 Финансовая статистика:[\s\S]*/);
+                    if (statsMatch) {
+                        gameEndStats = statsMatch[0].replace(/\n/g, '<br>');
+                    }
+                }
+
+                // Собираем лог (кроме game_ended - его показываем отдельно)
+                if (log.event_type !== 'game_ended') {
+                    const icon = log.event_type === 'attack' ? '⚔️' :
+                                log.event_type === 'move' ? '🚶' :
+                                log.event_type === 'game_start' ? '🎮' : '📝';
+                    logsHtml += `<div class="game-over-log-entry">${icon} ${log.message}</div>`;
+                }
             }
         }
 
-        // Создаём DOM оверлей с логом и кнопкой закрытия
+        // Создаём DOM оверлей с результатами, логом и кнопкой закрытия
         const gameOverOverlay = document.createElement('div');
         gameOverOverlay.className = 'game-over-overlay';
         gameOverOverlay.innerHTML = `
             <div class="game-over-content">
                 <div class="game-over-title">🏆 ПОБЕДА!</div>
                 <div class="game-over-winner">${winnerName}</div>
+                ${gameEndStats ? `
+                <div class="game-over-stats">
+                    ${gameEndStats}
+                </div>
+                ` : ''}
                 <div class="game-over-log-container">
                     <div class="game-over-log-title">📋 Лог сражения</div>
                     <div class="game-over-log-scroll">
