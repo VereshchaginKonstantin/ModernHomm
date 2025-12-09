@@ -1096,7 +1096,7 @@ class PlayScene extends Phaser.Scene {
                     </div>
                 </div>
                 <div class="battle-result">
-                    <div class="battle-result-title">⚔️ Результат схватки</div>
+                    <div class="battle-result-title">⚔️ Результат атаки</div>
                     <div class="battle-result-text">${resultMessage}</div>
                 </div>
                 <div class="battle-timer">Закроется через <span id="battle-countdown">${Math.ceil(duration / 1000)}</span> сек...</div>
@@ -1262,6 +1262,21 @@ class PlayScene extends Phaser.Scene {
             if (lastGameStateHash !== newHash) {
                 lastGameStateHash = newHash;
 
+                // Проверяем новые логи на наличие атак от противника
+                const oldLogsCount = this.gameState.logs ? this.gameState.logs.length : 0;
+                const newLogsCount = newState.logs ? newState.logs.length : 0;
+
+                if (newLogsCount > oldLogsCount) {
+                    // Есть новые логи - проверяем на атаки
+                    const newLogs = newState.logs.slice(oldLogsCount);
+                    for (const log of newLogs) {
+                        if (log.event_type === 'attack') {
+                            // Показываем анимацию атаки от противника
+                            await this.showOpponentAttackAnimation(log.message, newState.units);
+                        }
+                    }
+                }
+
                 // Состояние изменилось (возможно из Telegram)
                 const stateChanged = this.gameState.current_player_id !== newState.current_player_id ||
                     JSON.stringify(this.gameState.units) !== JSON.stringify(newState.units);
@@ -1284,6 +1299,47 @@ class PlayScene extends Phaser.Scene {
             }
         } catch (error) {
             console.error('Error checking for updates:', error);
+        }
+    }
+
+    /**
+     * Показ анимации атаки от противника (из Telegram)
+     */
+    async showOpponentAttackAnimation(logMessage, units) {
+        // Пытаемся найти юниты по именам из сообщения лога
+        let attackerData = null;
+        let targetData = null;
+
+        // Ищем юниты, имена которых упоминаются в логе
+        for (const unit of units) {
+            if (unit.unit_type && unit.unit_type.name) {
+                if (logMessage.includes(unit.unit_type.name)) {
+                    if (!attackerData) {
+                        attackerData = unit;
+                    } else if (!targetData) {
+                        targetData = unit;
+                    }
+                }
+            }
+        }
+
+        // Если нашли хотя бы одного юнита или есть сообщение - показываем оверлей
+        if (attackerData || targetData || logMessage) {
+            // Используем заглушки если юнит не найден
+            const defaultUnit = {
+                unit_type: {
+                    name: 'Юнит',
+                    icon: '⚔️',
+                    image_path: '/static/images/units/default.png'
+                }
+            };
+
+            await this.showBattleOverlay(
+                attackerData || defaultUnit,
+                targetData || defaultUnit,
+                logMessage,
+                5000
+            );
         }
     }
 
