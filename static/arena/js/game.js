@@ -422,6 +422,17 @@ class ReplayScene extends Phaser.Scene {
 
         if (!gameState || !gameState.units) return;
 
+        // Собираем ID юнитов из состояния для проверки удаленных
+        const stateUnitIds = new Set(gameState.units.map(u => u.id));
+
+        // Удаляем юнитов, которых больше нет в состоянии (убиты)
+        this.units.forEach((container, unitId) => {
+            if (!stateUnitIds.has(unitId)) {
+                container.destroy();
+                this.units.delete(unitId);
+            }
+        });
+
         // Обновляем все юниты из game_state
         gameState.units.forEach(stateUnit => {
             const container = this.units.get(stateUnit.id);

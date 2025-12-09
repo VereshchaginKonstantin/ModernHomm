@@ -561,6 +561,10 @@ class GameEngine:
 
         game.last_move_at = datetime.utcnow()
 
+        # Добавляем информацию об убитых юнитах защитника в combat_log
+        if units_killed > 0:
+            combat_log += f"\n\n⚰️ Убито юнитов: {units_killed}"
+
         # Логировать атаку ПЕРЕД завершением игры, чтобы game_ended был последним
         attacker_player = self.db.query(GameUser).filter_by(id=player_id).first()
         self._log_event(game.id, "attack", f"⚔️ {attacker_player.name}: {combat_log}")
@@ -580,7 +584,12 @@ class GameEngine:
 
         self.db.commit()
 
-        result_msg = f"Атака выполнена!\n{combat_log}\nУбито юнитов: {units_killed}"
+        # combat_log уже содержит информацию об убитых юнитах (если units_killed > 0)
+        # Добавляем "Убито юнитов: X" только если не было убито (чтобы regex на фронте работал)
+        if units_killed == 0:
+            result_msg = f"Атака выполнена!\n{combat_log}\nУбито юнитов: 0"
+        else:
+            result_msg = f"Атака выполнена!\n{combat_log}"
         return True, result_msg, turn_switched
 
     def skip_unit_turn(self, game_id: int, player_id: int, unit_id: int) -> Tuple[bool, str, bool]:

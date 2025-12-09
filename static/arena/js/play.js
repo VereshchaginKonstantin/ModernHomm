@@ -1396,6 +1396,17 @@ class PlayScene extends Phaser.Scene {
             const response = await fetch(`${apiBase}/games/${currentGameId}/state`);
             this.gameState = await response.json();
 
+            // Собираем ID юнитов с сервера для проверки удаленных
+            const serverUnitIds = new Set(this.gameState.units.map(u => u.id));
+
+            // Удаляем юнитов, которых больше нет на сервере (убиты)
+            this.units.forEach((container, unitId) => {
+                if (!serverUnitIds.has(unitId)) {
+                    container.destroy();
+                    this.units.delete(unitId);
+                }
+            });
+
             // Обновляем юнитов
             this.gameState.units.forEach(unitData => {
                 const container = this.units.get(unitData.id);
