@@ -301,8 +301,7 @@ class SimpleBot:
             "/password - Установить пароль для веб-интерфейса\n"
             "/profile - Посмотреть свой игровой профиль\n"
             "/top - Рейтинг игроков\n"
-            "/shop - Магазин юнитов (покупка армии)\n"
-            "/transfer - Перевести деньги другому игроку\n\n"
+            "/shop - Магазин юнитов (покупка армии)\n\n"
             "<b>Игровые команды:</b>\n"
             "/challenge &lt;username&gt; - Вызвать игрока на бой\n"
             "/accept - Принять вызов на бой\n"
@@ -542,230 +541,6 @@ class SimpleBot:
             logger.error(f"Ошибка при продаже юнита: {e}")
             await query.edit_message_text(
                 "Произошла ошибка при продаже. Попробуйте позже.",
-                parse_mode=self.parse_mode
-            )
-
-    async def transfer_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Команда для перевода денег другому игроку"""
-        user = update.effective_user
-        logger.info(f"Команда /transfer от пользователя {user.id}")
-
-        try:
-            # Проверяем что у пользователя есть игровой профиль
-            game_user = self.db.get_game_user(user.id)
-            if not game_user:
-                await update.message.reply_text(
-                    "❌ У вас нет игрового профиля.\nИспользуйте /start для создания профиля.",
-                    parse_mode=self.parse_mode
-                )
-                return
-
-            # Показать список всех пользователей для выбора
-            with self.db.get_session() as session:
-                from db.models import GameUser
-
-                # Получить всех пользователей кроме текущего
-                all_users = session.query(GameUser).filter(
-                    GameUser.telegram_id != user.id
-                ).order_by(GameUser.name).all()
-
-                if not all_users:
-                    await update.message.reply_text(
-                        "❌ Нет других игроков для перевода.",
-                        parse_mode=self.parse_mode
-                    )
-                    return
-
-                # Формируем сообщение со списком пользователей
-                response = (
-                    f"💰 <b>Перевод денег</b>\n\n"
-                    f"Ваш баланс: {format_coins(game_user.balance)}\n\n"
-                    f"Выберите получателя:\n\n"
-                )
-
-                # Создаем кнопки для каждого пользователя
-                keyboard = []
-                for i, player in enumerate(all_users[:20], 1):  # Показываем первых 20
-                    safe_name = html.escape(player.name)
-
-                    keyboard.append([
-                        InlineKeyboardButton(
-                            f"👤 {player.name}",
-                            callback_data=f"transfer_user:{player.telegram_id}"
-                        )
-                    ])
-
-                await update.message.reply_text(
-                    response,
-                    parse_mode=self.parse_mode,
-                    reply_markup=InlineKeyboardMarkup(keyboard)
-                )
-
-        except Exception as e:
-            logger.error(f"Ошибка при выполнении команды /transfer: {e}")
-            await update.message.reply_text(
-                "❌ Произошла ошибка. Попробуйте позже.",
-                parse_mode=self.parse_mode
-            )
-
-    async def transfer_select_user_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Обработчик выбора пользователя для перевода денег"""
-        query = update.callback_query
-        await query.answer()
-
-        # Парсим данные из callback (формат: transfer_user:telegram_id)
-        data = query.data.split(':')
-        if len(data) != 2 or data[0] != 'transfer_user':
-            return
-
-        target_telegram_id = int(data[1])
-        user = update.effective_user
-
-        # Получить информацию о текущем пользователе
-        game_user = self.db.get_game_user(user.id)
-        if not game_user:
-            await query.edit_message_text("❌ Ваш профиль не найден.")
-            return
-
-        # Получить информацию о получателе
-        with self.db.get_session() as session:
-            from db.models import GameUser
-
-            target_user = session.query(GameUser).filter_by(telegram_id=target_telegram_id).first()
-
-            if not target_user:
-                await query.edit_message_text("❌ Получатель не найден.")
-                return
-
-            # Экранируем имя
-            safe_name = html.escape(target_user.name)
-
-            # Показать выбор суммы
-            response = (
-                f"💰 <b>Перевод денег для {safe_name}</b>\n\n"
-                f"Ваш баланс: {format_coins(game_user.balance)}\n\n"
-                f"Выберите сумму перевода:"
-            )
-
-            keyboard = [
-                [InlineKeyboardButton("💵 100 монет", callback_data=f"transfer_amount:{target_telegram_id}:100")],
-                [InlineKeyboardButton("💵 1000 монет", callback_data=f"transfer_amount:{target_telegram_id}:1000")],
-                [InlineKeyboardButton("💵 10000 монет", callback_data=f"transfer_amount:{target_telegram_id}:10000")],
-                [InlineKeyboardButton("◀️ Назад", callback_data="transfer_back")]
-            ]
-
-            await query.edit_message_text(
-                response,
-                parse_mode=self.parse_mode,
-                reply_markup=InlineKeyboardMarkup(keyboard)
-            )
-
-    async def transfer_confirm_amount_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Обработчик подтверждения суммы перевода"""
-        query = update.callback_query
-        await query.answer()
-
-        # Парсим данные из callback (формат: transfer_amount:telegram_id:amount)
-        data = query.data.split(':')
-        if len(data) != 3 or data[0] != 'transfer_amount':
-            return
-
-        target_telegram_id = int(data[1])
-        amount = float(data[2])
-        user = update.effective_user
-
-        try:
-            # Выполнить перевод
-            success, message = self.db.transfer_money(user.id, target_telegram_id, amount)
-
-            if success:
-                await query.edit_message_text(
-                    message,
-                    parse_mode=self.parse_mode
-                )
-
-                # Уведомить получателя (если возможно)
-                try:
-                    game_user = self.db.get_game_user(user.id)
-                    if game_user:
-                        from telegram import Bot
-                        bot = context.bot
-                        notification = (
-                            f"💰 <b>Вам перевели деньги!</b>\n\n"
-                            f"От: @{game_user.username}\n"
-                            f"Сумма: {format_coins(amount)}\n\n"
-                            f"Используйте /profile чтобы увидеть обновленный баланс."
-                        )
-                        await bot.send_message(
-                            chat_id=target_telegram_id,
-                            text=notification,
-                            parse_mode=self.parse_mode
-                        )
-                except Exception as e:
-                    logger.warning(f"Не удалось отправить уведомление получателю: {e}")
-            else:
-                await query.edit_message_text(
-                    f"❌ {message}",
-                    parse_mode=self.parse_mode
-                )
-
-        except Exception as e:
-            logger.error(f"Ошибка при переводе денег: {e}")
-            await query.edit_message_text(
-                "❌ Произошла ошибка при переводе. Попробуйте позже.",
-                parse_mode=self.parse_mode
-            )
-
-    async def transfer_back_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Обработчик кнопки 'Назад' в меню перевода"""
-        query = update.callback_query
-        await query.answer()
-
-        # Возвращаемся к команде /transfer
-        user = update.effective_user
-
-        try:
-            game_user = self.db.get_game_user(user.id)
-            if not game_user:
-                await query.edit_message_text("❌ Ваш профиль не найден.")
-                return
-
-            with self.db.get_session() as session:
-                from db.models import GameUser
-
-                all_users = session.query(GameUser).filter(
-                    GameUser.telegram_id != user.id
-                ).order_by(GameUser.name).all()
-
-                if not all_users:
-                    await query.edit_message_text("❌ Нет других игроков для перевода.")
-                    return
-
-                response = (
-                    f"💰 <b>Перевод денег</b>\n\n"
-                    f"Ваш баланс: {format_coins(game_user.balance)}\n\n"
-                    f"Выберите получателя:\n\n"
-                )
-
-                keyboard = []
-                for i, player in enumerate(all_users[:20], 1):
-                    keyboard.append([
-                        InlineKeyboardButton(
-                            f"👤 {player.name}",
-                            callback_data=f"transfer_user:{player.telegram_id}"
-                        )
-                    ])
-
-                await query.edit_message_text(
-                    response,
-                    parse_mode=self.parse_mode,
-                    reply_markup=InlineKeyboardMarkup(keyboard)
-                )
-
-        except Exception as e:
-            logger.error(f"Ошибка при возврате в меню перевода: {e}")
-            await query.edit_message_text(
-                "❌ Произошла ошибка.",
                 parse_mode=self.parse_mode
             )
 
@@ -4053,7 +3828,6 @@ class SimpleBot:
         application.add_handler(CommandHandler("profile", self.profile_command))
         application.add_handler(CommandHandler("top", self.top_command))
         application.add_handler(CommandHandler("shop", self.shop_command))
-        application.add_handler(CommandHandler("transfer", self.transfer_command))
         application.add_handler(CommandHandler("search", self.search_command))
         application.add_handler(CommandHandler("users", self.users_command))
 
@@ -4080,10 +3854,6 @@ class SimpleBot:
         application.add_handler(CallbackQueryHandler(self.addmoney_confirm_amount_callback, pattern=r'^addmoney_amount:'))
         application.add_handler(CallbackQueryHandler(self.addmoney_back_callback, pattern=r'^addmoney_back$'))
 
-        # Transfer callback обработчики
-        application.add_handler(CallbackQueryHandler(self.transfer_select_user_callback, pattern=r'^transfer_user:'))
-        application.add_handler(CallbackQueryHandler(self.transfer_confirm_amount_callback, pattern=r'^transfer_amount:'))
-        application.add_handler(CallbackQueryHandler(self.transfer_back_callback, pattern=r'^transfer_back$'))
 
         # Регистрация обработчиков callback (порядок важен для правильной маршрутизации)
         application.add_handler(CallbackQueryHandler(self.buy_unit_callback, pattern=r'^buy_unit:'))
