@@ -378,7 +378,7 @@ class Database:
         Args:
             telegram_id: ID пользователя в Telegram
             name: Имя игрока
-            username: Username пользователя в Telegram (для входа в админку)
+            username: Username пользователя в Telegram (для входа в веб-интерфейс)
             initial_balance: Начальный баланс (по умолчанию 1000)
 
         Returns:
@@ -526,7 +526,7 @@ class Database:
         Args:
             telegram_id: ID пользователя в Telegram
             name: Имя игрока
-            username: Username пользователя в Telegram (для входа в админку)
+            username: Username пользователя в Telegram (для входа в веб-интерфейс)
             initial_balance: Начальный баланс (по умолчанию 1000)
 
         Returns:
@@ -672,7 +672,7 @@ class Database:
     def get_available_opponents_by_username(self, username: str, limit: int = 3, variance: float = 0.3) -> tuple:
         """
         Получение противников с близкой стоимостью армии для пользователя по username.
-        Используется в админке арены.
+        Используется в веб-интерфейсе арены.
 
         Args:
             username: Username текущего игрока

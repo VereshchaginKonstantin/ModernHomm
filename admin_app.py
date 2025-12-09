@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Админка Flask для управления юнитами
+Веб-интерфейс Flask для управления юнитами
 """
 
 import os
@@ -16,6 +16,8 @@ from db import Database
 from db.models import Unit, GameUser
 from decimal import Decimal
 from admin_images_manager import images_bp
+from admin_arena import arena_bp
+from admin_templates import get_admin_version, get_bot_version, FOOTER_TEMPLATE
 
 # Создать Flask приложение
 app = Flask(__name__)
@@ -25,6 +27,52 @@ app.config['MAX_CONTENT_LENGTH'] = 5 * 1024 * 1024  # 5 MB max file size
 
 # Регистрация Blueprint для управления изображениями и сеттингами
 app.register_blueprint(images_bp)
+# Регистрация Blueprint для арены
+app.register_blueprint(arena_bp)
+
+
+@app.context_processor
+def inject_versions():
+    """Добавить версии во все шаблоны"""
+    return {
+        'admin_version': get_admin_version(),
+        'bot_version': get_bot_version(),
+        'footer_html': FOOTER_TEMPLATE
+    }
+
+
+def get_static_version():
+    """Получить версию для cache busting статических файлов"""
+    admin_ver = get_admin_version()
+    # Создаём короткий хеш для URL
+    return hashlib.md5(admin_ver.encode()).hexdigest()[:8]
+
+
+@app.template_filter('versioned')
+def versioned_filter(url):
+    """Jinja2 фильтр для добавления версии к URL статического файла.
+
+    Использование в шаблоне: {{ '/static/file.css'|versioned }}
+    Результат: /static/file.css?v=a1b2c3d4
+    """
+    version = get_static_version()
+    separator = '&' if '?' in url else '?'
+    return f"{url}{separator}v={version}"
+
+
+@app.context_processor
+def inject_static_version():
+    """Добавить функцию versioned_static в контекст шаблонов"""
+    def versioned_static(filename):
+        """Генерирует URL для статического файла с версией для cache busting.
+
+        Использование в шаблоне: {{ versioned_static('arena/css/arena.css') }}
+        Результат: /static/arena/css/arena.css?v=a1b2c3d4
+        """
+        version = get_static_version()
+        return f"/static/{filename}?v={version}"
+
+    return {'versioned_static': versioned_static}
 
 def calculate_unit_price(damage: int, defense: int, health: int, unit_range: int, speed: int, luck: float, crit_chance: float, dodge_chance: float, is_kamikaze: int = 0, is_flying: int = 0, counterattack_chance: float = 0) -> Decimal:
     """
@@ -93,7 +141,7 @@ def login_required(f):
         return f(*args, **kwargs)
     return decorated_function
 
-# HTML шаблоны для админки
+# HTML шаблоны для веб-интерфейса
 HEADER_TEMPLATE = """
 <nav class="navbar">
     <div class="nav-links">
@@ -104,6 +152,7 @@ HEADER_TEMPLATE = """
         <a href="{{ url_for('images_manager.settings_list') }}" class="nav-link {{ 'active' if active_page == 'settings' else '' }}">Сеттинги</a>
         <a href="{{ url_for('images_manager.unit_images_list') }}" class="nav-link {{ 'active' if active_page == 'unit_images' else '' }}">Изображения</a>
         {% endif %}
+        <a href="{{ url_for('arena.index') }}" class="nav-link {{ 'active' if active_page == 'arena' else '' }}">Арена</a>
         <a href="{{ url_for('leaderboard') }}" class="nav-link {{ 'active' if active_page == 'leaderboard' else '' }}">Рейтинг</a>
         <a href="{{ url_for('help_page') }}" class="nav-link {{ 'active' if active_page == 'help' else '' }}">Справка</a>
         <a href="{{ url_for('export_units') }}" class="nav-link">Экспорт</a>
@@ -308,7 +357,7 @@ ADMIN_TEMPLATE = """
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Админка - Управление картинками юнитов</title>
+    <title>Веб-интерфейс - Управление картинками юнитов</title>
 """ + BASE_STYLE + """
 </head>
 <body>
@@ -371,6 +420,7 @@ ADMIN_TEMPLATE = """
         {% endfor %}
     </div>
     </div>
+    {{ footer_html|safe }}
 </body>
 </html>
 """
@@ -431,6 +481,7 @@ COMPREHENSIVE_UNITS_TEMPLATE = """
         </div>
         {% endfor %}
     </div>
+    {{ footer_html|safe }}
 </body>
 </html>
 """
@@ -502,6 +553,7 @@ UNITS_TEMPLATE = """
             </tbody>
         </table>
     </div>
+    {{ footer_html|safe }}
 </body>
 </html>
 """
@@ -621,6 +673,7 @@ UNIT_FORM_TEMPLATE = """
             </form>
         </div>
     </div>
+    {{ footer_html|safe }}
 </body>
 </html>
 """
@@ -632,7 +685,7 @@ LEADERBOARD_TEMPLATE = """
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Рейтинг игроков - Админка</title>
+    <title>Рейтинг игроков - Веб-интерфейс</title>
     """ + BASE_STYLE + """
     <style>
         .leaderboard-table {
@@ -728,6 +781,7 @@ LEADERBOARD_TEMPLATE = """
         </div>
         {% endif %}
     </div>
+    {{ footer_html|safe }}
 </body>
 </html>
 """
@@ -868,6 +922,7 @@ HELP_TEMPLATE = """
             </div>
         </div>
     </div>
+    {{ footer_html|safe }}
 </body>
 </html>
 """
@@ -913,6 +968,7 @@ IMPORT_TEMPLATE = """
             </form>
         </div>
     </div>
+    {{ footer_html|safe }}
 </body>
 </html>
 """
@@ -958,7 +1014,7 @@ def login():
     <!DOCTYPE html>
     <html>
     <head>
-        <title>Вход в админку</title>
+        <title>Вход в веб-интерфейс</title>
         <style>
             body {
                 font-family: Arial, sans-serif;
@@ -1045,7 +1101,7 @@ def login():
     </head>
     <body>
         <div class="login-container">
-            <h1>🔐 Вход в админку</h1>
+            <h1>🔐 Вход в веб-интерфейс</h1>
 
             {% with messages = get_flashed_messages(with_categories=true) %}
                 {% if messages %}
@@ -1630,6 +1686,6 @@ def import_page():
 if __name__ == '__main__':
     # Получить порт из переменной окружения или использовать 80 по умолчанию
     port = int(os.getenv('PORT', 80))
-    print(f"Запуск админки на http://0.0.0.0:{port}")
+    print(f"Запуск веб-интерфейса на http://0.0.0.0:{port}")
     print("Используйте Ctrl+C для остановки")
     app.run(host='0.0.0.0', port=port, debug=False)

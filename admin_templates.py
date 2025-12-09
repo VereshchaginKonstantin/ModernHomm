@@ -8,7 +8,7 @@ from datetime import datetime
 
 
 def get_admin_version():
-    """Получить версию админки из файла ADMIN_VERSION"""
+    """Получить версию веб-интерфейса из файла ADMIN_VERSION"""
     try:
         with open('ADMIN_VERSION', 'r', encoding='utf-8') as f:
             return f.read().strip()
@@ -25,7 +25,7 @@ def get_bot_version():
         return "unknown"
 
 
-# HTML шаблоны для админки
+# HTML шаблоны для веб-интерфейса
 HEADER_TEMPLATE = """
 <nav class="navbar">
     <div class="nav-links">

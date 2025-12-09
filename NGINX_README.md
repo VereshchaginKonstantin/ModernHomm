@@ -2,7 +2,7 @@
 
 ## Обзор
 
-Nginx настроен как reverse proxy для админки ModernHomm. Он принимает HTTP запросы на порту 80 и проксирует их на Flask приложение (admin), работающее на порту 5000 внутри Docker сети.
+Nginx настроен как reverse proxy для веб-интерфейса ModernHomm. Он принимает HTTP запросы на порту 80 и проксирует их на Flask приложение (admin), работающее на порту 5000 внутри Docker сети.
 
 ## Архитектура
 
@@ -73,7 +73,7 @@ docker compose ps
 # Проверить логи nginx
 docker compose logs nginx
 
-# Проверить логи админки
+# Проверить логи веб-интерфейса
 docker compose logs admin
 
 # Тест HTTP запроса
@@ -92,9 +92,9 @@ docker compose restart nginx
 docker compose restart
 ```
 
-## Доступ к админке
+## Доступ к веб-интерфейсу
 
-После запуска админка доступна по следующим адресам:
+После запуска веб-интерфейс доступна по следующим адресам:
 
 - http://modernhomm.ru (требуется настройка DNS)
 - http://www.modernhomm.ru (требуется настройка DNS)

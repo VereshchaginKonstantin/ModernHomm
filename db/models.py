@@ -64,11 +64,11 @@ class GameUser(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     telegram_id = Column(BigInteger, unique=True, nullable=False, index=True)
     name = Column(String(255), nullable=False)  # first_name пользователя
-    username = Column(String(255), unique=True, nullable=True, index=True)  # username из Telegram (уникальный идентификатор, требуется для входа в админку)
+    username = Column(String(255), unique=True, nullable=True, index=True)  # username из Telegram (уникальный идентификатор, требуется для входа в веб-интерфейс)
     balance = Column(Numeric(12, 2), nullable=False, default=1000)
     wins = Column(Integer, nullable=False, default=0)
     losses = Column(Integer, nullable=False, default=0)
-    password_hash = Column(String(255), nullable=True)  # Хеш пароля для входа в админку
+    password_hash = Column(String(255), nullable=True)  # Хеш пароля для входа в веб-интерфейс
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 
@@ -181,7 +181,7 @@ class Game(Base):
     player1_id = Column(Integer, ForeignKey('game_users.id', ondelete='CASCADE'), nullable=False, index=True)
     player2_id = Column(Integer, ForeignKey('game_users.id', ondelete='CASCADE'), nullable=False, index=True)
     field_id = Column(Integer, ForeignKey('fields.id', ondelete='CASCADE'), nullable=False)
-    status = Column(Enum(GameStatus), nullable=False, default=GameStatus.WAITING)
+    status = Column(Enum(GameStatus, values_callable=lambda obj: [e.value for e in obj], name='game_status', create_type=False), nullable=False, default=GameStatus.WAITING)
     current_player_id = Column(Integer, ForeignKey('game_users.id'), nullable=True)  # Чей сейчас ход
     winner_id = Column(Integer, ForeignKey('game_users.id'), nullable=True)  # Победитель
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)

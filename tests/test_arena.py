@@ -1148,7 +1148,7 @@ class TestPlayFormHiddenPlayerField:
 
 
 class TestVersionDisplay:
-    """Тесты для отображения версий админки и бота"""
+    """Тесты для отображения версий веб-интерфейса и бота"""
 
     def test_get_admin_version_returns_string(self):
         """Тест: get_admin_version возвращает строку"""

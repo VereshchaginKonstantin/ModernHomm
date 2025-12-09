@@ -90,6 +90,15 @@ class SimpleBot:
             logger.warning("Файл VERSION не найден, используется версия по умолчанию")
             return "unknown"
 
+    def load_admin_version(self):
+        """Загрузка версии веб-интерфейса из файла ADMIN_VERSION"""
+        try:
+            with open('ADMIN_VERSION', 'r', encoding='utf-8') as f:
+                return f.read().strip()
+        except FileNotFoundError:
+            logger.warning("Файл ADMIN_VERSION не найден")
+            return "unknown"
+
     def get_latest_commit_message(self):
         """Получение сообщения последнего коммита из git"""
         import subprocess
@@ -129,25 +138,37 @@ class SimpleBot:
             return 1000.0
 
     def check_version_changed(self):
-        """Проверка, изменилась ли версия с прошлого запуска"""
+        """Проверка, изменилась ли версия бота или веб-интерфейса с прошлого запуска"""
         try:
             with open('.last_version', 'r', encoding='utf-8') as f:
-                last_version = f.read().strip()
-                return last_version != self.version
+                content = f.read().strip()
+                # Формат: bot_version|admin_version
+                if '|' in content:
+                    last_bot_version, last_admin_version = content.split('|', 1)
+                else:
+                    last_bot_version = content
+                    last_admin_version = ""
+
+                current_admin_version = self.load_admin_version()
+                bot_changed = last_bot_version != self.version
+                admin_changed = last_admin_version != current_admin_version
+
+                return bot_changed, admin_changed
         except FileNotFoundError:
-            # Первый запуск - версия "изменилась"
-            return True
+            # Первый запуск - версии "изменились"
+            return True, True
 
     def save_current_version(self):
-        """Сохранение текущей версии"""
+        """Сохранение текущих версий бота и веб-интерфейса"""
         try:
+            admin_version = self.load_admin_version()
             with open('.last_version', 'w', encoding='utf-8') as f:
-                f.write(self.version)
-            logger.info(f"Версия {self.version} сохранена")
+                f.write(f"{self.version}|{admin_version}")
+            logger.info(f"Версии сохранены: бот={self.version}, веб-интерфейс={admin_version}")
         except Exception as e:
-            logger.error(f"Ошибка при сохранении версии: {e}")
+            logger.error(f"Ошибка при сохранении версий: {e}")
 
-    async def notify_all_users_about_update(self, application):
+    async def notify_all_users_about_update(self, application, bot_changed=True, admin_changed=False):
         """Отправка уведомления всем пользователям о новой версии"""
         try:
             # Получаем всех игровых пользователей
@@ -159,12 +180,27 @@ class SimpleBot:
 
             # Получаем сообщение последнего коммита
             commit_message = self.get_latest_commit_message()
+            admin_version = self.load_admin_version()
+
+            # Формируем заголовок в зависимости от того, что обновилось
+            if bot_changed and admin_changed:
+                title = "🔄 <b>Система обновлена!</b>"
+                versions_info = (
+                    f"🤖 Бот: <code>{self.version}</code>\n"
+                    f"🖥️ Веб-интерфейс: <code>{admin_version}</code>"
+                )
+            elif admin_changed:
+                title = "🔄 <b>Веб-интерфейс обновлена!</b>"
+                versions_info = f"🖥️ Новая версия: <code>{admin_version}</code>"
+            else:
+                title = "🔄 <b>Бот обновлен!</b>"
+                versions_info = f"🤖 Новая версия: <code>{self.version}</code>"
 
             if commit_message:
                 # Если есть сообщение коммита, используем его
                 notification_text = (
-                    f"🔄 <b>Бот обновлен!</b>\n\n"
-                    f"🤖 Новая версия: <code>{self.version}</code>\n\n"
+                    f"{title}\n\n"
+                    f"{versions_info}\n\n"
                     f"✨ <b>Что нового:</b>\n"
                     f"{html.escape(commit_message)}\n\n"
                     f"Используйте /help для просмотра доступных команд."
@@ -172,8 +208,8 @@ class SimpleBot:
             else:
                 # Если не удалось получить коммит, используем общий текст
                 notification_text = (
-                    f"🔄 <b>Бот обновлен!</b>\n\n"
-                    f"🤖 Новая версия: <code>{self.version}</code>\n\n"
+                    f"{title}\n\n"
+                    f"{versions_info}\n\n"
                     f"✨ Что нового:\n"
                     f"• Исправления ошибок\n"
                     f"• Улучшения производительности\n"
@@ -262,7 +298,7 @@ class SimpleBot:
             "/start - Начать работу с ботом и инициализировать игровой профиль\n"
             "/help - Показать это сообщение\n"
             "/version - Показать версию бота\n"
-            "/password - Установить пароль для админки\n"
+            "/password - Установить пароль для веб-интерфейса\n"
             "/profile - Посмотреть свой игровой профиль\n"
             "/top - Рейтинг игроков\n"
             "/shop - Магазин юнитов (покупка армии)\n"
@@ -286,7 +322,7 @@ class SimpleBot:
         logger.info(f"Команда /version от пользователя {update.effective_user.id}")
 
     async def password_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Обработчик команды /password - установка пароля для админки"""
+        """Обработчик команды /password - установка пароля для веб-интерфейса"""
         user = update.effective_user
         logger.info(f"Команда /password от пользователя {user.id}")
 
@@ -312,9 +348,9 @@ class SimpleBot:
             context.user_data['waiting_for_password'] = True
 
             await update.message.reply_text(
-                "🔐 <b>Установка пароля для админки</b>\n\n"
+                "🔐 <b>Установка пароля для веб-интерфейса</b>\n\n"
                 "Введите пароль (минимум 6 символов):\n\n"
-                "⚠️ <i>Пароль будет сохранен в зашифрованном виде и потребуется для входа в админку.</i>",
+                "⚠️ <i>Пароль будет сохранен в зашифрованном виде и потребуется для входа в веб-интерфейс.</i>",
                 parse_mode=self.parse_mode
             )
 
@@ -366,9 +402,9 @@ class SimpleBot:
 
                     await update.message.reply_text(
                         "✅ <b>Пароль успешно установлен!</b>\n\n"
-                        f"Теперь вы можете войти в админку:\n"
+                        f"Теперь вы можете войти в веб-интерфейс:\n"
                         f"Username: <code>{user.username}</code>\n\n"
-                        f"🌐 Админка: http://modernhomm.ru",
+                        f"🌐 Веб-интерфейс: http://modernhomm.ru",
                         parse_mode=self.parse_mode
                     )
                     logger.info(f"Пользователь {user.username} ({user.id}) установил пароль")
@@ -3899,12 +3935,20 @@ class SimpleBot:
         # Проверка версии и отправка уведомлений
         async def post_init(app):
             """Callback после инициализации приложения"""
-            if self.check_version_changed():
-                logger.info(f"Обнаружена новая версия: {self.version}")
-                await self.notify_all_users_about_update(app)
+            bot_changed, admin_changed = self.check_version_changed()
+            admin_version = self.load_admin_version()
+
+            if bot_changed or admin_changed:
+                changes = []
+                if bot_changed:
+                    changes.append(f"бот={self.version}")
+                if admin_changed:
+                    changes.append(f"веб-интерфейс={admin_version}")
+                logger.info(f"Обнаружены обновления: {', '.join(changes)}")
+                await self.notify_all_users_about_update(app, bot_changed, admin_changed)
                 self.save_current_version()
             else:
-                logger.info(f"Версия не изменилась: {self.version}")
+                logger.info(f"Версии не изменились: бот={self.version}, веб-интерфейс={admin_version}")
 
         application.post_init = post_init
 

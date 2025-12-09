@@ -110,7 +110,7 @@ class GameEngine:
                 missing_images.append(unit.name)
 
         if missing_images:
-            return None, f"⚠️ Невозможно начать игру!\n\nНе загружены картинки для следующих юнитов:\n" + "\n".join([f"• {name}" for name in missing_images]) + "\n\nОбратитесь к администратору для загрузки картинок через админку."
+            return None, f"⚠️ Невозможно начать игру!\n\nНе загружены картинки для следующих юнитов:\n" + "\n".join([f"• {name}" for name in missing_images]) + "\n\nОбратитесь к администратору для загрузки картинок через веб-интерфейс."
 
         # Найти игроков
         player1 = self.db.query(GameUser).filter_by(id=player1_id).first()
