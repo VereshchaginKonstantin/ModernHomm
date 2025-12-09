@@ -18,8 +18,12 @@ COPY bot.py .
 COPY game_engine.py .
 COPY field_renderer.py .
 COPY admin_app.py .
+COPY admin_arena.py .
+COPY admin_templates.py .
+COPY admin_images_manager.py .
 COPY config.json .
 COPY VERSION .
+COPY ADMIN_VERSION .
 
 # Копирование Python модуля db (модели и репозиторий)
 COPY db/ ./db/

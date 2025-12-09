@@ -27,6 +27,7 @@ def db():
             # Clean game-related data (in correct order due to foreign keys)
             session.execute(text("DELETE FROM battle_units"))
             session.execute(text("DELETE FROM game_logs"))
+            session.execute(text("DELETE FROM obstacles"))
             session.execute(text("DELETE FROM games"))
             session.execute(text("DELETE FROM user_units"))
             session.execute(text("DELETE FROM game_users"))
@@ -37,9 +38,12 @@ def db():
             session.execute(text("DELETE FROM unit_images"))
             session.execute(text("DELETE FROM settings"))
             session.commit()
-    except Exception:
+    except Exception as e:
         # Tables might not exist yet, that's OK
-        pass
+        try:
+            session.rollback()
+        except:
+            pass
 
     yield database
 
@@ -48,6 +52,7 @@ def db():
         with database.get_session() as session:
             session.execute(text("DELETE FROM battle_units"))
             session.execute(text("DELETE FROM game_logs"))
+            session.execute(text("DELETE FROM obstacles"))
             session.execute(text("DELETE FROM games"))
             session.execute(text("DELETE FROM user_units"))
             session.execute(text("DELETE FROM game_users"))
@@ -57,8 +62,11 @@ def db():
             session.execute(text("DELETE FROM messages"))
             session.execute(text("DELETE FROM users"))
             session.commit()
-    except Exception:
+    except Exception as e:
         # Tables might not exist, that's OK
-        pass
+        try:
+            session.rollback()
+        except:
+            pass
 
     engine.dispose()

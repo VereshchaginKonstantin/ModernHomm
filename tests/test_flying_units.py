@@ -15,20 +15,21 @@ class TestFlyingUnits:
     @pytest.fixture(autouse=True)
     def setup(self):
         """Подготовка тестовой базы данных"""
+        import uuid
+        self.test_prefix = f"flying_test_{uuid.uuid4().hex[:8]}_"
         self.db = Database("postgresql://postgres:postgres@localhost:5433/telegram_bot_test")
 
         # Очистка данных перед тестом
         with self.db.get_session() as session:
-            session.query(Unit).filter(Unit.owner_id.isnot(None)).delete()
-            session.query(GameUser).delete()
+            # Удаляем юниты с нашим префиксом
+            session.query(Unit).filter(Unit.name.like(f"{self.test_prefix}%")).delete(synchronize_session=False)
             session.commit()
 
         yield
 
         # Очистка после теста
         with self.db.get_session() as session:
-            session.query(Unit).filter(Unit.owner_id.isnot(None)).delete()
-            session.query(GameUser).delete()
+            session.query(Unit).filter(Unit.name.like(f"{self.test_prefix}%")).delete(synchronize_session=False)
             session.commit()
 
     def test_is_flying_column_exists(self):
@@ -36,7 +37,7 @@ class TestFlyingUnits:
         with self.db.get_session() as session:
             # Создаем тестовый юнит
             unit = Unit(
-                name="TestFlyingUnit",
+                name=f"{self.test_prefix}TestFlyingUnit",
                 icon="🦅",
                 price=Decimal('100'),
                 damage=10,
@@ -55,9 +56,10 @@ class TestFlyingUnits:
 
     def test_create_flying_unit(self):
         """Тест: создание летающего юнита"""
+        unit_name = f"{self.test_prefix}Griffin"
         with self.db.get_session() as session:
             unit = Unit(
-                name="Griffin",
+                name=unit_name,
                 icon="🦅",
                 price=Decimal('300'),
                 damage=25,
@@ -75,14 +77,15 @@ class TestFlyingUnits:
         with self.db.get_session() as session:
             unit = session.query(Unit).filter_by(id=unit_id).first()
             assert unit is not None
-            assert unit.name == "Griffin"
+            assert unit.name == unit_name
             assert unit.is_flying == 1
 
     def test_create_non_flying_unit(self):
         """Тест: создание нелетающего юнита"""
+        unit_name = f"{self.test_prefix}Warrior"
         with self.db.get_session() as session:
             unit = Unit(
-                name="Warrior",
+                name=unit_name,
                 icon="⚔️",
                 price=Decimal('100'),
                 damage=15,
@@ -100,7 +103,7 @@ class TestFlyingUnits:
         with self.db.get_session() as session:
             unit = session.query(Unit).filter_by(id=unit_id).first()
             assert unit is not None
-            assert unit.name == "Warrior"
+            assert unit.name == unit_name
             assert unit.is_flying == 0
 
     def test_flying_unit_price_calculation(self):
@@ -119,7 +122,7 @@ class TestFlyingUnits:
 
         with self.db.get_session() as session:
             flying_unit = Unit(
-                name="Phoenix",
+                name=f"{self.test_prefix}Phoenix",
                 icon="🔥",
                 price=Decimal(str(expected_flying_price)),
                 damage=damage,
@@ -149,7 +152,7 @@ class TestFlyingUnits:
 
         with self.db.get_session() as session:
             non_flying_unit = Unit(
-                name="Knight",
+                name=f"{self.test_prefix}Knight",
                 icon="🛡️",
                 price=Decimal(str(expected_price)),
                 damage=damage,
@@ -176,7 +179,7 @@ class TestFlyingUnits:
             # Нелетающий
             non_flying_price = base_price + damage * 10 + defense * 5
             non_flying_unit = Unit(
-                name="Footman",
+                name=f"{self.test_prefix}Footman",
                 icon="⚔️",
                 price=Decimal(str(non_flying_price)),
                 damage=damage,
@@ -191,7 +194,7 @@ class TestFlyingUnits:
             flying_bonus = 2 * (damage + defense)
             flying_price = base_price + damage * 10 + defense * 5 + flying_bonus
             flying_unit = Unit(
-                name="Pegasus",
+                name=f"{self.test_prefix}Pegasus",
                 icon="🦄",
                 price=Decimal(str(flying_price)),
                 damage=damage,
@@ -215,7 +218,7 @@ class TestFlyingUnits:
         """Тест: обновление флага is_flying"""
         with self.db.get_session() as session:
             unit = Unit(
-                name="Dragon",
+                name=f"{self.test_prefix}Dragon",
                 icon="🐉",
                 price=Decimal('500'),
                 damage=40,
@@ -245,9 +248,9 @@ class TestFlyingUnits:
     def test_multiple_flying_units(self):
         """Тест: создание нескольких летающих юнитов"""
         flying_units_data = [
-            ("Gargoyle", "🗿", 150, 12, 10, 1, 60, 4),
-            ("Wyvern", "🦎", 250, 22, 18, 1, 90, 5),
-            ("Angel", "👼", 400, 35, 28, 2, 150, 6),
+            (f"{self.test_prefix}Gargoyle", "🗿", 150, 12, 10, 1, 60, 4),
+            (f"{self.test_prefix}Wyvern", "🦎", 250, 22, 18, 1, 90, 5),
+            (f"{self.test_prefix}Angel", "👼", 400, 35, 28, 2, 150, 6),
         ]
 
         with self.db.get_session() as session:
@@ -268,22 +271,25 @@ class TestFlyingUnits:
 
         # Проверяем, что все юниты созданы с is_flying=1
         with self.db.get_session() as session:
-            flying_units = session.query(Unit).filter_by(is_flying=1).all()
-            # Минимум 3 созданных нами
-            assert len(flying_units) >= 3
+            flying_units = session.query(Unit).filter(
+                Unit.name.like(f"{self.test_prefix}%"),
+                Unit.is_flying == 1
+            ).all()
+            # Все 3 созданных нами
+            assert len(flying_units) == 3
 
             # Проверяем, что наши юниты в списке
             names = [unit.name for unit in flying_units]
-            assert "Gargoyle" in names
-            assert "Wyvern" in names
-            assert "Angel" in names
+            assert f"{self.test_prefix}Gargoyle" in names
+            assert f"{self.test_prefix}Wyvern" in names
+            assert f"{self.test_prefix}Angel" in names
 
     def test_default_is_flying_value(self):
         """Тест: значение по умолчанию для is_flying (0)"""
         with self.db.get_session() as session:
             # Создаем юнит без указания is_flying
             unit = Unit(
-                name="DefaultUnit",
+                name=f"{self.test_prefix}DefaultUnit",
                 icon="🎮",
                 price=Decimal('100'),
                 damage=10,

@@ -29,7 +29,7 @@ class TestUsernameUniqueness:
 
     def test_username_must_be_unique(self, db):
         """Тест: username должен быть уникальным"""
-        username = "test_user"
+        username = "test_user_unique_test"
 
         # Создаем первого пользователя
         with db.get_session() as session:
@@ -43,8 +43,8 @@ class TestUsernameUniqueness:
             session.commit()
 
         # Попытка создать второго пользователя с тем же username
-        with db.get_session() as session:
-            with pytest.raises(IntegrityError):
+        with pytest.raises(IntegrityError):
+            with db.get_session() as session:
                 game_user2 = GameUser(
                     telegram_id=222222222,
                     name="User2",

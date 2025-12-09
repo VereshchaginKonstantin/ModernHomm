@@ -669,6 +669,116 @@ class Database:
             session.expunge_all()
             return result
 
+    def get_available_opponents_by_username(self, username: str, limit: int = 3, variance: float = 0.3) -> tuple:
+        """
+        Получение противников с близкой стоимостью армии для пользователя по username.
+        Используется в админке арены.
+
+        Args:
+            username: Username текущего игрока
+            limit: Максимальное количество противников (по умолчанию 3)
+            variance: Допустимая разница в стоимости армии (по умолчанию 0.3 = ±30%)
+
+        Returns:
+            tuple: (current_player_data, opponents_list)
+                - current_player_data: dict с данными текущего игрока
+                - opponents_list: list[dict] со списком противников
+        """
+        from sqlalchemy import func
+        from decimal import Decimal
+
+        with self.get_session() as session:
+            # Получаем текущего игрока по username
+            current_player = session.query(GameUser).filter_by(username=username).first()
+            if not current_player:
+                return None, []
+
+            # Данные текущего игрока
+            current_player_data = {
+                'id': current_player.id,
+                'telegram_id': current_player.telegram_id,
+                'name': current_player.username or current_player.name,
+                'balance': float(current_player.balance),
+                'wins': current_player.wins,
+                'losses': current_player.losses
+            }
+
+            # Рассчитываем стоимость армии текущего игрока
+            current_units = session.query(UserUnit).filter_by(game_user_id=current_player.id).all()
+            current_army_value = Decimal('0')
+            for user_unit in current_units:
+                unit = session.query(Unit).filter_by(id=user_unit.unit_type_id).first()
+                if unit:
+                    current_army_value += Decimal(str(unit.price)) * user_unit.count
+
+            current_player_data['army_value'] = float(current_army_value)
+
+            # Получаем противников
+            if current_army_value == 0:
+                # Если у игрока нет юнитов, возвращаем случайных игроков
+                query = session.query(GameUser).filter(GameUser.id != current_player.id)
+                candidates = query.order_by(func.random()).limit(limit).all()
+                candidates_with_value = [(c, Decimal('0')) for c in candidates]
+            else:
+                # Определяем диапазон стоимости армии
+                min_value = current_army_value * Decimal(str(1 - variance))
+                max_value = current_army_value * Decimal(str(1 + variance))
+
+                # Получаем всех игроков (кроме текущего) и их стоимость армии
+                all_players = session.query(GameUser).filter(GameUser.id != current_player.id).all()
+                candidates_with_value = []
+
+                for player in all_players:
+                    player_units = session.query(UserUnit).filter_by(game_user_id=player.id).all()
+                    player_army_value = Decimal('0')
+                    for user_unit in player_units:
+                        unit = session.query(Unit).filter_by(id=user_unit.unit_type_id).first()
+                        if unit:
+                            player_army_value += Decimal(str(unit.price)) * user_unit.count
+
+                    # Проверяем, попадает ли стоимость армии в диапазон
+                    if min_value <= player_army_value <= max_value:
+                        candidates_with_value.append((player, player_army_value))
+
+                # Если нашли подходящих игроков, выбираем случайных
+                if len(candidates_with_value) > limit:
+                    import random
+                    candidates_with_value = random.sample(candidates_with_value, limit)
+                elif not candidates_with_value:
+                    # Если не нашли подходящих, берем случайных
+                    query = session.query(GameUser).filter(GameUser.id != current_player.id)
+                    candidates = query.order_by(func.random()).limit(limit).all()
+                    # Рассчитываем стоимость армии для них
+                    candidates_with_value = []
+                    for player in candidates:
+                        player_units = session.query(UserUnit).filter_by(game_user_id=player.id).all()
+                        player_army_value = Decimal('0')
+                        for user_unit in player_units:
+                            unit = session.query(Unit).filter_by(id=user_unit.unit_type_id).first()
+                            if unit:
+                                player_army_value += Decimal(str(unit.price)) * user_unit.count
+                        candidates_with_value.append((player, player_army_value))
+
+            # Формируем результат
+            opponents = []
+            for player, army_value in candidates_with_value:
+                win_rate = 0
+                if player.wins + player.losses > 0:
+                    win_rate = (player.wins / (player.wins + player.losses)) * 100
+
+                opponents.append({
+                    'id': player.id,
+                    'telegram_id': player.telegram_id,
+                    'name': player.username or player.name,
+                    'balance': float(player.balance),
+                    'wins': player.wins,
+                    'losses': player.losses,
+                    'army_value': float(army_value),
+                    'win_rate': win_rate
+                })
+
+            return current_player_data, opponents
+
     # ===== CRUD методы для UserUnit =====
 
     def add_unit(self, telegram_id: int, unit_type_id: int, count: int = 1) -> UserUnit:

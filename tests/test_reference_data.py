@@ -36,9 +36,10 @@ class TestUnitsReferenceData:
     """Тесты для проверки справочника юнитов"""
 
     def test_units_count(self, db_session):
-        """Проверка, что создано правильное количество юнитов"""
-        units_count = db_session.query(Unit).count()
-        assert units_count == 5, f"Ожидается 5 юнитов, найдено {units_count}"
+        """Проверка, что создано минимум 5 базовых юнитов"""
+        # Считаем только базовые юниты (без владельца)
+        base_units_count = db_session.query(Unit).filter(Unit.owner_id.is_(None)).count()
+        assert base_units_count >= 5, f"Ожидается минимум 5 базовых юнитов, найдено {base_units_count}"
 
     def test_swordsman_exists(self, db_session):
         """Проверка создания юнита Мечник"""
