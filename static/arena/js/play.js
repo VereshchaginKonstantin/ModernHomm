@@ -27,6 +27,7 @@ let selectedUnitId = null;
 let actionMode = null; // 'move' или 'attack'
 let pollingInterval = null;
 let lastGameStateHash = null;
+let lastShownLogCount = 0; // Количество логов, для которых уже показана анимация
 
 // Инициализация после загрузки DOM
 document.addEventListener('DOMContentLoaded', () => {
@@ -174,6 +175,10 @@ async function initPlayGame() {
     // Получаем состояние игры
     const response = await fetch(`${apiBase}/games/${currentGameId}/state`);
     const gameState = await response.json();
+
+    // Инициализируем счётчик показанных логов текущим количеством логов
+    // чтобы не показывать старые атаки при загрузке игры
+    lastShownLogCount = gameState.logs ? gameState.logs.length : 0;
 
     const fieldWidth = gameState.field.width * CELL_SIZE + BOARD_PADDING * 2;
     const fieldHeight = gameState.field.height * CELL_SIZE + BOARD_PADDING * 2;
@@ -989,6 +994,9 @@ class PlayScene extends Phaser.Scene {
                 // Обновляем состояние (включая логи с сервера)
                 await this.refreshGameState();
 
+                // Обновляем счётчик показанных логов, чтобы не показывать эту атаку повторно
+                lastShownLogCount = this.gameState.logs ? this.gameState.logs.length : 0;
+
                 // Проверяем завершение игры
                 if (result.game_status === 'completed') {
                     stopPolling();
@@ -1070,12 +1078,29 @@ class PlayScene extends Phaser.Scene {
      */
     showBattleOverlay(attackerData, targetData, resultMessage, duration = 5000) {
         return new Promise(resolve => {
+            // Парсим количество убитых юнитов из сообщения
+            // "Убито юнитов: X" - убитые у защитника (цели)
+            // "Убито атакующих юнитов: X" - убитые у атакующего (контратака)
+            let targetKilled = 0;
+            let attackerKilled = 0;
+
+            const targetKilledMatch = resultMessage.match(/Убито юнитов:\s*(\d+)/);
+            if (targetKilledMatch) {
+                targetKilled = parseInt(targetKilledMatch[1]);
+            }
+
+            const attackerKilledMatch = resultMessage.match(/Убито атакующих юнитов:\s*(\d+)/);
+            if (attackerKilledMatch) {
+                attackerKilled = parseInt(attackerKilledMatch[1]);
+            }
+
             // Создаём оверлей
             const overlay = document.createElement('div');
             overlay.className = 'battle-overlay';
             overlay.innerHTML = `
                 <div class="battle-combatants">
                     <div class="battle-unit attacker">
+                        ${attackerKilled > 0 ? `<div class="battle-killed-label">-${attackerKilled}</div>` : ''}
                         <img class="battle-unit-image"
                              src="${this.normalizeImagePath(attackerData.unit_type?.image_path)}"
                              onerror="this.src='/static/images/units/default.png'"
@@ -1086,6 +1111,7 @@ class PlayScene extends Phaser.Scene {
                     </div>
                     <div class="battle-lightning">⚡</div>
                     <div class="battle-unit target">
+                        ${targetKilled > 0 ? `<div class="battle-killed-label">-${targetKilled}</div>` : ''}
                         <img class="battle-unit-image"
                              src="${this.normalizeImagePath(targetData.unit_type?.image_path)}"
                              onerror="this.src='/static/images/units/default.png'"
@@ -1099,7 +1125,10 @@ class PlayScene extends Phaser.Scene {
                     <div class="battle-result-title">⚔️ Результат атаки</div>
                     <div class="battle-result-text">${resultMessage}</div>
                 </div>
-                <div class="battle-timer">Закроется через <span id="battle-countdown">${Math.ceil(duration / 1000)}</span> сек...</div>
+                <div class="battle-footer">
+                    <button class="battle-close-btn" id="battle-close-btn">✖ Закрыть</button>
+                    <div class="battle-timer">Закроется через <span id="battle-countdown">${Math.ceil(duration / 1000)}</span> сек...</div>
+                </div>
             `;
 
             document.body.appendChild(overlay);
@@ -1112,13 +1141,6 @@ class PlayScene extends Phaser.Scene {
                 if (countdownEl) countdownEl.textContent = remaining;
             }, 1000);
 
-            // Закрытие по клику
-            overlay.addEventListener('click', () => {
-                clearInterval(countdownInterval);
-                clearTimeout(autoCloseTimeout);
-                closeBattleOverlay();
-            });
-
             // Функция закрытия
             const closeBattleOverlay = () => {
                 overlay.classList.add('fade-out');
@@ -1127,6 +1149,26 @@ class PlayScene extends Phaser.Scene {
                     resolve();
                 }, 500);
             };
+
+            // Закрытие по кнопке
+            const closeBtn = document.getElementById('battle-close-btn');
+            if (closeBtn) {
+                closeBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    clearInterval(countdownInterval);
+                    clearTimeout(autoCloseTimeout);
+                    closeBattleOverlay();
+                });
+            }
+
+            // Закрытие по клику на оверлей (но не на контент)
+            overlay.addEventListener('click', (e) => {
+                if (e.target === overlay) {
+                    clearInterval(countdownInterval);
+                    clearTimeout(autoCloseTimeout);
+                    closeBattleOverlay();
+                }
+            });
 
             // Автоматическое закрытие
             const autoCloseTimeout = setTimeout(() => {
@@ -1263,18 +1305,20 @@ class PlayScene extends Phaser.Scene {
                 lastGameStateHash = newHash;
 
                 // Проверяем новые логи на наличие атак от противника
-                const oldLogsCount = this.gameState.logs ? this.gameState.logs.length : 0;
+                // Используем lastShownLogCount чтобы не показывать уже показанные атаки
                 const newLogsCount = newState.logs ? newState.logs.length : 0;
 
-                if (newLogsCount > oldLogsCount) {
+                if (newLogsCount > lastShownLogCount) {
                     // Есть новые логи - проверяем на атаки
-                    const newLogs = newState.logs.slice(oldLogsCount);
+                    const newLogs = newState.logs.slice(lastShownLogCount);
                     for (const log of newLogs) {
                         if (log.event_type === 'attack') {
                             // Показываем анимацию атаки от противника
                             await this.showOpponentAttackAnimation(log.message, newState.units);
                         }
                     }
+                    // Обновляем счётчик показанных логов
+                    lastShownLogCount = newLogsCount;
                 }
 
                 // Состояние изменилось (возможно из Telegram)

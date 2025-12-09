@@ -559,6 +559,7 @@
 }
 
 .battle-unit {
+    position: relative;
     text-align: center;
     animation: battleUnitSlide 0.5s ease-out;
 }
@@ -670,11 +671,68 @@
 }
 
 .battle-timer {
-    position: absolute;
-    bottom: 30px;
-    right: 30px;
     color: rgba(255,255,255,0.5);
     font-size: 14px;
+}
+
+/* Подпись убитых юнитов над картинкой */
+.battle-killed-label {
+    position: absolute;
+    top: -15px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: linear-gradient(135deg, #c0392b 0%, #e74c3c 100%);
+    color: #fff;
+    font-size: 24px;
+    font-weight: bold;
+    padding: 8px 16px;
+    border-radius: 12px;
+    box-shadow: 0 4px 15px rgba(231, 76, 60, 0.6);
+    text-shadow: 0 2px 4px rgba(0,0,0,0.5);
+    animation: killedLabelPulse 0.5s ease-out;
+    z-index: 10;
+}
+
+@keyframes killedLabelPulse {
+    0% { transform: translateX(-50%) scale(0.5); opacity: 0; }
+    50% { transform: translateX(-50%) scale(1.2); }
+    100% { transform: translateX(-50%) scale(1); opacity: 1; }
+}
+
+/* Футер оверлея схватки */
+.battle-footer {
+    position: absolute;
+    bottom: 30px;
+    left: 0;
+    right: 0;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 30px;
+}
+
+/* Кнопка закрыть */
+.battle-close-btn {
+    background: linear-gradient(135deg, #e74c3c 0%, #c0392b 100%);
+    color: #fff;
+    border: none;
+    padding: 12px 30px;
+    border-radius: 8px;
+    font-size: 16px;
+    font-weight: bold;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    box-shadow: 0 4px 15px rgba(231, 76, 60, 0.4);
+}
+
+.battle-close-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(231, 76, 60, 0.6);
+    background: linear-gradient(135deg, #c0392b 0%, #a93226 100%);
+}
+
+.battle-close-btn:active {
+    transform: translateY(0);
 }
 
 /* Оверлей окончания игры */
