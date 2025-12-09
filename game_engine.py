@@ -117,7 +117,10 @@ class GameEngine:
         if not player1:
             return None, "Игрок 1 не найден"
 
-        player2 = self.db.query(GameUser).filter_by(name=player2_username).first()
+        # Ищем сначала по username, потом по name
+        player2 = self.db.query(GameUser).filter_by(username=player2_username).first()
+        if not player2:
+            player2 = self.db.query(GameUser).filter_by(name=player2_username).first()
         if not player2:
             return None, f"Игрок с никнеймом '{player2_username}' не найден"
 
