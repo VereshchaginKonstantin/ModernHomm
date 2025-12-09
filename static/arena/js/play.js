@@ -240,6 +240,9 @@ class PlayScene extends Phaser.Scene {
         this.fieldWidth = this.gameState.field.width;
         this.fieldHeight = this.gameState.field.height;
 
+        // Определяем, нужно ли зеркалить поле (если текущий игрок - player2)
+        this.isViewerPlayer2 = currentPlayerId === this.gameState.player2_id;
+
         // Рисуем поле
         this.drawBoard();
 
@@ -457,10 +460,12 @@ class PlayScene extends Phaser.Scene {
     }
 
     /**
-     * Конвертация координат
+     * Конвертация координат (с учётом зеркалирования для player2)
      */
     boardToScreenX(x) {
-        return BOARD_PADDING + x * CELL_SIZE + CELL_SIZE / 2;
+        // Для player2 зеркалим X координату
+        const effectiveX = this.isViewerPlayer2 ? (this.fieldWidth - 1 - x) : x;
+        return BOARD_PADDING + effectiveX * CELL_SIZE + CELL_SIZE / 2;
     }
 
     boardToScreenY(y) {
@@ -468,7 +473,9 @@ class PlayScene extends Phaser.Scene {
     }
 
     screenToBoardX(screenX) {
-        return Math.floor((screenX - BOARD_PADDING) / CELL_SIZE);
+        const rawX = Math.floor((screenX - BOARD_PADDING) / CELL_SIZE);
+        // Для player2 зеркалим X координату обратно
+        return this.isViewerPlayer2 ? (this.fieldWidth - 1 - rawX) : rawX;
     }
 
     screenToBoardY(screenY) {
@@ -937,6 +944,12 @@ class PlayScene extends Phaser.Scene {
      */
     async executeAttack(unitId, targetId) {
         try {
+            // Получаем данные юнитов ДО атаки для анимации
+            const attackerContainer = this.units.get(unitId);
+            const targetContainer = this.units.get(targetId);
+            const attackerData = attackerContainer?.getData('unitData');
+            const targetData = targetContainer?.getData('unitData');
+
             const response = await fetch(`${apiBase}/games/${currentGameId}/move`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -950,12 +963,17 @@ class PlayScene extends Phaser.Scene {
             const result = await response.json();
 
             if (result.success) {
-                // Анимация атаки
+                // Анимация атаки на поле
                 const attacker = this.units.get(unitId);
                 const target = this.units.get(targetId);
 
                 if (attacker && target) {
                     await this.animateAttack(attacker, target);
+                }
+
+                // Показываем оверлей схватки с результатом
+                if (attackerData && targetData && result.message) {
+                    await this.showBattleOverlay(attackerData, targetData, result.message, 5000);
                 }
 
                 // Атака логируется на сервере, лог подгрузится через syncLogs
@@ -1034,6 +1052,81 @@ class PlayScene extends Phaser.Scene {
                     });
                 }
             });
+        });
+    }
+
+    /**
+     * Показать оверлей схватки с анимацией
+     * @param {Object} attackerData - данные атакующего юнита
+     * @param {Object} targetData - данные цели
+     * @param {string} resultMessage - результат атаки
+     * @param {number} duration - длительность показа в мс (по умолчанию 5000)
+     */
+    showBattleOverlay(attackerData, targetData, resultMessage, duration = 5000) {
+        return new Promise(resolve => {
+            // Создаём оверлей
+            const overlay = document.createElement('div');
+            overlay.className = 'battle-overlay';
+            overlay.innerHTML = `
+                <div class="battle-combatants">
+                    <div class="battle-unit attacker">
+                        <img class="battle-unit-image"
+                             src="${this.normalizeImagePath(attackerData.unit_type?.image_path)}"
+                             onerror="this.src='/static/images/units/default.png'"
+                             alt="${attackerData.unit_type?.name || 'Атакующий'}">
+                        <div class="battle-unit-name">
+                            ${attackerData.unit_type?.icon || '⚔️'} ${attackerData.unit_type?.name || 'Атакующий'}
+                        </div>
+                    </div>
+                    <div class="battle-lightning">⚡</div>
+                    <div class="battle-unit target">
+                        <img class="battle-unit-image"
+                             src="${this.normalizeImagePath(targetData.unit_type?.image_path)}"
+                             onerror="this.src='/static/images/units/default.png'"
+                             alt="${targetData.unit_type?.name || 'Цель'}">
+                        <div class="battle-unit-name">
+                            ${targetData.unit_type?.icon || '🎯'} ${targetData.unit_type?.name || 'Цель'}
+                        </div>
+                    </div>
+                </div>
+                <div class="battle-result">
+                    <div class="battle-result-title">⚔️ Результат схватки</div>
+                    <div class="battle-result-text">${resultMessage}</div>
+                </div>
+                <div class="battle-timer">Закроется через <span id="battle-countdown">${Math.ceil(duration / 1000)}</span> сек...</div>
+            `;
+
+            document.body.appendChild(overlay);
+
+            // Таймер обратного отсчёта
+            let remaining = Math.ceil(duration / 1000);
+            const countdownEl = document.getElementById('battle-countdown');
+            const countdownInterval = setInterval(() => {
+                remaining--;
+                if (countdownEl) countdownEl.textContent = remaining;
+            }, 1000);
+
+            // Закрытие по клику
+            overlay.addEventListener('click', () => {
+                clearInterval(countdownInterval);
+                clearTimeout(autoCloseTimeout);
+                closeBattleOverlay();
+            });
+
+            // Функция закрытия
+            const closeBattleOverlay = () => {
+                overlay.classList.add('fade-out');
+                setTimeout(() => {
+                    overlay.remove();
+                    resolve();
+                }, 500);
+            };
+
+            // Автоматическое закрытие
+            const autoCloseTimeout = setTimeout(() => {
+                clearInterval(countdownInterval);
+                closeBattleOverlay();
+            }, duration);
         });
     }
 

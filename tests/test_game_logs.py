@@ -72,12 +72,13 @@ class TestGameLogs:
 
             # Проверяем, что лог создан
             assert log.id is not None
-            # Сохраняем game_id до commit
+            # Сохраняем значения до выхода из сессии
+            log_id_value = log.id
             game_id_value = game.id
 
         # Проверяем в новой сессии
         with self.db.get_session() as session:
-            log = session.query(GameLog).filter_by(id=log.id).first()
+            log = session.query(GameLog).filter_by(id=log_id_value).first()
             assert log.game_id == game_id_value
 
     def test_create_game_log(self):

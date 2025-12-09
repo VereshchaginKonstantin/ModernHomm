@@ -670,8 +670,8 @@ def play():
 
         if active_game:
             # Есть активная игра - редиректим на неё
-            # Определяем player_id для URL (берём player1)
-            return redirect(url_for('arena.play_game', game_id=active_game.id, player_id=active_game.player1_id))
+            # player_id будет определён автоматически на основе текущего пользователя
+            return redirect(url_for('arena.play_game', game_id=active_game.id))
 
         # Нет активной игры - проверяем ожидающие
         waiting_game = session_db.query(Game).filter(
@@ -714,6 +714,9 @@ def play_game(game_id, player_id=None):
     if player_id is None:
         player_id = request.args.get('player_id', type=int)
 
+    # Получаем текущего пользователя
+    current_username = session.get('username')
+
     with db.get_session() as session_db:
         game = session_db.query(Game).filter_by(id=game_id).first()
         if not game:
@@ -732,9 +735,20 @@ def play_game(game_id, player_id=None):
         player1_name = (player1.username or player1.name) if player1 else 'Игрок 1'
         player2_name = (player2.username or player2.name) if player2 else 'Игрок 2'
 
-        # Если player_id не указан, берём player1
+        # Определяем player_id на основе текущего пользователя
         if not player_id:
-            player_id = game.player1_id
+            # Ищем текущего пользователя среди игроков
+            current_game_user = session_db.query(GameUser).filter_by(username=current_username).first()
+            if current_game_user:
+                if current_game_user.id == game.player1_id:
+                    player_id = game.player1_id
+                elif current_game_user.id == game.player2_id:
+                    player_id = game.player2_id
+                else:
+                    # Пользователь не участник игры - берём player1
+                    player_id = game.player1_id
+            else:
+                player_id = game.player1_id
 
     return render_template_string(
         PLAY_GAME_TEMPLATE,
@@ -1033,13 +1047,40 @@ def api_make_move(game_id):
     target_y = data.get('target_y')
     target_unit_id = data.get('target_unit_id')
 
+    # Получаем текущего пользователя
+    current_username = session.get('username')
+    if not current_username:
+        return jsonify({'success': False, 'message': 'Not authenticated'}), 401
+
     with db.get_session() as session_db:
         engine = GameEngine(session_db)
+
+        # Получаем game_user текущего пользователя
+        current_game_user = session_db.query(GameUser).filter_by(username=current_username).first()
+        if not current_game_user:
+            return jsonify({'success': False, 'message': 'User not found in game database'}), 404
+
+        # Получаем игру и проверяем, чей сейчас ход
+        game = session_db.query(Game).filter_by(id=game_id).first()
+        if not game:
+            return jsonify({'success': False, 'message': 'Game not found'}), 404
+
+        # Проверяем, что текущий пользователь участвует в игре
+        if current_game_user.id not in [game.player1_id, game.player2_id]:
+            return jsonify({'success': False, 'message': 'You are not a player in this game'}), 403
+
+        # Проверяем, что сейчас ход текущего пользователя
+        if game.current_player_id != current_game_user.id:
+            return jsonify({'success': False, 'message': 'Not your turn'}), 403
 
         # Получаем юнит и проверяем владельца
         battle_unit = session_db.query(BattleUnit).filter_by(id=unit_id, game_id=game_id).first()
         if not battle_unit:
             return jsonify({'success': False, 'message': 'Unit not found'}), 404
+
+        # Проверяем, что юнит принадлежит текущему игроку
+        if battle_unit.player_id != current_game_user.id:
+            return jsonify({'success': False, 'message': 'This unit does not belong to you'}), 403
 
         player_id = battle_unit.player_id
 
