@@ -977,7 +977,7 @@ def api_unit_actions(game_id, unit_id):
                         if engine._has_line_of_sight(
                             battle_unit.position_x, battle_unit.position_y,
                             enemy.position_x, enemy.position_y,
-                            game_id
+                            game
                         ):
                             attack_targets.append({
                                 'id': enemy.id,

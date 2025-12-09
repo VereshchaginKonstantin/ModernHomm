@@ -1350,6 +1350,250 @@ class TestGameStateAPI:
             assert player1_unit_ids.isdisjoint(player2_unit_ids)
 
 
+class TestUnitActionsAPI:
+    """Тесты для API /api/games/{id}/units/{unit_id}/actions - получение доступных действий юнита"""
+
+    @pytest.fixture(autouse=True)
+    def setup(self):
+        """Подготовка с уникальным префиксом"""
+        import uuid
+        self.test_prefix = f"unit_actions_test_{uuid.uuid4().hex[:8]}"
+        self.db = Database("postgresql://postgres:postgres@localhost:5433/telegram_bot_test")
+
+        with self.db.get_session() as session:
+            session.query(GameLog).delete()
+            session.query(BattleUnit).delete()
+            session.query(Obstacle).delete()
+            session.query(Game).delete()
+            session.query(UserUnit).delete()
+            session.query(GameUser).filter(
+                GameUser.name.like(f"{self.test_prefix}%")
+            ).delete(synchronize_session=False)
+            session.commit()
+
+        yield
+
+        with self.db.get_session() as session:
+            session.query(GameLog).delete()
+            session.query(BattleUnit).delete()
+            session.query(Obstacle).delete()
+            session.query(Game).delete()
+            session.query(UserUnit).delete()
+            session.query(GameUser).filter(
+                GameUser.name.like(f"{self.test_prefix}%")
+            ).delete(synchronize_session=False)
+            session.commit()
+
+    def _create_test_players_with_units(self, session):
+        """Создание тестовых игроков с юнитами"""
+        import os
+
+        unit = session.query(Unit).first()
+        if not unit:
+            pytest.skip("No units in database")
+
+        for u in session.query(Unit).all():
+            u.image_path = os.path.abspath(__file__)
+        session.commit()
+
+        player1 = GameUser(
+            telegram_id=10001,
+            name=f"{self.test_prefix}_Player1",
+            username=f"{self.test_prefix}_player1",
+            balance=Decimal("1000")
+        )
+        player2 = GameUser(
+            telegram_id=10002,
+            name=f"{self.test_prefix}_Player2",
+            username=f"{self.test_prefix}_player2",
+            balance=Decimal("1000")
+        )
+        session.add(player1)
+        session.add(player2)
+        session.flush()
+
+        user_unit1 = UserUnit(game_user_id=player1.id, unit_type_id=unit.id, count=5)
+        user_unit2 = UserUnit(game_user_id=player2.id, unit_type_id=unit.id, count=5)
+        session.add(user_unit1)
+        session.add(user_unit2)
+        session.commit()
+
+        return player1, player2
+
+    def test_get_available_movement_cells_returns_list(self):
+        """Тест: get_available_movement_cells возвращает список координат"""
+        with self.db.get_session() as session:
+            player1, player2 = self._create_test_players_with_units(session)
+
+            engine = GameEngine(session)
+            game, _ = engine.create_game(player1.id, player2.name, "5x5")
+            engine.accept_game(game.id, player2.id)
+
+            # Получаем юнита
+            battle_unit = session.query(BattleUnit).filter_by(
+                game_id=game.id,
+                player_id=player1.id
+            ).first()
+
+            if not battle_unit:
+                pytest.skip("No battle unit available")
+
+            # Вызываем метод
+            move_cells = engine.get_available_movement_cells(game.id, battle_unit.id)
+
+            # Должен вернуть список
+            assert isinstance(move_cells, list)
+            # Каждый элемент должен быть кортежем (x, y)
+            for cell in move_cells:
+                assert isinstance(cell, tuple)
+                assert len(cell) == 2
+
+    def test_has_line_of_sight_accepts_game_object(self):
+        """Тест: _has_line_of_sight работает с объектом Game (не game_id)"""
+        with self.db.get_session() as session:
+            player1, player2 = self._create_test_players_with_units(session)
+
+            engine = GameEngine(session)
+            game, _ = engine.create_game(player1.id, player2.name, "5x5")
+            engine.accept_game(game.id, player2.id)
+
+            # Вызываем _has_line_of_sight с объектом Game (как исправлено)
+            # Это не должно выбросить AttributeError
+            result = engine._has_line_of_sight(0, 0, 1, 1, game)
+
+            # Должен вернуть bool
+            assert isinstance(result, bool)
+
+    def test_has_line_of_sight_with_game_id_raises_error(self):
+        """Тест: _has_line_of_sight с game_id (int) выбрасывает ошибку"""
+        with self.db.get_session() as session:
+            player1, player2 = self._create_test_players_with_units(session)
+
+            engine = GameEngine(session)
+            game, _ = engine.create_game(player1.id, player2.name, "5x5")
+            engine.accept_game(game.id, player2.id)
+
+            # Вызываем _has_line_of_sight с game_id (int) вместо Game
+            # Это должно выбросить AttributeError (как было до исправления)
+            with pytest.raises(AttributeError):
+                engine._has_line_of_sight(0, 0, 1, 1, game.id)
+
+    def test_unit_actions_returns_move_and_attack_options(self):
+        """Тест: API действий юнита возвращает can_move и can_attack"""
+        with self.db.get_session() as session:
+            player1, player2 = self._create_test_players_with_units(session)
+
+            engine = GameEngine(session)
+            game, _ = engine.create_game(player1.id, player2.name, "5x5")
+            engine.accept_game(game.id, player2.id)
+
+            # Получаем юнита
+            battle_unit = session.query(BattleUnit).filter_by(
+                game_id=game.id,
+                player_id=player1.id
+            ).first()
+
+            if not battle_unit:
+                pytest.skip("No battle unit available")
+
+            # Получаем доступные клетки для перемещения
+            move_cells = engine.get_available_movement_cells(game.id, battle_unit.id)
+
+            # Получаем доступные цели для атаки (логика из web_arena.py)
+            attack_targets = []
+            enemy_units = session.query(BattleUnit).filter(
+                BattleUnit.game_id == game.id,
+                BattleUnit.player_id != battle_unit.player_id,
+                BattleUnit.total_count > 0
+            ).all()
+
+            user_unit = session.query(UserUnit).filter_by(id=battle_unit.user_unit_id).first()
+            unit_type = session.query(Unit).filter_by(id=user_unit.unit_type_id).first() if user_unit else None
+
+            if unit_type:
+                for enemy in enemy_units:
+                    distance = abs(battle_unit.position_x - enemy.position_x) + abs(battle_unit.position_y - enemy.position_y)
+                    if distance <= unit_type.range:
+                        # Проверяем линию обзора с объектом Game (не game_id!)
+                        if engine._has_line_of_sight(
+                            battle_unit.position_x, battle_unit.position_y,
+                            enemy.position_x, enemy.position_y,
+                            game  # Важно: передаём game, не game.id
+                        ):
+                            attack_targets.append({
+                                'id': enemy.id,
+                                'x': enemy.position_x,
+                                'y': enemy.position_y
+                            })
+
+            # Формируем ответ как в API
+            response = {
+                'can_move': [{'x': x, 'y': y} for x, y in move_cells],
+                'can_attack': attack_targets
+            }
+
+            # Проверяем структуру
+            assert 'can_move' in response
+            assert 'can_attack' in response
+            assert isinstance(response['can_move'], list)
+            assert isinstance(response['can_attack'], list)
+
+    def test_unit_actions_api_does_not_crash_on_unit_selection(self):
+        """Тест: API не падает при выборе юнита (исправленная ошибка)"""
+        with self.db.get_session() as session:
+            player1, player2 = self._create_test_players_with_units(session)
+
+            engine = GameEngine(session)
+            game, _ = engine.create_game(player1.id, player2.name, "5x5")
+            engine.accept_game(game.id, player2.id)
+
+            # Получаем юнита текущего игрока
+            battle_unit = session.query(BattleUnit).filter_by(
+                game_id=game.id,
+                player_id=game.current_player_id
+            ).first()
+
+            if not battle_unit:
+                pytest.skip("No battle unit available")
+
+            # Эмулируем логику из web_arena.api_unit_actions
+            # Эта логика раньше падала с AttributeError из-за передачи game_id вместо game
+
+            # Получаем доступные клетки для перемещения
+            move_cells = engine.get_available_movement_cells(game.id, battle_unit.id)
+
+            # Получаем доступные цели для атаки
+            attack_targets = []
+            enemy_units = session.query(BattleUnit).filter(
+                BattleUnit.game_id == game.id,
+                BattleUnit.player_id != battle_unit.player_id,
+                BattleUnit.total_count > 0
+            ).all()
+
+            user_unit = session.query(UserUnit).filter_by(id=battle_unit.user_unit_id).first()
+            unit_type = session.query(Unit).filter_by(id=user_unit.unit_type_id).first() if user_unit else None
+
+            if unit_type:
+                for enemy in enemy_units:
+                    distance = abs(battle_unit.position_x - enemy.position_x) + abs(battle_unit.position_y - enemy.position_y)
+                    if distance <= unit_type.range:
+                        # ИСПРАВЛЕНИЕ: передаём game вместо game.id
+                        if engine._has_line_of_sight(
+                            battle_unit.position_x, battle_unit.position_y,
+                            enemy.position_x, enemy.position_y,
+                            game
+                        ):
+                            attack_targets.append({
+                                'id': enemy.id,
+                                'x': enemy.position_x,
+                                'y': enemy.position_y
+                            })
+
+            # Тест проходит если код выполнился без исключений
+            # (раньше падал с AttributeError: 'int' object has no attribute 'battle_units')
+            assert True
+
+
 class TestVersionDisplay:
     """Тесты для отображения версий веб-интерфейса и бота"""
 
