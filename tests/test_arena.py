@@ -213,8 +213,8 @@ class TestArenaAPI:
                     new_distance = abs(cell_x - enemy.position_x) + abs(cell_y - enemy.position_y)
                     if new_distance <= unit_type.range:
                         engine.move_unit(game.id, current_player_id, attacker.id, cell_x, cell_y)
-                        # Сбрасываем has_moved для теста
-                        attacker.has_moved = False
+                        # Сбрасываем has_moved для теста (0 = не ходил)
+                        attacker.has_moved = 0
                         session.commit()
                         break
 

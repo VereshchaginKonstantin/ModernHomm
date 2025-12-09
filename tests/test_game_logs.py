@@ -389,19 +389,33 @@ class TestTurnSwitchLogging:
     @pytest.fixture(autouse=True)
     def setup(self):
         """Подготовка тестовой базы данных"""
+        import os
         self.db = Database("postgresql://postgres:postgres@localhost:5433/telegram_bot_test")
+
+        # Создаём тестовый файл изображения
+        self.test_image_path = "/tmp/test_unit_image_logs.png"
+        png_data = b'\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\x02\x00\x00\x00\x90wS\xde\x00\x00\x00\x0cIDATx\x9cc\x00\x01\x00\x00\x05\x00\x01\r\n-\xb4\x00\x00\x00\x00IEND\xaeB`\x82'
+        with open(self.test_image_path, 'wb') as f:
+            f.write(png_data)
 
         # Очистка данных перед тестом
         with self.db.get_session() as session:
             from db.models import BattleUnit
+            from sqlalchemy import text
             session.query(BattleUnit).delete()
             session.query(GameLog).delete()
             session.query(Game).delete()
             session.query(UserUnit).delete()
             session.query(GameUser).delete()
+            # Обновляем пути к изображениям для всех юнитов
+            session.execute(text(f"UPDATE units SET image_path = '{self.test_image_path}'"))
             session.commit()
 
         yield
+
+        # Удаляем тестовый файл изображения
+        if os.path.exists(self.test_image_path):
+            os.unlink(self.test_image_path)
 
         # Очистка после теста
         with self.db.get_session() as session:

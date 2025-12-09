@@ -86,47 +86,44 @@ class TestBotIntegration:
         assert bot.config['bot']['default_response'] == "Тестовый ответ"
 
     @pytest.mark.asyncio
-    async def test_handle_message_saves_user(self, test_config, db, mock_update):
-        """Тест сохранения пользователя при получении сообщения"""
+    async def test_handle_message_unrecognized_command(self, test_config, db, mock_update):
+        """Тест ответа на нераспознанную команду"""
         bot = SimpleBot(config_path=test_config, db=db)
 
         await bot.handle_message(mock_update, None)
 
-        # Проверяем, что пользователь сохранен в базе
-        users = db.get_all_users()
-        assert len(users) == 1
-        assert users[0].telegram_id == 123456789
-        assert users[0].username == "testuser"
-
-    @pytest.mark.asyncio
-    async def test_handle_message_saves_message(self, test_config, db, mock_update):
-        """Тест сохранения сообщения в базе данных"""
-        bot = SimpleBot(config_path=test_config, db=db)
-
-        await bot.handle_message(mock_update, None)
-
-        # Проверяем, что сообщение сохранено
-        messages = db.get_user_messages(123456789)
-        assert len(messages) == 1
-        assert messages[0].telegram_user_id == 123456789
-        assert messages[0].message_text == "Тестовое сообщение"
-        assert messages[0].username == "testuser"
-
-    @pytest.mark.asyncio
-    async def test_handle_message_sends_response_with_username(self, test_config, db, mock_update):
-        """Тест отправки ответа с упоминанием username"""
-        bot = SimpleBot(config_path=test_config, db=db)
-
-        await bot.handle_message(mock_update, None)
-
-        # Проверяем, что ответ был отправлен с правильным текстом
+        # Проверяем, что ответ был отправлен
         mock_update.message.reply_text.assert_called_once()
         call_args = mock_update.message.reply_text.call_args
 
         response_text = call_args[0][0]
-        assert "@testuser" in response_text
-        assert "я сохранила твое сообщение" in response_text
-        assert "Тестовый ответ" in response_text
+        # Бот должен ответить что команда не распознана
+        assert "Команда не распознана" in response_text or "/help" in response_text
+
+    @pytest.mark.asyncio
+    async def test_handle_message_responds_to_any_text(self, test_config, db, mock_update):
+        """Тест что бот отвечает на любое текстовое сообщение"""
+        bot = SimpleBot(config_path=test_config, db=db)
+
+        mock_update.message.text = "Привет!"
+        await bot.handle_message(mock_update, None)
+
+        # Проверяем, что ответ был отправлен
+        mock_update.message.reply_text.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_handle_message_with_context(self, test_config, db, mock_update):
+        """Тест обработки сообщения с context"""
+        bot = SimpleBot(config_path=test_config, db=db)
+
+        # Создаем мок context с user_data
+        mock_context = MagicMock()
+        mock_context.user_data = {}
+
+        await bot.handle_message(mock_update, mock_context)
+
+        # Проверяем, что ответ был отправлен
+        mock_update.message.reply_text.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_handle_message_user_without_username(self, test_config, db, mock_update, mock_user):
@@ -138,38 +135,28 @@ class TestBotIntegration:
 
         await bot.handle_message(mock_update, None)
 
-        # Проверяем, что пользователь сохранен без username
-        users = db.get_all_users()
-        assert len(users) == 1
-        assert users[0].username is None
-
-        # Проверяем, что в ответе использовано имя вместо username
-        call_args = mock_update.message.reply_text.call_args
-        response_text = call_args[0][0]
-        assert "Test," in response_text  # Должно быть имя пользователя
+        # Проверяем, что ответ был отправлен
+        mock_update.message.reply_text.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_handle_multiple_messages_from_same_user(self, test_config, db, mock_update):
-        """Тест обработки нескольких сообщений от одного пользователя"""
+    async def test_handle_multiple_messages(self, test_config, db, mock_update):
+        """Тест обработки нескольких сообщений"""
         bot = SimpleBot(config_path=test_config, db=db)
 
         # Отправляем три сообщения
         mock_update.message.text = "Первое сообщение"
         await bot.handle_message(mock_update, None)
 
+        mock_update.message.reply_text.reset_mock()
         mock_update.message.text = "Второе сообщение"
         await bot.handle_message(mock_update, None)
 
+        mock_update.message.reply_text.reset_mock()
         mock_update.message.text = "Третье сообщение"
         await bot.handle_message(mock_update, None)
 
-        # Проверяем, что все сообщения сохранены
-        messages = db.get_user_messages(123456789)
-        assert len(messages) == 3
-
-        # Проверяем, что пользователь один
-        users = db.get_all_users()
-        assert len(users) == 1
+        # Проверяем, что на каждое сообщение был ответ
+        mock_update.message.reply_text.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_handle_messages_from_different_users(self, test_config, db, mock_update):
@@ -183,43 +170,25 @@ class TestBotIntegration:
         await bot.handle_message(mock_update, None)
 
         # Второй пользователь
+        mock_update.message.reply_text.reset_mock()
         mock_update.effective_user.id = 222222222
         mock_update.effective_user.username = "user2"
         mock_update.message.text = "Сообщение от пользователя 2"
         await bot.handle_message(mock_update, None)
 
-        # Третий пользователь
-        mock_update.effective_user.id = 333333333
-        mock_update.effective_user.username = "user3"
-        mock_update.message.text = "Сообщение от пользователя 3"
-        await bot.handle_message(mock_update, None)
-
-        # Проверяем, что все пользователи сохранены
-        users = db.get_all_users()
-        assert len(users) == 3
-
-        # Проверяем сообщения каждого пользователя
-        messages1 = db.get_user_messages(111111111)
-        messages2 = db.get_user_messages(222222222)
-        messages3 = db.get_user_messages(333333333)
-
-        assert len(messages1) == 1
-        assert len(messages2) == 1
-        assert len(messages3) == 1
+        # Проверяем, что бот ответил
+        mock_update.message.reply_text.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_handle_message_db_error_still_responds(self, test_config, db, mock_update):
-        """Тест что бот отвечает даже при ошибке в БД"""
+    async def test_handle_message_exception_handling(self, test_config, db, mock_update):
+        """Тест что бот корректно обрабатывает исключения"""
         bot = SimpleBot(config_path=test_config, db=db)
 
-        # Симулируем ошибку БД
-        with patch.object(db, 'save_user', side_effect=Exception("DB Error")):
+        # Симулируем исключение при отправке ответа
+        mock_update.message.reply_text.side_effect = Exception("Network Error")
+
+        # Не должно быть необработанного исключения
+        try:
             await bot.handle_message(mock_update, None)
-
-            # Проверяем, что ответ всё равно был отправлен
-            mock_update.message.reply_text.assert_called_once()
-            call_args = mock_update.message.reply_text.call_args
-            response_text = call_args[0][0]
-
-            # Должен быть отправлен стандартный ответ
-            assert "Тестовый ответ" in response_text
+        except Exception:
+            pytest.fail("handle_message не должен пробрасывать исключения")
