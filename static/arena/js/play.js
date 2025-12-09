@@ -575,6 +575,12 @@ class PlayScene extends Phaser.Scene {
      * Выбор юнита на поле
      */
     async handleUnitSelect(boardX, boardY) {
+        // Проверяем, что сейчас ход текущего игрока (того, кто смотрит страницу)
+        if (currentPlayerId !== this.gameState.current_player_id) {
+            this.showHint('⏳ Ожидайте своего хода');
+            return;
+        }
+
         // Находим юнит на этой клетке
         let foundUnit = null;
         this.units.forEach((container, id) => {
@@ -586,7 +592,7 @@ class PlayScene extends Phaser.Scene {
 
         // Если нашли юнит текущего игрока, который еще не ходил
         if (foundUnit &&
-            foundUnit.data.player_id === this.gameState.current_player_id &&
+            foundUnit.data.player_id === currentPlayerId &&
             !foundUnit.data.has_moved) {
 
             await this.selectUnit(foundUnit.id);
@@ -1180,6 +1186,44 @@ class PlayScene extends Phaser.Scene {
     }
 
     /**
+     * Отложить ход юнита (переместить в конец очереди)
+     */
+    async deferUnit() {
+        if (!selectedUnitId) {
+            this.showHint('⚠️ Сначала выберите юнита!');
+            return;
+        }
+
+        try {
+            const response = await fetch(`${apiBase}/games/${currentGameId}/move`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    unit_id: selectedUnitId,
+                    action: 'defer'
+                })
+            });
+
+            const result = await response.json();
+
+            if (result.success) {
+                this.showHint('⏩ Юнит отложен в конец очереди');
+
+                // Обновляем состояние с сервера
+                await this.refreshGameState();
+            } else {
+                this.showHint('❌ ' + result.message);
+            }
+
+        } catch (error) {
+            console.error('Error deferring unit:', error);
+            this.showHint('❌ Ошибка откладывания хода');
+        }
+
+        this.resetAction();
+    }
+
+    /**
      * Сброс текущего действия
      */
     resetAction() {
@@ -1466,33 +1510,19 @@ class PlayScene extends Phaser.Scene {
             document.getElementById('p1-name').textContent :
             document.getElementById('p2-name').textContent;
 
-        // Затемнение
-        const overlay = this.add.rectangle(
-            this.cameras.main.centerX,
-            this.cameras.main.centerY,
-            this.cameras.main.width,
-            this.cameras.main.height,
-            0x000000,
-            0.7
-        );
-        overlay.setDepth(200);
-
-        // Текст победы
-        const victoryText = this.add.text(
-            this.cameras.main.centerX,
-            this.cameras.main.centerY - 30,
-            '🏆 ПОБЕДА!',
-            { fontSize: '48px', color: '#f1c40f', fontStyle: 'bold' }
-        ).setOrigin(0.5);
-        victoryText.setDepth(201);
-
-        const winnerText = this.add.text(
-            this.cameras.main.centerX,
-            this.cameras.main.centerY + 30,
-            winnerName,
-            { fontSize: '32px', color: '#ffffff' }
-        ).setOrigin(0.5);
-        winnerText.setDepth(201);
+        // Создаём DOM оверлей с кнопкой закрытия
+        const gameOverOverlay = document.createElement('div');
+        gameOverOverlay.className = 'game-over-overlay';
+        gameOverOverlay.innerHTML = `
+            <div class="game-over-content">
+                <div class="game-over-title">🏆 ПОБЕДА!</div>
+                <div class="game-over-winner">${winnerName}</div>
+                <button class="game-over-close-btn" onclick="window.location.href='/arena/'">
+                    ✖ Закрыть
+                </button>
+            </div>
+        `;
+        document.body.appendChild(gameOverOverlay);
 
         // Лог завершения игры уже записан на сервере, только показываем подсказку
         this.showHint(`🏆 Игра завершена! Победитель: ${winnerName}`);
@@ -1505,6 +1535,7 @@ class PlayScene extends Phaser.Scene {
         const btnMove = document.getElementById('btn-move');
         const btnAttack = document.getElementById('btn-attack');
         const btnSkip = document.getElementById('btn-skip');
+        const btnDefer = document.getElementById('btn-defer');
         const btnCancel = document.getElementById('btn-cancel');
 
         if (btnMove) {
@@ -1517,6 +1548,10 @@ class PlayScene extends Phaser.Scene {
 
         if (btnSkip) {
             btnSkip.addEventListener('click', () => this.skipUnitTurn());
+        }
+
+        if (btnDefer) {
+            btnDefer.addEventListener('click', () => this.deferUnit());
         }
 
         if (btnCancel) {

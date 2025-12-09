@@ -584,6 +584,64 @@ class GameEngine:
 
         return True, "Ход пропущен", turn_switched
 
+    def defer_unit(self, game_id: int, player_id: int, unit_id: int) -> Tuple[bool, str]:
+        """
+        Отложить ход юнита - юнит перемещается в конец очереди
+
+        Args:
+            game_id: ID игры
+            player_id: ID игрока
+            unit_id: ID юнита
+
+        Returns:
+            Tuple[bool, str]: Успех, сообщение
+        """
+        game = self.db.query(Game).filter_by(id=game_id).first()
+        if not game:
+            return False, "Игра не найдена"
+
+        if game.status != GameStatus.IN_PROGRESS:
+            return False, "Игра не в процессе"
+
+        if game.current_player_id != player_id:
+            return False, "Сейчас не ваш ход"
+
+        unit = self.db.query(BattleUnit).filter_by(id=unit_id, game_id=game_id).first()
+        if not unit:
+            return False, "Юнит не найден"
+
+        if unit.player_id != player_id:
+            return False, "Это не ваш юнит"
+
+        if unit.has_moved:
+            return False, "Этот юнит уже совершил ход"
+
+        # Проверяем, есть ли другие юниты, которые могут ходить
+        other_unmoved = self.db.query(BattleUnit).filter(
+            BattleUnit.game_id == game_id,
+            BattleUnit.player_id == player_id,
+            BattleUnit.has_moved == 0,
+            BattleUnit.id != unit_id
+        ).count()
+
+        if other_unmoved == 0:
+            return False, "Нет других юнитов для хода"
+
+        # Увеличиваем приоритет (чем больше, тем позже в очереди)
+        # Находим максимальный deferred среди непоходивших юнитов этого игрока
+        max_deferred = self.db.query(BattleUnit).filter(
+            BattleUnit.game_id == game_id,
+            BattleUnit.player_id == player_id,
+            BattleUnit.has_moved == 0
+        ).with_entities(BattleUnit.deferred).order_by(BattleUnit.deferred.desc()).first()
+
+        unit.deferred = (max_deferred[0] if max_deferred else 0) + 1
+
+        game.last_move_at = datetime.utcnow()
+        self.db.commit()
+
+        return True, "Юнит отложен в конец очереди"
+
     def render_field(self, game_id: int) -> str:
         """
         Отрисовка игрового поля
@@ -666,12 +724,12 @@ class GameEngine:
         if game.current_player_id != player_id:
             return {"action": "wait", "message": "Ожидайте своего хода"}
 
-        # Получить юниты игрока, которые еще не походили
+        # Получить юниты игрока, которые еще не походили (сортировка по deferred)
         available_units = self.db.query(BattleUnit).filter(
             BattleUnit.game_id == game_id,
             BattleUnit.player_id == player_id,
             BattleUnit.has_moved == 0
-        ).all()
+        ).order_by(BattleUnit.deferred.asc()).all()
 
         actions = []
         for unit in available_units:
@@ -1142,7 +1200,7 @@ class GameEngine:
         else:
             game.current_player_id = game.player1_id
 
-        # Сбросить флаги has_moved для всех юнитов нового игрока
+        # Сбросить флаги has_moved и deferred для всех юнитов нового игрока
         units = self.db.query(BattleUnit).filter(
             BattleUnit.game_id == game.id,
             BattleUnit.player_id == game.current_player_id
@@ -1150,6 +1208,7 @@ class GameEngine:
 
         for unit in units:
             unit.has_moved = 0
+            unit.deferred = 0
 
         # Добавить запись в лог о смене хода
         current_player = self.db.query(GameUser).filter_by(id=game.current_player_id).first()

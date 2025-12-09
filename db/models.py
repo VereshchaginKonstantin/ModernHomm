@@ -223,6 +223,9 @@ class BattleUnit(Base):
     # Флаг, был ли уже ход у этого юнита в текущем раунде
     has_moved = Column(Integer, nullable=False, default=0)  # 0 - нет, 1 - да
 
+    # Приоритет в очереди хода (чем больше, тем позже ходит)
+    deferred = Column(Integer, nullable=False, default=0)
+
     # Связи
     game = relationship("Game", back_populates="battle_units")
     user_unit = relationship("UserUnit")

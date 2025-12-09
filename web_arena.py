@@ -434,11 +434,13 @@ PLAY_TEMPLATE = """
                 <div class="action-panel" id="action-panel" style="display: none;">
                     <h3>Выберите действие</h3>
                     <div id="selected-unit-info"></div>
-                    <div class="action-buttons">
-                        <button id="btn-move" class="btn btn-primary">🚶 Двигаться</button>
-                        <button id="btn-attack" class="btn btn-danger">⚔️ Атаковать</button>
-                        <button id="btn-skip" class="btn btn-secondary">⏭️ Пропустить</button>
-                        <button id="btn-cancel" class="btn">❌ Отмена</button>
+                    <div class="action-buttons-main">
+                        <button id="btn-move" class="btn btn-primary btn-action">🚶 Двигаться</button>
+                        <button id="btn-attack" class="btn btn-danger btn-action">⚔️ Атаковать</button>
+                        <button id="btn-skip" class="btn btn-secondary btn-action">⏭️ Пропустить</button>
+                    </div>
+                    <div class="action-buttons-escape">
+                        <button id="btn-cancel" class="btn btn-escape">🏃 Сбежать с поля боя</button>
                     </div>
                 </div>
 
@@ -534,11 +536,13 @@ PLAY_GAME_TEMPLATE = """
                 <div class="action-panel" id="action-panel" style="display: none;">
                     <h3>Выберите действие</h3>
                     <div id="selected-unit-info"></div>
-                    <div class="action-buttons">
-                        <button id="btn-move" class="btn btn-primary">🚶 Двигаться</button>
-                        <button id="btn-attack" class="btn btn-danger">⚔️ Атаковать</button>
-                        <button id="btn-skip" class="btn btn-secondary">⏭️ Пропустить</button>
-                        <button id="btn-cancel" class="btn">❌ Отмена</button>
+                    <div class="action-buttons-main">
+                        <button id="btn-move" class="btn btn-primary btn-action">🚶 Двигаться</button>
+                        <button id="btn-attack" class="btn btn-danger btn-action">⚔️ Атаковать</button>
+                        <button id="btn-skip" class="btn btn-secondary btn-action">⏭️ Пропустить</button>
+                    </div>
+                    <div class="action-buttons-escape">
+                        <button id="btn-cancel" class="btn btn-escape">🏃 Сбежать с поля боя</button>
                     </div>
                 </div>
 
@@ -928,6 +932,7 @@ def api_game_state(game_id):
                 'morale': bu.morale,
                 'fatigue': bu.fatigue,
                 'has_moved': bu.has_moved,
+                'deferred': bu.deferred,
                 'unit_type': {
                     'id': unit_type.id,
                     'name': unit_type.name,
@@ -1099,6 +1104,12 @@ def api_make_move(game_id):
                 game_id, player_id, unit_id
             )
             action_type = 'skip'
+        elif action == 'defer':
+            success, message = engine.defer_unit(
+                game_id, player_id, unit_id
+            )
+            turn_switched = False  # defer не переключает ход
+            action_type = 'defer'
         else:
             return jsonify({'success': False, 'message': 'Invalid action'}), 400
 
