@@ -81,13 +81,60 @@ class GameEngine:
             event_type: Тип события
             message: Текст события
         """
+        import json
+
+        # Добавляем время в начало сообщения
+        timestamp = datetime.utcnow().strftime("[%H:%M:%S]")
+        timestamped_message = f"{timestamp} {message}"
+
+        # Собираем снимок состояния игры
+        game_state = self._capture_game_state(game_id)
+        game_state_json = json.dumps(game_state, ensure_ascii=False) if game_state else None
+
         log_entry = GameLog(
             game_id=game_id,
             event_type=event_type,
-            message=message
+            message=timestamped_message,
+            game_state=game_state_json
         )
         self.db.add(log_entry)
         self.db.flush()
+
+    def _capture_game_state(self, game_id: int) -> dict:
+        """
+        Захватить текущее состояние игры для сохранения в логе
+
+        Args:
+            game_id: ID игры
+
+        Returns:
+            dict: Снимок состояния игры
+        """
+        game = self.db.query(Game).filter_by(id=game_id).first()
+        if not game:
+            return None
+
+        units = self.db.query(BattleUnit).filter_by(game_id=game_id).all()
+
+        units_state = []
+        for unit in units:
+            unit_info = {
+                'id': unit.id,
+                'player_id': unit.player_id,
+                'position_x': unit.position_x,
+                'position_y': unit.position_y,
+                'total_count': unit.total_count,
+                'has_moved': unit.has_moved,
+                'unit_name': unit.user_unit.unit.name if unit.user_unit and unit.user_unit.unit else 'Unknown',
+                'unit_icon': unit.user_unit.unit.icon if unit.user_unit and unit.user_unit.unit else '?'
+            }
+            units_state.append(unit_info)
+
+        return {
+            'current_player_id': game.current_player_id,
+            'status': game.status.value if game.status else None,
+            'units': units_state
+        }
 
     def create_game(self, player1_id: int, player2_username: str, field_name: str = "7x7") -> Tuple[Optional[Game], str]:
         """
@@ -512,11 +559,17 @@ class GameEngine:
         else:
             attacker.has_moved = 1
 
+        game.last_move_at = datetime.utcnow()
+
+        # Логировать атаку ПЕРЕД завершением игры, чтобы game_ended был последним
+        attacker_player = self.db.query(GameUser).filter_by(id=player_id).first()
+        self._log_event(game.id, "attack", f"⚔️ {attacker_player.name}: {combat_log}")
+
         # Проверить, все ли юниты игрока мертвы
         turn_switched = False
         winner_id = self._check_game_over(game)
         if winner_id:
-            # Завершение игры - _complete_game создаст отдельный лог game_ended
+            # Завершение игры - _complete_game создаст отдельный лог game_ended (будет последним)
             reward, stats = self._complete_game(game, winner_id)
             # Не добавляем результаты игры в combat_log - они будут в отдельном сообщении
         else:
@@ -524,12 +577,6 @@ class GameEngine:
             if self._all_units_moved(game, player_id):
                 self._switch_turn(game)
                 turn_switched = True
-
-        game.last_move_at = datetime.utcnow()
-
-        # Логировать атаку
-        attacker_player = self.db.query(GameUser).filter_by(id=player_id).first()
-        self._log_event(game.id, "attack", f"⚔️ {attacker_player.name}: {combat_log}")
 
         self.db.commit()
 

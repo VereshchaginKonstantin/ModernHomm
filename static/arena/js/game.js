@@ -371,9 +371,16 @@ class ReplayScene extends Phaser.Scene {
         const btn = document.getElementById('btn-play');
         if (btn) btn.textContent = '▶️ Играть';
 
-        // Восстанавливаем ближайшее сохранённое состояние
-        this.restoreState(index);
-        this.currentLogIndex = index;
+        // Если у целевого события есть game_state, используем его напрямую
+        const targetLog = this.gameData.logs[index];
+        if (targetLog && targetLog.game_state) {
+            this.applyGameState(targetLog.game_state);
+        } else {
+            // Иначе восстанавливаем ближайшее сохранённое состояние
+            this.restoreState(index);
+        }
+
+        this.currentLogIndex = index + 1; // +1 чтобы следующий nextEvent обработал следующее событие
         this.updateEventCounter();
         this.highlightCurrentLog();
     }
@@ -388,12 +395,71 @@ class ReplayScene extends Phaser.Scene {
         // Сохраняем состояние перед изменением
         this.saveState();
 
-        // Парсим событие из сообщения
+        // Используем game_state если доступен
+        if (log.game_state) {
+            this.applyGameState(log.game_state);
+        }
+
+        // Анимации для визуальных эффектов
         if (log.event_type === 'attack') {
             await this.processAttackEvent(log);
         } else if (log.event_type === 'move') {
             await this.processMoveEvent(log);
         }
+    }
+
+    /**
+     * Применение состояния игры из game_state
+     */
+    applyGameState(gameStateJson) {
+        let gameState;
+        try {
+            gameState = typeof gameStateJson === 'string' ? JSON.parse(gameStateJson) : gameStateJson;
+        } catch (e) {
+            console.error('Failed to parse game_state:', e);
+            return;
+        }
+
+        if (!gameState || !gameState.units) return;
+
+        // Обновляем все юниты из game_state
+        gameState.units.forEach(stateUnit => {
+            const container = this.units.get(stateUnit.id);
+            if (container) {
+                // Обновляем позицию
+                const newX = this.boardToScreenX(stateUnit.position_x);
+                const newY = this.boardToScreenY(stateUnit.position_y);
+
+                // Анимируем перемещение если позиция изменилась
+                if (container.x !== newX || container.y !== newY) {
+                    this.tweens.add({
+                        targets: container,
+                        x: newX,
+                        y: newY,
+                        duration: 300,
+                        ease: 'Power2'
+                    });
+                }
+
+                // Обновляем количество юнитов
+                const countText = container.getData('countText');
+                if (countText) {
+                    countText.setText(`x${stateUnit.total_count}`);
+                }
+
+                // Обновляем данные
+                const unitData = container.getData('unitData');
+                if (unitData) {
+                    unitData.x = stateUnit.position_x;
+                    unitData.y = stateUnit.position_y;
+                    unitData.count = stateUnit.total_count;
+                    container.setData('unitData', unitData);
+                }
+
+                // Видимость юнита
+                container.setVisible(stateUnit.total_count > 0);
+            }
+        });
     }
 
     /**
@@ -517,8 +583,19 @@ class ReplayScene extends Phaser.Scene {
      * Восстановление состояния
      */
     restoreState(index) {
-        // Находим ближайшее сохранённое состояние
+        // Сначала ищем game_state в логах
         let stateIndex = index;
+        while (stateIndex >= 0) {
+            const log = this.gameData.logs[stateIndex];
+            if (log && log.game_state) {
+                this.applyGameState(log.game_state);
+                return;
+            }
+            stateIndex--;
+        }
+
+        // Если game_state не найден, ищем в eventHistory
+        stateIndex = index;
         while (stateIndex >= 0 && !this.eventHistory[stateIndex]) {
             stateIndex--;
         }

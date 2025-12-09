@@ -956,7 +956,8 @@ def api_game_state(game_id):
         logs_data = [{
             'event_type': log.event_type,
             'message': log.message,
-            'created_at': log.created_at.isoformat()
+            'created_at': log.created_at.isoformat(),
+            'game_state': log.game_state
         } for log in logs]
 
         # Имена игроков
@@ -1167,7 +1168,8 @@ def get_game_full_data(game_id):
             logs_data.append({
                 'event_type': log.event_type,
                 'message': log.message,
-                'created_at': log.created_at
+                'created_at': log.created_at,
+                'game_state': log.game_state
             })
 
         # Юниты на поле (финальное состояние)

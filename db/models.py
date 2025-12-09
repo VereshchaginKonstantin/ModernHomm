@@ -271,6 +271,7 @@ class GameLog(Base):
     game_id = Column(Integer, ForeignKey('games.id', ondelete='CASCADE'), nullable=False, index=True)
     event_type = Column(String(50), nullable=False)  # Тип события: move, attack, damage, dodge, crit, end_turn, game_start, game_end
     message = Column(Text, nullable=False)  # Текст события для отображения
+    game_state = Column(Text, nullable=True)  # JSON снимок состояния игры (юниты, позиции, здоровье)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
     # Связь

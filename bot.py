@@ -1864,6 +1864,8 @@ class SimpleBot:
             reply_markup: Клавиатура
             parse_mode: Режим парсинга (HTML/Markdown)
         """
+        from telegram.error import BadRequest
+
         try:
             # Проверяем, есть ли фото в сообщении
             if query.message.photo:
@@ -1880,6 +1882,13 @@ class SimpleBot:
                     reply_markup=reply_markup,
                     parse_mode=parse_mode
                 )
+        except BadRequest as e:
+            # Игнорируем ошибку "Message is not modified" - это не критическая ошибка
+            if "Message is not modified" in str(e):
+                logger.debug(f"Сообщение не изменено (контент тот же): {e}")
+            else:
+                logger.error(f"BadRequest при редактировании сообщения: {e}")
+                raise
         except Exception as e:
             logger.error(f"Ошибка при редактировании сообщения: {e}")
             raise
@@ -1895,6 +1904,7 @@ class SimpleBot:
             keyboard: Клавиатура (опционально)
         """
         from telegram import InputMediaPhoto
+        from telegram.error import BadRequest
 
         with self.db.get_session() as session:
             renderer = FieldRenderer(session)
@@ -1911,14 +1921,33 @@ class SimpleBot:
                             media=InputMediaPhoto(media=io.BytesIO(image_bytes), caption=caption, parse_mode=self.parse_mode),
                             reply_markup=InlineKeyboardMarkup(keyboard) if keyboard else None
                         )
+                    except BadRequest as e:
+                        if "Message is not modified" in str(e):
+                            logger.debug(f"Сообщение не изменено (контент тот же)")
+                        else:
+                            logger.error(f"Ошибка при редактировании медиа: {e}")
+                            # Fallback: редактируем только caption
+                            try:
+                                await query.edit_message_caption(
+                                    caption=caption,
+                                    parse_mode=self.parse_mode,
+                                    reply_markup=InlineKeyboardMarkup(keyboard) if keyboard else None
+                                )
+                            except BadRequest as e2:
+                                if "Message is not modified" not in str(e2):
+                                    raise
                     except Exception as e:
                         logger.error(f"Ошибка при редактировании медиа: {e}")
                         # Fallback: редактируем только caption
-                        await query.edit_message_caption(
-                            caption=caption,
-                            parse_mode=self.parse_mode,
-                            reply_markup=InlineKeyboardMarkup(keyboard) if keyboard else None
-                        )
+                        try:
+                            await query.edit_message_caption(
+                                caption=caption,
+                                parse_mode=self.parse_mode,
+                                reply_markup=InlineKeyboardMarkup(keyboard) if keyboard else None
+                            )
+                        except BadRequest as e2:
+                            if "Message is not modified" not in str(e2):
+                                raise
                 else:
                     # Было текстовое сообщение, но теперь есть изображение
                     # Удаляем старое сообщение и отправляем новое с фото
@@ -1938,21 +1967,29 @@ class SimpleBot:
                         with self.db.get_session() as session:
                             engine = GameEngine(session)
                             field_display = engine.render_field(game_id)
-                            await query.edit_message_text(
-                                text=f"{caption}\n\n{field_display}",
-                                parse_mode=self.parse_mode,
-                                reply_markup=InlineKeyboardMarkup(keyboard) if keyboard else None
-                            )
+                            try:
+                                await query.edit_message_text(
+                                    text=f"{caption}\n\n{field_display}",
+                                    parse_mode=self.parse_mode,
+                                    reply_markup=InlineKeyboardMarkup(keyboard) if keyboard else None
+                                )
+                            except BadRequest as e2:
+                                if "Message is not modified" not in str(e2):
+                                    raise
             else:
                 # Нет изображения - текстовое отображение
                 with self.db.get_session() as session:
                     engine = GameEngine(session)
                     field_display = engine.render_field(game_id)
-                    await query.edit_message_text(
-                        text=f"{caption}\n\n{field_display}",
-                        parse_mode=self.parse_mode,
-                        reply_markup=InlineKeyboardMarkup(keyboard) if keyboard else None
-                    )
+                    try:
+                        await query.edit_message_text(
+                            text=f"{caption}\n\n{field_display}",
+                            parse_mode=self.parse_mode,
+                            reply_markup=InlineKeyboardMarkup(keyboard) if keyboard else None
+                        )
+                    except BadRequest as e:
+                        if "Message is not modified" not in str(e):
+                            raise
 
 
     async def game_unit_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -3098,94 +3135,105 @@ class SimpleBot:
         logger.info(f"Сообщение от {user.id} (@{user.username}): {user_message}")
 
         try:
+            # Проверка что context доступен
+            has_user_data = context and hasattr(context, 'user_data') and context.user_data is not None
+
             # === ADMIN FUNCTIONS ===
             # Обработка ввода стартовой суммы
-            if context.user_data.get('waiting_for_start_amount') and self.is_admin(user.username):
+            if has_user_data and context.user_data.get('waiting_for_start_amount') and self.is_admin(user.username):
                 await self.handle_start_amount_input(update, context)
                 return
 
             # Обработка ввода пароля
-            if context.user_data.get('waiting_for_password'):
+            if has_user_data and context.user_data.get('waiting_for_password'):
                 await self.handle_password_input(update, context)
                 return
 
             # === GAME FUNCTIONS ===
             # Обработка ввода ячейки при перемещении
-            if 'waiting_for_cell_input' in context.user_data:
+            if has_user_data and 'waiting_for_cell_input' in context.user_data:
                 cell_data = context.user_data['waiting_for_cell_input']
                 game_id = cell_data['game_id']
                 unit_id = cell_data['unit_id']
                 available_cells = cell_data['available_cells']
 
-                # Парсим ввод пользователя (например A1, B3)
-                cell_input = user_message.strip().upper()
-                try:
-                    # Преобразуем шахматную нотацию в координаты
-                    target_x, target_y = chess_to_coords(cell_input)
+                # Проверяем, что игра всё ещё активна
+                game = self.db.get_game_by_id(game_id)
+                if not game or game.status != GameStatus.IN_PROGRESS:
+                    # Игра завершена или не найдена - очищаем контекст
+                    del context.user_data['waiting_for_cell_input']
+                    # Не return - продолжаем обработку как обычное сообщение
+                else:
+                    # Парсим ввод пользователя (например A1, B3)
+                    cell_input = user_message.strip().upper()
+                    try:
+                        # Преобразуем шахматную нотацию в координаты
+                        target_x, target_y = chess_to_coords(cell_input)
 
-                    # Проверяем что эта ячейка доступна
-                    if (target_x, target_y) not in available_cells:
+                        # Проверяем что эта ячейка доступна
+                        if (target_x, target_y) not in available_cells:
+                            await update.message.reply_text(
+                                f"❌ Ячейка {cell_input} недоступна для перемещения!\n"
+                                f"Доступные ячейки: {', '.join([coords_to_chess(x, y) for x, y in available_cells[:10]])}",
+                                parse_mode=self.parse_mode
+                            )
+                            return
+
+                        # Очищаем контекст
+                        del context.user_data['waiting_for_cell_input']
+
+                        # Выполняем перемещение
+                        game_user = self.db.get_game_user(user.id)
+                        with self.db.get_session() as session:
+                            engine = GameEngine(session)
+                            success, message, turn_switched = engine.move_unit(game_id, game_user.id, unit_id, target_x, target_y)
+
+                            if success:
+                                # Получаем информацию о перемещенном юните
+                                battle_unit = session.query(BattleUnit).filter_by(id=unit_id).first()
+                                unit_name = battle_unit.user_unit.unit.name if battle_unit and battle_unit.user_unit else "Юнит"
+
+                                # Вычисляем старую и новую позицию
+                                match = re.search(r'\((\d+),\s*(\d+)\)\s+на\s+\((\d+),\s*(\d+)\)', message)
+                                if match:
+                                    old_x, old_y = int(match.group(1)), int(match.group(2))
+                                    new_x, new_y = int(match.group(3)), int(match.group(4))
+                                    from_cell = coords_to_chess(old_x, old_y)
+                                    to_cell = coords_to_chess(new_x, new_y)
+                                    movement_message = f"📍 {unit_name} переместился с {from_cell} на {to_cell}"
+                                else:
+                                    to_cell = cell_input
+                                    movement_message = f"📍 {unit_name} переместился на {to_cell}"
+
+                                # Отправляем статус без поля
+                                actions = engine.get_available_actions(game_id, game_user.id)
+                                keyboard = self._create_game_keyboard(game_id, game_user.id, actions)
+
+                                await context.bot.send_message(
+                                    chat_id=update.effective_chat.id,
+                                    text=f"✅ {movement_message}",
+                                    parse_mode=self.parse_mode,
+                                    reply_markup=InlineKeyboardMarkup(keyboard) if keyboard else None
+                                )
+                            else:
+                                await update.message.reply_text(
+                                    f"❌ {message}",
+                                    parse_mode=self.parse_mode
+                                )
+                        return
+
+                    except (ValueError, IndexError) as e:
+                        # Неверный формат - но игра активна, показываем ошибку
                         await update.message.reply_text(
-                            f"❌ Ячейка {cell_input} недоступна для перемещения!\n"
+                            f"❌ Неверный формат ячейки!\n"
+                            f"Используйте формат: БукваЦифра (например: A1, B3)\n"
                             f"Доступные ячейки: {', '.join([coords_to_chess(x, y) for x, y in available_cells[:10]])}",
                             parse_mode=self.parse_mode
                         )
                         return
 
-                    # Очищаем контекст
-                    del context.user_data['waiting_for_cell_input']
-
-                    # Выполняем перемещение
-                    game_user = self.db.get_game_user(user.id)
-                    with self.db.get_session() as session:
-                        engine = GameEngine(session)
-                        success, message, turn_switched = engine.move_unit(game_id, game_user.id, unit_id, target_x, target_y)
-
-                        if success:
-                            # Получаем информацию о перемещенном юните
-                            battle_unit = session.query(BattleUnit).filter_by(id=unit_id).first()
-                            unit_name = battle_unit.user_unit.unit.name if battle_unit and battle_unit.user_unit else "Юнит"
-
-                            # Вычисляем старую и новую позицию
-                            match = re.search(r'\((\d+),\s*(\d+)\)\s+на\s+\((\d+),\s*(\d+)\)', message)
-                            if match:
-                                old_x, old_y = int(match.group(1)), int(match.group(2))
-                                new_x, new_y = int(match.group(3)), int(match.group(4))
-                                from_cell = coords_to_chess(old_x, old_y)
-                                to_cell = coords_to_chess(new_x, new_y)
-                                movement_message = f"📍 {unit_name} переместился с {from_cell} на {to_cell}"
-                            else:
-                                to_cell = cell_input
-                                movement_message = f"📍 {unit_name} переместился на {to_cell}"
-
-                            # Отправляем статус без поля
-                            actions = engine.get_available_actions(game_id, game_user.id)
-                            keyboard = self._create_game_keyboard(game_id, game_user.id, actions)
-
-                            await context.bot.send_message(
-                                chat_id=update.effective_chat.id,
-                                text=f"✅ {movement_message}",
-                                parse_mode=self.parse_mode,
-                                reply_markup=InlineKeyboardMarkup(keyboard) if keyboard else None
-                            )
-                        else:
-                            await update.message.reply_text(
-                                f"❌ {message}",
-                                parse_mode=self.parse_mode
-                            )
-                    return
-
-                except (ValueError, IndexError) as e:
-                    await update.message.reply_text(
-                        f"❌ Неверный формат ячейки!\n"
-                        f"Используйте формат: БукваЦифра (например: A1, B3)\n"
-                        f"Доступные ячейки: {', '.join([coords_to_chess(x, y) for x, y in available_cells[:10]])}",
-                        parse_mode=self.parse_mode
-                    )
-                    return
-
             # Обработка изменения эмодзи юнита
-            if 'editing_icon_unit_id' in context.user_data and self.is_admin(user.username):
+            if has_user_data and 'editing_icon_unit_id' in context.user_data and self.is_admin(user.username):
                 unit_id = context.user_data['editing_icon_unit_id']
                 unit_name = context.user_data.get('editing_icon_unit_name', 'Юнит')
                 new_icon = user_message.strip()
@@ -3238,7 +3286,7 @@ class SimpleBot:
                 return
 
             # Обработка создания нового юнита
-            if 'creating_unit' in context.user_data and self.is_admin(user.username):
+            if has_user_data and 'creating_unit' in context.user_data and self.is_admin(user.username):
                 unit_data = context.user_data['creating_unit']
                 step = unit_data['step']
 
@@ -3346,6 +3394,14 @@ class SimpleBot:
                     response,
                     parse_mode=self.parse_mode
                 )
+                return
+
+            # Fallback для нераспознанных сообщений
+            await update.message.reply_text(
+                "❓ Команда не распознана.\n\n"
+                "Используйте /help для просмотра доступных команд.",
+                parse_mode=self.parse_mode
+            )
         except Exception as e:
             logger.error(f"Ошибка при обработке сообщения: {e}")
 
