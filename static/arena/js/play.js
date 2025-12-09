@@ -1566,13 +1566,31 @@ class PlayScene extends Phaser.Scene {
             document.getElementById('p1-name').textContent :
             document.getElementById('p2-name').textContent;
 
-        // Создаём DOM оверлей с кнопкой закрытия
+        // Собираем полный лог игры
+        let logsHtml = '';
+        if (this.gameState.logs && this.gameState.logs.length > 0) {
+            for (const log of this.gameState.logs) {
+                const icon = log.event_type === 'attack' ? '⚔️' :
+                            log.event_type === 'move' ? '🚶' :
+                            log.event_type === 'game_start' ? '🎮' :
+                            log.event_type === 'game_end' ? '🏆' : '📝';
+                logsHtml += `<div class="game-over-log-entry">${icon} ${log.message}</div>`;
+            }
+        }
+
+        // Создаём DOM оверлей с логом и кнопкой закрытия
         const gameOverOverlay = document.createElement('div');
         gameOverOverlay.className = 'game-over-overlay';
         gameOverOverlay.innerHTML = `
             <div class="game-over-content">
                 <div class="game-over-title">🏆 ПОБЕДА!</div>
                 <div class="game-over-winner">${winnerName}</div>
+                <div class="game-over-log-container">
+                    <div class="game-over-log-title">📋 Лог сражения</div>
+                    <div class="game-over-log-scroll">
+                        ${logsHtml}
+                    </div>
+                </div>
                 <button class="game-over-close-btn" onclick="window.location.href='/arena/'">
                     ✖ Закрыть
                 </button>
@@ -1580,7 +1598,12 @@ class PlayScene extends Phaser.Scene {
         `;
         document.body.appendChild(gameOverOverlay);
 
-        // Лог завершения игры уже записан на сервере, только показываем подсказку
+        // Прокручиваем лог вниз
+        const logScroll = gameOverOverlay.querySelector('.game-over-log-scroll');
+        if (logScroll) {
+            logScroll.scrollTop = logScroll.scrollHeight;
+        }
+
         this.showHint(`🏆 Игра завершена! Победитель: ${winnerName}`);
     }
 

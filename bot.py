@@ -1672,22 +1672,23 @@ class SimpleBot:
                 success, message = engine.accept_game(active_game.id, game_user.id)
 
             if success:
-                # Показать поле обоим игрокам
+                # Показать статус обоим игрокам (без доски)
                 with self.db.get_session() as session:
                     engine = GameEngine(session)
                     actions = engine.get_available_actions(active_game.id, game_user.id)
 
-                # Отправить уведомление и поле player2 (тому, кто принял)
+                # Отправить уведомление player2 (тому, кто принял)
                 keyboard = self._create_game_keyboard(active_game.id, game_user.id, actions)
-                await self._send_field_image(
+                await self._send_game_status(
                     chat_id=update.effective_chat.id,
                     game_id=active_game.id,
+                    player_id=game_user.id,
                     caption=f"✅ {message}",
                     context=context,
                     keyboard=keyboard
                 )
 
-                # Отправить уведомление и поле player1 (тому, кто создал игру)
+                # Отправить уведомление player1 (тому, кто создал игру)
                 player1_id = active_game.player1_id if active_game.player2_id == game_user.id else active_game.player2_id
                 player1 = self.db.query(GameUser).filter_by(id=player1_id).first()
 
@@ -1696,9 +1697,10 @@ class SimpleBot:
                         player1_actions = engine.get_available_actions(active_game.id, player1_id)
                         player1_keyboard = self._create_game_keyboard(active_game.id, player1_id, player1_actions)
 
-                        await self._send_field_image(
+                        await self._send_game_status(
                             chat_id=player1.telegram_id,
                             game_id=active_game.id,
+                            player_id=player1_id,
                             caption="🎮 Игра началась!",
                             context=context,
                             keyboard=player1_keyboard
@@ -1742,7 +1744,7 @@ class SimpleBot:
                 )
                 return
 
-            # Отображение игры
+            # Отображение статуса игры (без доски)
             with self.db.get_session() as session:
                 engine = GameEngine(session)
                 actions = engine.get_available_actions(active_game.id, game_user.id)
@@ -1751,9 +1753,10 @@ class SimpleBot:
             keyboard = self._create_game_keyboard(active_game.id, game_user.id, actions)
             logger.info(f"Клавиатура после _create_game_keyboard: {len(keyboard)} кнопок")
 
-            await self._send_field_image(
+            await self._send_game_status(
                 chat_id=update.effective_chat.id,
                 game_id=active_game.id,
+                player_id=game_user.id,
                 caption="",
                 context=context,
                 keyboard=keyboard
@@ -1817,6 +1820,58 @@ class SimpleBot:
                 f"❌ Произошла ошибка: {e}",
                 parse_mode=self.parse_mode
             )
+
+    async def _send_game_status(self, chat_id: int, game_id: int, player_id: int, caption: str, context: ContextTypes.DEFAULT_TYPE, keyboard=None):
+        """
+        Отправить статус игры текстом с кнопками (без доски)
+
+        Args:
+            chat_id: ID чата
+            game_id: ID игры
+            player_id: ID игрока
+            caption: Дополнительный текст
+            context: Контекст бота
+            keyboard: Клавиатура (опционально)
+        """
+        # Получить информацию об игре
+        game = self.db.get_game_by_id(game_id)
+        if not game:
+            return
+
+        # Получить информацию о противнике
+        opponent_id = game.player2_id if game.player1_id == player_id else game.player1_id
+        opponent = self.db.get_game_user_by_id(opponent_id)
+        opponent_name = opponent.name if opponent else "Unknown"
+
+        # Получить статус хода
+        with self.db.get_session() as session:
+            engine = GameEngine(session)
+            actions = engine.get_available_actions(game_id, player_id)
+
+        action_type = actions.get("action", "wait")
+        if action_type == "play":
+            turn_status = "🟢 <b>Ваш ход!</b>"
+        elif action_type == "wait":
+            turn_status = "🟡 <b>Ход противника</b>"
+        elif action_type == "accept":
+            turn_status = "📨 <b>Ожидает принятия</b>"
+        else:
+            turn_status = "⏳ <b>Ожидание...</b>"
+
+        # Формируем текст
+        status_text = f"🎮 <b>Игра #{game_id}</b>\n\n"
+        if caption:
+            status_text += f"{caption}\n\n"
+        status_text += f"👤 Вы vs 👤 {opponent_name}\n\n"
+        status_text += f"{turn_status}\n\n"
+        status_text += f"<i>Нажмите «Доска» чтобы увидеть поле</i>"
+
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text=status_text,
+            parse_mode=self.parse_mode,
+            reply_markup=InlineKeyboardMarkup(keyboard) if keyboard else None
+        )
 
     async def _send_field_image(self, chat_id: int, game_id: int, caption: str, context: ContextTypes.DEFAULT_TYPE, keyboard=None):
         """
@@ -2012,8 +2067,10 @@ class SimpleBot:
                     )
                 ])
 
-        # Не добавляем кнопки "Обновить" и "Выйти из схватки" когда игра завершена
+        # Не добавляем кнопки когда игра завершена
         if actions.get("action") != "none":
+            # Кнопка "Доска" для отображения игрового поля
+            keyboard.append([InlineKeyboardButton("🗺️ Доска", callback_data=f"show_board:{game_id}")])
             keyboard.append([InlineKeyboardButton("🔄 Обновить", callback_data=f"game_refresh:{game_id}")])
             keyboard.append([InlineKeyboardButton("🏃 Выйти из схватки", callback_data=f"surrender:{game_id}")])
 
@@ -2304,7 +2361,7 @@ class SimpleBot:
                                 except Exception as e:
                                     logger.error(f"Ошибка при отправке уведомления о перемещении противнику: {e}")
 
-                        # Если ход сменился, отправить уведомление противнику с полем
+                        # Если ход сменился, отправить уведомление противнику
                         if turn_switched:
                             # Отправить запись лога о смене хода обоим игрокам
                             await self._send_log_to_both_players(game_id, context)
@@ -2318,10 +2375,11 @@ class SimpleBot:
                                     opponent_actions = engine.get_available_actions(game_id, opponent_id)
                                     opponent_keyboard = self._create_game_keyboard(game_id, opponent_id, opponent_actions)
 
-                                    # Отправляем PNG поле противнику
-                                    await self._send_field_image(
+                                    # Отправляем статус игры противнику (без доски)
+                                    await self._send_game_status(
                                         chat_id=opponent.telegram_id,
                                         game_id=game_id,
+                                        player_id=opponent_id,
                                         caption="🎮 Теперь ваш ход!",
                                         context=context,
                                         keyboard=opponent_keyboard
@@ -2702,7 +2760,7 @@ class SimpleBot:
             )
 
     async def show_game_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Обработчик callback для показа деталей игры"""
+        """Обработчик callback для показа деталей игры (без доски)"""
         query = update.callback_query
         await query.answer()
 
@@ -2735,7 +2793,80 @@ class SimpleBot:
             opponent = self.db.get_game_user_by_id(opponent_id)
             opponent_name = opponent.name if opponent else "Unknown"
 
-            # Отобразить поле
+            # Получить действия
+            with self.db.get_session() as session:
+                engine = GameEngine(session)
+                actions = engine.get_available_actions(game_id, game_user.id)
+
+            # Определить статус хода
+            action_type = actions.get("action", "wait")
+            if action_type == "play":
+                turn_status = "🟢 <b>Ваш ход!</b>"
+            elif action_type == "wait":
+                turn_status = "🟡 <b>Ход противника</b>"
+            elif action_type == "accept":
+                turn_status = "📨 <b>Ожидает принятия</b>"
+            else:
+                turn_status = "⏳ <b>Ожидание...</b>"
+
+            # Формируем текст статуса игры
+            status_text = (
+                f"🎮 <b>Игра #{game_id}</b>\n\n"
+                f"👤 Вы vs 👤 {opponent_name}\n\n"
+                f"{turn_status}\n\n"
+                f"<i>Нажмите «Доска» чтобы увидеть поле</i>"
+            )
+
+            # Создать клавиатуру
+            keyboard = self._create_game_keyboard(game_id, game_user.id, actions)
+
+            # Добавить кнопку "Назад к списку игр"
+            keyboard.append([
+                InlineKeyboardButton("🔙 К списку игр", callback_data="back_to_activegames")
+            ])
+
+            # Показываем текст с кнопками (без доски)
+            await self._edit_message_universal(
+                query,
+                status_text,
+                reply_markup=InlineKeyboardMarkup(keyboard),
+                parse_mode=self.parse_mode
+            )
+
+        except Exception as e:
+            logger.error(f"Ошибка при показе игры: {e}")
+            await self._edit_message_universal(query, f"❌ Ошибка: {e}", parse_mode=self.parse_mode)
+
+    async def show_board_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Обработчик callback для показа игровой доски"""
+        query = update.callback_query
+        await query.answer()
+
+        # Парсим данные из callback (формат: show_board:game_id)
+        data = query.data.split(':')
+        if len(data) != 2 or data[0] != 'show_board':
+            return
+
+        game_id = int(data[1])
+        user = update.effective_user
+
+        try:
+            game_user = self.db.get_game_user(user.id)
+            if not game_user:
+                await self._edit_message_universal(query, "❌ Игровой профиль не найден", parse_mode=self.parse_mode)
+                return
+
+            game = self.db.get_game_by_id(game_id)
+            if not game:
+                await self._edit_message_universal(query, "❌ Игра не найдена", parse_mode=self.parse_mode)
+                return
+
+            # Проверить, что игрок участвует в игре
+            if game.player1_id != game_user.id and game.player2_id != game_user.id:
+                await self._edit_message_universal(query, "❌ Вы не участвуете в этой игре", parse_mode=self.parse_mode)
+                return
+
+            # Получить действия
             with self.db.get_session() as session:
                 engine = GameEngine(session)
                 actions = engine.get_available_actions(game_id, game_user.id)
@@ -2748,11 +2879,11 @@ class SimpleBot:
                 InlineKeyboardButton("🔙 К списку игр", callback_data="back_to_activegames")
             ])
 
-            # Используем _edit_field для показа поля
+            # Показываем поле
             await self._edit_field(query, game_id, "🎮 Игровое поле", keyboard)
 
         except Exception as e:
-            logger.error(f"Ошибка при показе игры: {e}")
+            logger.error(f"Ошибка при показе доски: {e}")
             await self._edit_message_universal(query, f"❌ Ошибка: {e}", parse_mode=self.parse_mode)
 
     async def surrender_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -3970,6 +4101,7 @@ class SimpleBot:
         application.add_handler(CallbackQueryHandler(self.show_opponent_details_callback, pattern=r'^show_opponent_details:'))
         application.add_handler(CallbackQueryHandler(self.decline_challenge_callback, pattern=r'^decline_challenge:'))
         application.add_handler(CallbackQueryHandler(self.show_game_callback, pattern=r'^show_game:'))
+        application.add_handler(CallbackQueryHandler(self.show_board_callback, pattern=r'^show_board:'))
         application.add_handler(CallbackQueryHandler(self.surrender_callback, pattern=r'^surrender:'))
         application.add_handler(CallbackQueryHandler(self.game_log_callback, pattern=r'^game_log:'))
         application.add_handler(CallbackQueryHandler(self.back_to_activegames_callback, pattern=r'^back_to_activegames$'))

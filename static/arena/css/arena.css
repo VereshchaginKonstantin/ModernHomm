@@ -739,3 +739,53 @@
     box-shadow: 0 8px 25px rgba(231, 76, 60, 0.6);
     background: linear-gradient(135deg, #c0392b 0%, #a93226 100%);
 }
+
+.game-over-log-container {
+    background: rgba(0, 0, 0, 0.4);
+    border-radius: 10px;
+    padding: 15px;
+    margin-bottom: 30px;
+    max-width: 500px;
+    margin-left: auto;
+    margin-right: auto;
+}
+
+.game-over-log-title {
+    color: #f39c12;
+    font-size: 18px;
+    font-weight: bold;
+    margin-bottom: 10px;
+    text-align: left;
+}
+
+.game-over-log-scroll {
+    max-height: 200px;
+    overflow-y: auto;
+    text-align: left;
+    padding-right: 10px;
+}
+
+.game-over-log-scroll::-webkit-scrollbar {
+    width: 6px;
+}
+
+.game-over-log-scroll::-webkit-scrollbar-track {
+    background: rgba(255,255,255,0.1);
+    border-radius: 3px;
+}
+
+.game-over-log-scroll::-webkit-scrollbar-thumb {
+    background: rgba(241, 196, 15, 0.5);
+    border-radius: 3px;
+}
+
+.game-over-log-entry {
+    color: #ecf0f1;
+    font-size: 13px;
+    padding: 5px 0;
+    border-bottom: 1px solid rgba(255,255,255,0.1);
+}
+
+.game-over-log-entry:last-child {
+    border-bottom: none;
+}
