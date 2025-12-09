@@ -402,21 +402,21 @@ class TestTelegramNotifications:
 
     def test_notify_opponent_function_exists(self):
         """Тест: функция notify_opponent существует"""
-        from admin_arena import notify_opponent, send_telegram_notification
+        from web_arena import notify_opponent, send_telegram_notification
         assert callable(notify_opponent)
         assert callable(send_telegram_notification)
 
-    @patch('admin_arena.requests.post')
+    @patch('web_arena.requests.post')
     def test_send_telegram_notification_structure(self, mock_post):
         """Тест: структура Telegram уведомления корректна"""
         mock_response = MagicMock()
         mock_response.status_code = 200
         mock_post.return_value = mock_response
 
-        from admin_arena import send_telegram_notification
+        from web_arena import send_telegram_notification
 
         # Мокаем получение токена
-        with patch('admin_arena.get_telegram_bot_token', return_value='test_token'):
+        with patch('web_arena.get_telegram_bot_token', return_value='test_token'):
             result = send_telegram_notification(
                 chat_id=12345,
                 message="Test message",
@@ -465,12 +465,12 @@ class TestTelegramNotifications:
             engine.accept_game(game.id, player2.id)
             game_id = game.id
 
-        # Мокаем db в admin_arena чтобы использовать тестовую БД
-        import admin_arena
-        original_db = admin_arena.db
-        admin_arena.db = self.db
+        # Мокаем db в web_arena чтобы использовать тестовую БД
+        import web_arena
+        original_db = web_arena.db
+        web_arena.db = self.db
         try:
-            from admin_arena import get_game_full_data
+            from web_arena import get_game_full_data
             game_data = get_game_full_data(game_id)
 
             assert game_data is not None
@@ -482,7 +482,7 @@ class TestTelegramNotifications:
             assert 'field' in game_data
         finally:
             # Восстанавливаем оригинальное соединение
-            admin_arena.db = original_db
+            web_arena.db = original_db
 
 
 class TestArenaAPIEndpoints:
@@ -793,7 +793,7 @@ class TestCacheBusting:
 
     def test_get_static_version_returns_hash(self):
         """Тест: get_static_version возвращает хеш версии"""
-        from admin_arena import get_static_version
+        from web_arena import get_static_version
 
         version = get_static_version()
 
@@ -806,24 +806,24 @@ class TestCacheBusting:
         # Версия должна состоять из hex-символов
         assert all(c in '0123456789abcdef' for c in version)
 
-    def test_static_version_changes_with_admin_version(self):
-        """Тест: static_version меняется при изменении admin_version"""
+    def test_static_version_changes_with_web_version(self):
+        """Тест: static_version меняется при изменении web_version"""
         import hashlib
-        from admin_templates import get_admin_version
+        from web_templates import get_web_version
 
-        admin_ver = get_admin_version()
+        web_ver = get_web_version()
 
         # Вычисляем ожидаемую версию
-        expected_hash = hashlib.md5(admin_ver.encode()).hexdigest()[:8]
+        expected_hash = hashlib.md5(web_ver.encode()).hexdigest()[:8]
 
-        from admin_arena import get_static_version
+        from web_arena import get_static_version
         actual_version = get_static_version()
 
         assert actual_version == expected_hash
 
-    def test_versioned_filter_in_admin_app(self):
+    def test_versioned_filter_in_web_interface(self):
         """Тест: фильтр versioned добавляет версию к URL"""
-        from admin_app import versioned_filter
+        from web_interface import versioned_filter
 
         url = "/static/arena/css/arena.css"
         versioned_url = versioned_filter(url)
@@ -835,7 +835,7 @@ class TestCacheBusting:
 
     def test_versioned_filter_handles_existing_query_params(self):
         """Тест: фильтр versioned корректно работает с существующими query params"""
-        from admin_app import versioned_filter
+        from web_interface import versioned_filter
 
         url = "/static/file.js?existing=param"
         versioned_url = versioned_filter(url)
@@ -847,7 +847,7 @@ class TestCacheBusting:
 
     def test_versioned_static_function(self):
         """Тест: функция versioned_static генерирует правильный URL"""
-        from admin_app import inject_static_version
+        from web_interface import inject_static_version
 
         context = inject_static_version()
         versioned_static = context['versioned_static']
@@ -1147,21 +1147,235 @@ class TestPlayFormHiddenPlayerField:
         assert current_player['name'] == f"{self.test_prefix}_testusername"
 
 
+class TestGameStateAPI:
+    """Тесты для API /api/games/{id}/state - проверка player1_id, player2_id, current_player_id"""
+
+    @pytest.fixture(autouse=True)
+    def setup(self):
+        """Подготовка с уникальным префиксом"""
+        import uuid
+        self.test_prefix = f"game_state_test_{uuid.uuid4().hex[:8]}"
+        self.db = Database("postgresql://postgres:postgres@localhost:5433/telegram_bot_test")
+
+        with self.db.get_session() as session:
+            session.query(GameLog).delete()
+            session.query(BattleUnit).delete()
+            session.query(Obstacle).delete()
+            session.query(Game).delete()
+            session.query(UserUnit).delete()
+            session.query(GameUser).filter(
+                GameUser.name.like(f"{self.test_prefix}%")
+            ).delete(synchronize_session=False)
+            session.commit()
+
+        yield
+
+        with self.db.get_session() as session:
+            session.query(GameLog).delete()
+            session.query(BattleUnit).delete()
+            session.query(Obstacle).delete()
+            session.query(Game).delete()
+            session.query(UserUnit).delete()
+            session.query(GameUser).filter(
+                GameUser.name.like(f"{self.test_prefix}%")
+            ).delete(synchronize_session=False)
+            session.commit()
+
+    def _create_test_players_with_units(self, session):
+        """Создание тестовых игроков с юнитами и username"""
+        import os
+
+        unit = session.query(Unit).first()
+        if not unit:
+            pytest.skip("No units in database")
+
+        for u in session.query(Unit).all():
+            u.image_path = os.path.abspath(__file__)
+        session.commit()
+
+        # Создаем игроков с username
+        player1 = GameUser(
+            telegram_id=9001,
+            name=f"{self.test_prefix}_Player1Name",
+            username=f"{self.test_prefix}_player1",
+            balance=Decimal("1000")
+        )
+        player2 = GameUser(
+            telegram_id=9002,
+            name=f"{self.test_prefix}_Player2Name",
+            username=f"{self.test_prefix}_player2",
+            balance=Decimal("1000")
+        )
+        session.add(player1)
+        session.add(player2)
+        session.flush()
+
+        user_unit1 = UserUnit(game_user_id=player1.id, unit_type_id=unit.id, count=5)
+        user_unit2 = UserUnit(game_user_id=player2.id, unit_type_id=unit.id, count=5)
+        session.add(user_unit1)
+        session.add(user_unit2)
+        session.commit()
+
+        return player1, player2
+
+    def test_game_state_contains_player_ids(self):
+        """Тест: состояние игры содержит player1_id и player2_id"""
+        with self.db.get_session() as session:
+            player1, player2 = self._create_test_players_with_units(session)
+
+            engine = GameEngine(session)
+            game, _ = engine.create_game(player1.id, player2.name, "5x5")
+            engine.accept_game(game.id, player2.id)
+
+            # Проверяем что player1_id и player2_id корректны
+            assert game.player1_id == player1.id
+            assert game.player2_id == player2.id
+            assert game.player1_id != game.player2_id
+
+    def test_current_player_id_is_player1_after_accept(self):
+        """Тест: после принятия игры current_player_id = player1_id (первый ходит первый)"""
+        with self.db.get_session() as session:
+            player1, player2 = self._create_test_players_with_units(session)
+
+            engine = GameEngine(session)
+            game, _ = engine.create_game(player1.id, player2.name, "5x5")
+            engine.accept_game(game.id, player2.id)
+
+            # Первый игрок ходит первым
+            assert game.current_player_id == player1.id
+
+    def test_current_player_id_switches_after_all_units_moved(self):
+        """Тест: current_player_id меняется после хода всех юнитов"""
+        with self.db.get_session() as session:
+            player1, player2 = self._create_test_players_with_units(session)
+
+            engine = GameEngine(session)
+            game, _ = engine.create_game(player1.id, player2.name, "5x5")
+            engine.accept_game(game.id, player2.id)
+
+            initial_player = game.current_player_id
+            assert initial_player == player1.id
+
+            # Пропускаем ходы всех юнитов игрока 1
+            battle_units = session.query(BattleUnit).filter_by(
+                game_id=game.id,
+                player_id=player1.id,
+                has_moved=0
+            ).all()
+
+            for bu in battle_units:
+                engine.skip_unit_turn(game.id, player1.id, bu.id)
+
+            session.refresh(game)
+
+            # После того как все юниты походили, ход должен перейти к player2
+            assert game.current_player_id == player2.id
+
+    def test_game_state_api_returns_player_names(self):
+        """Тест: API должен возвращать player1_name и player2_name"""
+        with self.db.get_session() as session:
+            player1, player2 = self._create_test_players_with_units(session)
+
+            engine = GameEngine(session)
+            game, _ = engine.create_game(player1.id, player2.name, "5x5")
+            engine.accept_game(game.id, player2.id)
+
+            game_id = game.id
+
+        # Мокаем db в web_arena чтобы использовать тестовую БД
+        import web_arena
+        original_db = web_arena.db
+        web_arena.db = self.db
+
+        try:
+            # Проверяем структуру данных, которую возвращает API
+            with self.db.get_session() as session:
+                game = session.query(Game).filter_by(id=game_id).first()
+
+                # Получаем имена как это делает API
+                p1 = session.query(GameUser).filter_by(id=game.player1_id).first()
+                p2 = session.query(GameUser).filter_by(id=game.player2_id).first()
+
+                player1_name = (p1.username or p1.name) if p1 else 'Игрок 1'
+                player2_name = (p2.username or p2.name) if p2 else 'Игрок 2'
+
+                # Проверяем что username используется если есть
+                assert player1_name == f"{self.test_prefix}_player1"
+                assert player2_name == f"{self.test_prefix}_player2"
+        finally:
+            web_arena.db = original_db
+
+    def test_turn_indicator_logic(self):
+        """Тест: логика определения чей ход (для индикатора в UI)"""
+        with self.db.get_session() as session:
+            player1, player2 = self._create_test_players_with_units(session)
+
+            engine = GameEngine(session)
+            game, _ = engine.create_game(player1.id, player2.name, "5x5")
+            engine.accept_game(game.id, player2.id)
+
+            # Логика из JavaScript: current_player_id === player1_id -> показать p1-turn
+            is_player1_turn = game.current_player_id == game.player1_id
+            is_player2_turn = game.current_player_id == game.player2_id
+
+            # Должен быть ход только одного игрока
+            assert is_player1_turn != is_player2_turn
+            # После accept первый ходит игрок 1
+            assert is_player1_turn is True
+            assert is_player2_turn is False
+
+    def test_units_list_shows_correct_player_units(self):
+        """Тест: список юнитов корректно фильтруется по player_id"""
+        with self.db.get_session() as session:
+            player1, player2 = self._create_test_players_with_units(session)
+
+            engine = GameEngine(session)
+            game, _ = engine.create_game(player1.id, player2.name, "5x5")
+            engine.accept_game(game.id, player2.id)
+
+            # Получаем юнитов как это делает API
+            all_units = session.query(BattleUnit).filter_by(game_id=game.id).all()
+
+            # Фильтруем по player1_id
+            player1_units = [u for u in all_units if u.player_id == game.player1_id]
+            player2_units = [u for u in all_units if u.player_id == game.player2_id]
+
+            # У обоих игроков должны быть юниты
+            assert len(player1_units) > 0
+            assert len(player2_units) > 0
+
+            # Юниты не должны пересекаться
+            player1_unit_ids = {u.id for u in player1_units}
+            player2_unit_ids = {u.id for u in player2_units}
+            assert player1_unit_ids.isdisjoint(player2_unit_ids)
+
+
 class TestVersionDisplay:
     """Тесты для отображения версий веб-интерфейса и бота"""
 
-    def test_get_admin_version_returns_string(self):
-        """Тест: get_admin_version возвращает строку"""
-        from admin_templates import get_admin_version
+    def test_get_web_version_returns_string(self):
+        """Тест: get_web_version возвращает строку"""
+        from web_templates import get_web_version
 
-        version = get_admin_version()
+        version = get_web_version()
         assert isinstance(version, str)
         # Версия не должна быть пустой
         assert len(version) > 0
 
+    def test_web_version_is_not_shell_command(self):
+        """Тест: WEB_VERSION не содержит невыполненную shell команду"""
+        from web_templates import get_web_version
+
+        version = get_web_version()
+        # Версия не должна содержать $( - признак невыполненной команды
+        assert '$(' not in version
+        assert '$(date' not in version
+        # Версия должна быть похожа на дату (содержать цифры и точки)
+        assert any(c.isdigit() for c in version)
+
     def test_get_bot_version_returns_string(self):
         """Тест: get_bot_version возвращает строку"""
-        from admin_templates import get_bot_version
+        from web_templates import get_bot_version
 
         version = get_bot_version()
         assert isinstance(version, str)
@@ -1170,10 +1384,12 @@ class TestVersionDisplay:
 
     def test_footer_template_contains_version_placeholders(self):
         """Тест: FOOTER_TEMPLATE содержит плейсхолдеры для версий"""
-        from admin_templates import FOOTER_TEMPLATE
+        from web_templates import FOOTER_TEMPLATE
 
-        assert '{{ admin_version }}' in FOOTER_TEMPLATE
+        assert '{{ web_version }}' in FOOTER_TEMPLATE
         assert '{{ bot_version }}' in FOOTER_TEMPLATE
+        assert 'Web:' in FOOTER_TEMPLATE
+        assert 'Bot:' in FOOTER_TEMPLATE
 
 
 if __name__ == '__main__':

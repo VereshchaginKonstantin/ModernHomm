@@ -21,18 +21,18 @@ fi
 
 # Собрать образ веб-интерфейса если нужно
 echo "Сборка образа веб-интерфейса..."
-docker compose build admin
+docker compose build web
 
 # Запустить веб-интерфейс
 echo "Запуск контейнера веб-интерфейса..."
-docker compose up -d admin
+docker compose up -d web
 
 # Дождаться запуска
 echo "Ожидание запуска веб-интерфейса..."
 sleep 3
 
 # Проверить статус
-if docker ps | grep -q modernhomm_admin; then
+if docker ps | grep -q modernhomm_web; then
     echo ""
     echo "========================================="
     echo "✅ Веб-интерфейс успешно запущена!"
@@ -42,15 +42,15 @@ if docker ps | grep -q modernhomm_admin; then
     echo "   http://localhost"
     echo ""
     echo "📊 Для просмотра логов:"
-    echo "   docker compose logs -f admin"
+    echo "   docker compose logs -f web"
     echo ""
     echo "🛑 Для остановки:"
-    echo "   docker compose stop admin"
+    echo "   docker compose stop web"
     echo ""
     echo "========================================="
 else
     echo ""
     echo "❌ Ошибка запуска веб-интерфейса!"
-    echo "Просмотрите логи: docker compose logs admin"
+    echo "Просмотрите логи: docker compose logs web"
     exit 1
 fi

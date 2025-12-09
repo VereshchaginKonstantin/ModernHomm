@@ -79,16 +79,13 @@ class Database:
         finally:
             session.close()
 
-    def save_user(self, telegram_id: int, username: str = None,
-                  first_name: str = None, last_name: str = None) -> User:
+    def save_user(self, telegram_id: int, username: str = None) -> User:
         """
         Сохранение или обновление информации о пользователе
 
         Args:
             telegram_id: ID пользователя в Telegram
             username: Имя пользователя (username)
-            first_name: Имя
-            last_name: Фамилия
 
         Returns:
             User: Объект пользователя
@@ -99,23 +96,19 @@ class Database:
             if user:
                 # Обновляем существующего пользователя
                 user.username = username
-                user.first_name = first_name
-                user.last_name = last_name
                 user.last_seen = datetime.utcnow()
             else:
                 # Создаем нового пользователя
                 user = User(
                     telegram_id=telegram_id,
-                    username=username,
-                    first_name=first_name,
-                    last_name=last_name
+                    username=username
                 )
                 session.add(user)
 
             session.flush()
             session.refresh(user)
             # Eager load attributes before session closes
-            _ = (user.id, user.telegram_id, user.username, user.first_name,
+            _ = (user.id, user.telegram_id, user.username,
                  user.last_seen, user.first_seen)
             session.expunge(user)
             return user
@@ -189,8 +182,6 @@ class Database:
                 _ = user.id
                 _ = user.telegram_id
                 _ = user.username
-                _ = user.first_name
-                _ = user.last_name
                 _ = user.first_seen
                 _ = user.last_seen
 
@@ -222,8 +213,6 @@ class Database:
                 _ = user.id
                 _ = user.telegram_id
                 _ = user.username
-                _ = user.first_name
-                _ = user.last_name
                 _ = user.first_seen
                 _ = user.last_seen
 

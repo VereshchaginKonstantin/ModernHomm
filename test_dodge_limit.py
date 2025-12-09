@@ -8,7 +8,7 @@ from decimal import Decimal
 import tempfile
 import os
 from db.models import Unit
-from admin_app import calculate_unit_price
+from web_interface import calculate_unit_price
 
 
 class TestDodgeLimitAndPrice:

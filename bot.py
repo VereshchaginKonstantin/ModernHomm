@@ -90,13 +90,13 @@ class SimpleBot:
             logger.warning("Файл VERSION не найден, используется версия по умолчанию")
             return "unknown"
 
-    def load_admin_version(self):
-        """Загрузка версии веб-интерфейса из файла ADMIN_VERSION"""
+    def load_web_version(self):
+        """Загрузка версии веб-интерфейса из файла WEB_VERSION"""
         try:
-            with open('ADMIN_VERSION', 'r', encoding='utf-8') as f:
+            with open('WEB_VERSION', 'r', encoding='utf-8') as f:
                 return f.read().strip()
         except FileNotFoundError:
-            logger.warning("Файл ADMIN_VERSION не найден")
+            logger.warning("Файл WEB_VERSION не найден")
             return "unknown"
 
     def get_latest_commit_message(self):
@@ -142,18 +142,18 @@ class SimpleBot:
         try:
             with open('.last_version', 'r', encoding='utf-8') as f:
                 content = f.read().strip()
-                # Формат: bot_version|admin_version
+                # Формат: bot_version|web_version
                 if '|' in content:
-                    last_bot_version, last_admin_version = content.split('|', 1)
+                    last_bot_version, last_web_version = content.split('|', 1)
                 else:
                     last_bot_version = content
-                    last_admin_version = ""
+                    last_web_version = ""
 
-                current_admin_version = self.load_admin_version()
+                current_web_version = self.load_web_version()
                 bot_changed = last_bot_version != self.version
-                admin_changed = last_admin_version != current_admin_version
+                web_changed = last_web_version != current_web_version
 
-                return bot_changed, admin_changed
+                return bot_changed, web_changed
         except FileNotFoundError:
             # Первый запуск - версии "изменились"
             return True, True
@@ -161,14 +161,14 @@ class SimpleBot:
     def save_current_version(self):
         """Сохранение текущих версий бота и веб-интерфейса"""
         try:
-            admin_version = self.load_admin_version()
+            web_version = self.load_web_version()
             with open('.last_version', 'w', encoding='utf-8') as f:
-                f.write(f"{self.version}|{admin_version}")
-            logger.info(f"Версии сохранены: бот={self.version}, веб-интерфейс={admin_version}")
+                f.write(f"{self.version}|{web_version}")
+            logger.info(f"Версии сохранены: бот={self.version}, веб-интерфейс={web_version}")
         except Exception as e:
             logger.error(f"Ошибка при сохранении версий: {e}")
 
-    async def notify_all_users_about_update(self, application, bot_changed=True, admin_changed=False):
+    async def notify_all_users_about_update(self, application, bot_changed=True, web_changed=False):
         """Отправка уведомления всем пользователям о новой версии"""
         try:
             # Получаем всех игровых пользователей
@@ -180,18 +180,18 @@ class SimpleBot:
 
             # Получаем сообщение последнего коммита
             commit_message = self.get_latest_commit_message()
-            admin_version = self.load_admin_version()
+            web_version = self.load_web_version()
 
             # Формируем заголовок в зависимости от того, что обновилось
-            if bot_changed and admin_changed:
+            if bot_changed and web_changed:
                 title = "🔄 <b>Система обновлена!</b>"
                 versions_info = (
                     f"🤖 Бот: <code>{self.version}</code>\n"
-                    f"🖥️ Веб-интерфейс: <code>{admin_version}</code>"
+                    f"🖥️ Веб-интерфейс: <code>{web_version}</code>"
                 )
-            elif admin_changed:
+            elif web_changed:
                 title = "🔄 <b>Веб-интерфейс обновлена!</b>"
-                versions_info = f"🖥️ Новая версия: <code>{admin_version}</code>"
+                versions_info = f"🖥️ Новая версия: <code>{web_version}</code>"
             else:
                 title = "🔄 <b>Бот обновлен!</b>"
                 versions_info = f"🤖 Новая версия: <code>{self.version}</code>"
@@ -260,7 +260,7 @@ class SimpleBot:
             # Получаем или создаем игрового пользователя
             game_user, created = self.db.get_or_create_game_user(
                 telegram_id=user.id,
-                name=user.first_name or user.username,
+                name=user.username or f"User_{user.id}",
                 username=user.username,
                 initial_balance=self.get_initial_balance()
             )
@@ -1442,7 +1442,7 @@ class SimpleBot:
 
         # Кнопки с пользователями (по 1 в строке)
         for user in users:
-            user_display = f"@{user.username}" if user.username else f"{user.first_name or 'User'} (ID: {user.telegram_id})"
+            user_display = f"@{user.username}" if user.username else f"User (ID: {user.telegram_id})"
             # Формат callback: user_msgs:telegram_id:page:back_page
             keyboard.append([
                 InlineKeyboardButton(
@@ -3324,7 +3324,7 @@ class SimpleBot:
                 # Автоматически создаем игровой профиль при первом сообщении
                 game_user, created = self.db.get_or_create_game_user(
                     telegram_id=user.id,
-                    name=user.first_name or user.username,
+                    name=user.username or f"User_{user.id}",
                     username=user.username,
                     initial_balance=self.get_initial_balance()
                 )
@@ -3935,20 +3935,20 @@ class SimpleBot:
         # Проверка версии и отправка уведомлений
         async def post_init(app):
             """Callback после инициализации приложения"""
-            bot_changed, admin_changed = self.check_version_changed()
-            admin_version = self.load_admin_version()
+            bot_changed, web_changed = self.check_version_changed()
+            web_version = self.load_web_version()
 
-            if bot_changed or admin_changed:
+            if bot_changed or web_changed:
                 changes = []
                 if bot_changed:
                     changes.append(f"бот={self.version}")
-                if admin_changed:
-                    changes.append(f"веб-интерфейс={admin_version}")
+                if web_changed:
+                    changes.append(f"веб-интерфейс={web_version}")
                 logger.info(f"Обнаружены обновления: {', '.join(changes)}")
-                await self.notify_all_users_about_update(app, bot_changed, admin_changed)
+                await self.notify_all_users_about_update(app, bot_changed, web_changed)
                 self.save_current_version()
             else:
-                logger.info(f"Версии не изменились: бот={self.version}, веб-интерфейс={admin_version}")
+                logger.info(f"Версии не изменились: бот={self.version}, веб-интерфейс={web_version}")
 
         application.post_init = post_init
 

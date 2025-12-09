@@ -45,8 +45,6 @@ def mock_user():
     user = MagicMock()
     user.id = 123456789
     user.username = "testuser"
-    user.first_name = "Test"
-    user.last_name = "User"
     return user
 
 
@@ -99,8 +97,6 @@ class TestBotIntegration:
         assert len(users) == 1
         assert users[0].telegram_id == 123456789
         assert users[0].username == "testuser"
-        assert users[0].first_name == "Test"
-        assert users[0].last_name == "User"
 
     @pytest.mark.asyncio
     async def test_handle_message_saves_message(self, test_config, db, mock_update):

@@ -15,8 +15,8 @@ def test_search_messages():
 
     # Добавляем тестовых пользователей
     print("\n1. Добавление тестовых пользователей...")
-    user1 = db.save_user(telegram_id=12345, username="testuser", first_name="Test", last_name="User")
-    user2 = db.save_user(telegram_id=67890, username="another", first_name="Another", last_name="User")
+    user1 = db.save_user(telegram_id=12345, username="testuser")
+    user2 = db.save_user(telegram_id=67890, username="another")
     print(f"   ✓ Добавлены пользователи: @testuser, @another")
 
     # Добавляем тестовые сообщения

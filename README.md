@@ -227,8 +227,6 @@ ModernHomm/
 - `id` - первичный ключ
 - `telegram_id` - ID пользователя в Telegram (уникальный)
 - `username` - username пользователя
-- `first_name` - имя
-- `last_name` - фамилия
 - `first_seen` - дата первого обращения
 - `last_seen` - дата последнего обращения
 

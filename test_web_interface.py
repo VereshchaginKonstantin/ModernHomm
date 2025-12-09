@@ -9,7 +9,7 @@ import json
 import tempfile
 import zipfile
 from decimal import Decimal
-from admin_app import app, db
+from web_interface import app, db
 from db.models import Unit
 
 
@@ -63,7 +63,7 @@ def test_unit():
         session.flush()
 
 
-class TestAdminPages:
+class TestWebInterfacePages:
     """Тесты страниц веб-интерфейса"""
 
     def test_index_page(self, client):

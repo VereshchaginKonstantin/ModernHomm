@@ -12,11 +12,11 @@ echo "Остановка веб-интерфейса ModernHomm"
 echo "========================================="
 
 # Остановить веб-интерфейс
-docker compose stop admin
+docker compose stop web
 
 echo ""
-echo "✅ Веб-интерфейс остановлена!"
+echo "✅ Веб-интерфейс остановлен!"
 echo ""
 echo "Для повторного запуска используйте:"
-echo "  ./start_admin.sh"
+echo "  ./start_web.sh"
 echo ""

@@ -15,9 +15,9 @@ from werkzeug.utils import secure_filename
 from db import Database
 from db.models import Unit, GameUser
 from decimal import Decimal
-from admin_images_manager import images_bp
-from admin_arena import arena_bp
-from admin_templates import get_admin_version, get_bot_version, FOOTER_TEMPLATE
+from web_images_manager import images_bp
+from web_arena import arena_bp
+from web_templates import get_web_version, get_bot_version, FOOTER_TEMPLATE
 
 # Создать Flask приложение
 app = Flask(__name__)
@@ -35,7 +35,7 @@ app.register_blueprint(arena_bp)
 def inject_versions():
     """Добавить версии во все шаблоны"""
     return {
-        'admin_version': get_admin_version(),
+        'web_version': get_web_version(),
         'bot_version': get_bot_version(),
         'footer_html': FOOTER_TEMPLATE
     }
@@ -43,9 +43,9 @@ def inject_versions():
 
 def get_static_version():
     """Получить версию для cache busting статических файлов"""
-    admin_ver = get_admin_version()
+    web_ver = get_web_version()
     # Создаём короткий хеш для URL
-    return hashlib.md5(admin_ver.encode()).hexdigest()[:8]
+    return hashlib.md5(web_ver.encode()).hexdigest()[:8]
 
 
 @app.template_filter('versioned')
@@ -351,7 +351,7 @@ BASE_STYLE = """
 """
 
 # Шаблон главной страницы (управление картинками)
-ADMIN_TEMPLATE = """
+IMAGES_TEMPLATE = """
 <!DOCTYPE html>
 <html lang="ru">
 <head>
@@ -1214,7 +1214,7 @@ def admin_images():
         'without_images': sum(1 for u in units if not u.has_image)
     }
 
-    return render_template_string(ADMIN_TEMPLATE, units=units, stats=stats, active_page='images')
+    return render_template_string(IMAGES_TEMPLATE, units=units, stats=stats, active_page='images')
 
 
 @app.route('/upload/<int:unit_id>', methods=['POST'])

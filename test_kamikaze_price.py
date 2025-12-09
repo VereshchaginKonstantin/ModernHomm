@@ -5,7 +5,7 @@
 
 import pytest
 from decimal import Decimal
-from admin_app import calculate_unit_price
+from web_interface import calculate_unit_price
 
 
 class TestKamikazePrice:

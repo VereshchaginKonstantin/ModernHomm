@@ -25,15 +25,11 @@ class TestDatabase:
         """Тест сохранения нового пользователя"""
         user = db.save_user(
             telegram_id=123456789,
-            username="testuser",
-            first_name="Test",
-            last_name="User"
+            username="testuser"
         )
 
         assert user.telegram_id == 123456789
         assert user.username == "testuser"
-        assert user.first_name == "Test"
-        assert user.last_name == "User"
         assert isinstance(user.first_seen, datetime)
         assert isinstance(user.last_seen, datetime)
 
@@ -42,9 +38,7 @@ class TestDatabase:
         # Создаем пользователя
         user1 = db.save_user(
             telegram_id=123456789,
-            username="oldusername",
-            first_name="Old",
-            last_name="Name"
+            username="oldusername"
         )
 
         first_seen = user1.first_seen
@@ -52,15 +46,11 @@ class TestDatabase:
         # Обновляем того же пользователя с новыми данными
         user2 = db.save_user(
             telegram_id=123456789,
-            username="newusername",
-            first_name="New",
-            last_name="Name"
+            username="newusername"
         )
 
         assert user2.telegram_id == 123456789
         assert user2.username == "newusername"
-        assert user2.first_name == "New"
-        assert user2.last_name == "Name"
 
         # first_seen не должен измениться
         assert user2.first_seen == first_seen
@@ -110,9 +100,9 @@ class TestDatabase:
     def test_get_all_users(self, db):
         """Тест получения всех пользователей"""
         # Сохраняем несколько пользователей
-        db.save_user(123456789, "user1", "First1", "Last1")
-        db.save_user(987654321, "user2", "First2", "Last2")
-        db.save_user(111222333, "user3", "First3", "Last3")
+        db.save_user(123456789, "user1")
+        db.save_user(987654321, "user2")
+        db.save_user(111222333, "user3")
 
         users = db.get_all_users()
         assert len(users) == 3
@@ -126,14 +116,11 @@ class TestDatabase:
         """Тест сохранения пользователя без username"""
         user = db.save_user(
             telegram_id=123456789,
-            username=None,
-            first_name="Test",
-            last_name="User"
+            username=None
         )
 
         assert user.telegram_id == 123456789
         assert user.username is None
-        assert user.first_name == "Test"
 
     def test_message_without_username(self, db):
         """Тест сохранения сообщения без username"""
@@ -163,9 +150,9 @@ class TestDatabase:
     def test_concurrent_user_saves(self, db):
         """Тест параллельного сохранения одного и того же пользователя"""
         # Симулируем ситуацию, когда пользователь отправляет несколько сообщений подряд
-        user1 = db.save_user(123456789, "user1", "First", "Last")
-        user2 = db.save_user(123456789, "user1_updated", "First", "Last")
-        user3 = db.save_user(123456789, "user1_final", "First", "Last")
+        user1 = db.save_user(123456789, "user1")
+        user2 = db.save_user(123456789, "user1_updated")
+        user3 = db.save_user(123456789, "user1_final")
 
         # Должен быть только один пользователь в базе
         users = db.get_all_users()

@@ -272,8 +272,38 @@ class PlayScene extends Phaser.Scene {
         // Подсвечиваем активных юнитов
         this.highlightActiveUnits();
 
-        // Добавляем начальный лог
-        this.addLog('Игра началась! Нажмите на юнита с зеленым индикатором чтобы выбрать его.', 'game_started');
+        // Загружаем логи с сервера при старте
+        if (this.gameState.logs && this.gameState.logs.length > 0) {
+            this.loadInitialLogs(this.gameState.logs);
+        }
+
+        // Показываем начальную подсказку
+        this.showHint('🎮 Игра началась! Нажмите на юнита с зеленым индикатором чтобы выбрать его.');
+    }
+
+    /**
+     * Загрузка начальных логов с сервера
+     */
+    loadInitialLogs(serverLogs) {
+        const logContainer = document.getElementById('log-entries');
+        if (!logContainer || !serverLogs) return;
+
+        // Очищаем контейнер
+        logContainer.innerHTML = '';
+
+        // Добавляем логи в обратном порядке (новые сверху)
+        const reversedLogs = [...serverLogs].reverse();
+        reversedLogs.forEach(log => {
+            const entry = document.createElement('div');
+            entry.className = `log-entry ${log.event_type}`;
+
+            const time = new Date(log.created_at).toLocaleTimeString('ru-RU', {
+                hour: '2-digit', minute: '2-digit', second: '2-digit'
+            });
+            entry.innerHTML = `<span style="color: #888; font-size: 11px;">[${time}]</span> ${log.message}`;
+
+            logContainer.appendChild(entry);
+        });
     }
 
     /**
@@ -422,8 +452,8 @@ class PlayScene extends Phaser.Scene {
      * Получение цвета игрока
      */
     getPlayerColor(playerId) {
-        const playerIds = [...new Set(this.gameState.units.map(u => u.player_id))];
-        return playerId === playerIds[0] ? COLORS.player1 : COLORS.player2;
+        // Используем player1_id из состояния игры для определения цвета
+        return playerId === this.gameState.player1_id ? COLORS.player1 : COLORS.player2;
     }
 
     /**
@@ -553,7 +583,7 @@ class PlayScene extends Phaser.Scene {
             await this.selectUnit(foundUnit.id);
         } else if (foundUnit) {
             // Клик по вражескому юниту или юниту, который уже походил
-            this.addLog(`${foundUnit.data.unit_type?.icon || '❓'} ${foundUnit.data.unit_type?.name || 'Юнит'} - не может действовать`, 'info');
+            this.showHint(`${foundUnit.data.unit_type?.icon || '❓'} ${foundUnit.data.unit_type?.name || 'Юнит'} - не может действовать`);
         }
     }
 
@@ -600,11 +630,11 @@ class PlayScene extends Phaser.Scene {
             btnAttack.disabled = this.availableAttacks.length === 0;
             btnAttack.style.opacity = this.availableAttacks.length === 0 ? '0.5' : '1';
 
-            this.addLog(`Выбран ${unitData.unit_type?.name || 'юнит'}. Доступно ходов: ${this.availableMoves.length}, целей: ${this.availableAttacks.length}`, 'info');
+            this.showHint(`✅ Выбран ${unitData.unit_type?.name || 'юнит'}. Доступно ходов: ${this.availableMoves.length}, целей: ${this.availableAttacks.length}`);
 
         } catch (error) {
             console.error('Error getting unit actions:', error);
-            this.addLog('Ошибка получения действий юнита', 'error');
+            this.showHint('❌ Ошибка получения действий юнита');
         }
     }
 
@@ -706,7 +736,7 @@ class PlayScene extends Phaser.Scene {
      */
     showMoveHighlights() {
         if (!selectedUnitId) {
-            this.addLog('Сначала выберите юнита!', 'error');
+            this.showHint('⚠️ Сначала выберите юнита!');
             return;
         }
 
@@ -729,7 +759,7 @@ class PlayScene extends Phaser.Scene {
             this.highlightGraphics.fillStyle(0xffffff, 0.8);
         });
 
-        this.addLog(`Нажмите на зелёную клетку для перемещения (${this.availableMoves.length} вариантов)`, 'move');
+        this.showHint(`🚶 Нажмите на зелёную клетку для перемещения (${this.availableMoves.length} вариантов)`);
     }
 
     /**
@@ -737,7 +767,7 @@ class PlayScene extends Phaser.Scene {
      */
     showAttackHighlights() {
         if (!selectedUnitId) {
-            this.addLog('Сначала выберите юнита!', 'error');
+            this.showHint('⚠️ Сначала выберите юнита!');
             return;
         }
 
@@ -756,7 +786,7 @@ class PlayScene extends Phaser.Scene {
             );
         });
 
-        this.addLog(`Нажмите на красную клетку для атаки (${this.availableAttacks.length} целей)`, 'attack');
+        this.showHint(`⚔️ Нажмите на красную клетку для атаки (${this.availableAttacks.length} целей)`);
     }
 
     /**
@@ -775,7 +805,7 @@ class PlayScene extends Phaser.Scene {
         if (targetCell) {
             await this.executeMove(selectedUnitId, boardX, boardY);
         } else {
-            this.addLog('Нельзя переместиться на эту клетку!', 'error');
+            this.showHint('❌ Нельзя переместиться на эту клетку!');
         }
 
         this.resetAction();
@@ -797,7 +827,7 @@ class PlayScene extends Phaser.Scene {
 
             await this.executeAttack(selectedUnitId, target.id);
         } else {
-            this.addLog('Нельзя атаковать эту клетку!', 'error');
+            this.showHint('❌ Нельзя атаковать эту клетку!');
         }
 
         this.resetAction();
@@ -845,7 +875,8 @@ class PlayScene extends Phaser.Scene {
                     if (readyIndicator) readyIndicator.destroy();
                 }
 
-                this.addLog(result.message, 'move');
+                // Лог перемещения показываем как подсказку (move не логируется на сервере)
+                this.showHint(`✅ ${result.message}`);
 
                 // Проверяем смену хода
                 if (result.turn_switched) {
@@ -854,12 +885,12 @@ class PlayScene extends Phaser.Scene {
                     this.highlightActiveUnits();
                 }
             } else {
-                this.addLog('Ошибка: ' + result.message, 'error');
+                this.showHint('❌ Ошибка: ' + result.message);
             }
 
         } catch (error) {
             console.error('Error executing move:', error);
-            this.addLog('Ошибка выполнения хода', 'error');
+            this.showHint('❌ Ошибка выполнения хода');
         }
     }
 
@@ -889,9 +920,11 @@ class PlayScene extends Phaser.Scene {
                     await this.animateAttack(attacker, target);
                 }
 
-                this.addLog(result.message, 'attack');
+                // Атака логируется на сервере, лог подгрузится через syncLogs
+                // Показываем краткую подсказку
+                this.showHint('⚔️ Атака выполнена!');
 
-                // Обновляем состояние
+                // Обновляем состояние (включая логи с сервера)
                 await this.refreshGameState();
 
                 // Проверяем завершение игры
@@ -900,12 +933,12 @@ class PlayScene extends Phaser.Scene {
                     this.showGameOver(result.winner_id);
                 }
             } else {
-                this.addLog('Ошибка: ' + result.message, 'error');
+                this.showHint('❌ Ошибка: ' + result.message);
             }
 
         } catch (error) {
             console.error('Error executing attack:', error);
-            this.addLog('Ошибка выполнения атаки', 'error');
+            this.showHint('❌ Ошибка выполнения атаки');
         }
     }
 
@@ -971,7 +1004,7 @@ class PlayScene extends Phaser.Scene {
      */
     async skipUnitTurn() {
         if (!selectedUnitId) {
-            this.addLog('Сначала выберите юнита!', 'error');
+            this.showHint('⚠️ Сначала выберите юнита!');
             return;
         }
 
@@ -988,7 +1021,7 @@ class PlayScene extends Phaser.Scene {
             const result = await response.json();
 
             if (result.success) {
-                this.addLog('Юнит пропустил ход', 'move');
+                this.showHint('⏭️ Юнит пропустил ход');
 
                 // Обновляем состояние
                 const container = this.units.get(selectedUnitId);
@@ -1025,6 +1058,7 @@ class PlayScene extends Phaser.Scene {
         this.selectionGraphics.clear();
         this.highlightActiveUnits();
         this.hideUnitPortraits();
+        this.clearHint();
         document.getElementById('action-panel').style.display = 'none';
     }
 
@@ -1040,6 +1074,7 @@ class PlayScene extends Phaser.Scene {
             const newHash = JSON.stringify({
                 current_player_id: newState.current_player_id,
                 status: newState.status,
+                logs_count: newState.logs ? newState.logs.length : 0,
                 units: newState.units.map(u => ({
                     id: u.id,
                     x: u.x,
@@ -1053,10 +1088,16 @@ class PlayScene extends Phaser.Scene {
                 lastGameStateHash = newHash;
 
                 // Состояние изменилось (возможно из Telegram)
-                if (this.gameState.current_player_id !== newState.current_player_id ||
-                    JSON.stringify(this.gameState.units) !== JSON.stringify(newState.units)) {
+                const stateChanged = this.gameState.current_player_id !== newState.current_player_id ||
+                    JSON.stringify(this.gameState.units) !== JSON.stringify(newState.units);
 
-                    this.addLog('📱 Обновление состояния игры из Telegram', 'info');
+                const logsChanged = newState.logs &&
+                    (!this.gameState.logs || newState.logs.length !== this.gameState.logs.length);
+
+                if (stateChanged || logsChanged) {
+                    if (stateChanged) {
+                        this.showHint('📱 Обновление состояния игры из Telegram');
+                    }
                     await this.refreshGameState();
                 }
 
@@ -1120,8 +1161,48 @@ class PlayScene extends Phaser.Scene {
             this.updateUI();
             this.highlightActiveUnits();
 
+            // Обновляем логи если они есть в ответе
+            if (this.gameState.logs) {
+                this.syncLogs(this.gameState.logs);
+            }
+
         } catch (error) {
             console.error('Error refreshing game state:', error);
+        }
+    }
+
+    /**
+     * Синхронизация логов с сервера
+     */
+    syncLogs(serverLogs) {
+        const logContainer = document.getElementById('log-entries');
+        if (!logContainer || !serverLogs) return;
+
+        // Получаем количество текущих логов
+        const currentLogsCount = logContainer.children.length;
+        const serverLogsCount = serverLogs.length;
+
+        // Если на сервере больше логов - добавляем новые
+        if (serverLogsCount > currentLogsCount) {
+            // Берём только новые логи (которых ещё нет в UI)
+            const newLogs = serverLogs.slice(currentLogsCount);
+
+            newLogs.forEach(log => {
+                const entry = document.createElement('div');
+                entry.className = `log-entry ${log.event_type}`;
+
+                const time = new Date(log.created_at).toLocaleTimeString('ru-RU', {
+                    hour: '2-digit', minute: '2-digit', second: '2-digit'
+                });
+                entry.innerHTML = `<span style="color: #888; font-size: 11px;">[${time}]</span> ${log.message}`;
+
+                logContainer.insertBefore(entry, logContainer.firstChild);
+            });
+
+            // Ограничиваем количество записей
+            while (logContainer.children.length > 50) {
+                logContainer.removeChild(logContainer.lastChild);
+            }
         }
     }
 
@@ -1131,11 +1212,24 @@ class PlayScene extends Phaser.Scene {
     updateUI() {
         const p1Turn = document.getElementById('p1-turn');
         const p2Turn = document.getElementById('p2-turn');
+        const p1Name = document.getElementById('p1-name');
+        const p2Name = document.getElementById('p2-name');
 
-        const playerIds = [...new Set(this.gameState.units.map(u => u.player_id))];
+        // Используем player1_id и player2_id из состояния игры (не из юнитов!)
+        const player1Id = this.gameState.player1_id;
+        const player2Id = this.gameState.player2_id;
 
-        if (p1Turn && p2Turn) {
-            if (this.gameState.current_player_id === playerIds[0]) {
+        // Обновляем имена игроков из API (если есть)
+        if (p1Name && this.gameState.player1_name) {
+            p1Name.textContent = this.gameState.player1_name;
+        }
+        if (p2Name && this.gameState.player2_name) {
+            p2Name.textContent = this.gameState.player2_name;
+        }
+
+        // Обновляем индикаторы хода
+        if (p1Turn && p2Turn && player1Id && player2Id) {
+            if (this.gameState.current_player_id === player1Id) {
                 p1Turn.style.display = 'block';
                 p2Turn.style.display = 'none';
             } else {
@@ -1144,7 +1238,10 @@ class PlayScene extends Phaser.Scene {
             }
         }
 
-        this.updatePlayerUnits(playerIds);
+        // Обновляем списки юнитов
+        if (player1Id && player2Id) {
+            this.updatePlayerUnits([player1Id, player2Id]);
+        }
     }
 
     /**
@@ -1182,7 +1279,34 @@ class PlayScene extends Phaser.Scene {
     }
 
     /**
-     * Добавление записи в лог
+     * Показать UI-подсказку (НЕ записывается в лог игры)
+     * Используется для информационных сообщений интерфейса
+     */
+    showHint(message) {
+        const hintContent = document.getElementById('hint-content');
+        if (!hintContent) return;
+
+        // Добавляем анимацию смены
+        hintContent.classList.remove('changing');
+        void hintContent.offsetWidth; // Trigger reflow
+        hintContent.classList.add('changing');
+
+        hintContent.textContent = message;
+    }
+
+    /**
+     * Очистить подсказку (покажет дефолтный текст через CSS)
+     */
+    clearHint() {
+        const hintContent = document.getElementById('hint-content');
+        if (hintContent) {
+            hintContent.textContent = '';
+        }
+    }
+
+    /**
+     * Добавление записи в лог (только для серверных событий!)
+     * НЕ использовать для UI-подсказок - для них есть showHint()
      */
     addLog(message, type = 'info') {
         const logContainer = document.getElementById('log-entries');
@@ -1206,9 +1330,8 @@ class PlayScene extends Phaser.Scene {
      * Показ окончания игры
      */
     showGameOver(winnerId) {
-        const playerIds = [...new Set(this.gameState.units.map(u => u.player_id))];
-        const winnerIndex = playerIds.indexOf(winnerId);
-        const winnerName = winnerIndex === 0 ?
+        // Используем player1_id/player2_id из состояния игры
+        const winnerName = winnerId === this.gameState.player1_id ?
             document.getElementById('p1-name').textContent :
             document.getElementById('p2-name').textContent;
 
@@ -1240,7 +1363,8 @@ class PlayScene extends Phaser.Scene {
         ).setOrigin(0.5);
         winnerText.setDepth(201);
 
-        this.addLog(`🏆 Игра завершена! Победитель: ${winnerName}`, 'game_ended');
+        // Лог завершения игры уже записан на сервере, только показываем подсказку
+        this.showHint(`🏆 Игра завершена! Победитель: ${winnerName}`);
     }
 
     /**

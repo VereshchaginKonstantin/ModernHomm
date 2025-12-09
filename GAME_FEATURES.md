@@ -193,7 +193,7 @@ game_user = db.get_game_user(user.id)
 if not game_user:
     game_user, created = db.get_or_create_game_user(
         telegram_id=user.id,
-        name=user.first_name or user.username or f"User_{user.id}",
+        name=user.username or f"User_{user.id}",
         initial_balance=self.initial_balance
     )
 ```

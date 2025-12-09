@@ -6,8 +6,6 @@ CREATE TABLE users (
     id SERIAL PRIMARY KEY,
     telegram_id BIGINT NOT NULL UNIQUE,
     username VARCHAR(255),
-    first_name VARCHAR(255),
-    last_name VARCHAR(255),
     first_seen TIMESTAMP NOT NULL DEFAULT NOW(),
     last_seen TIMESTAMP NOT NULL DEFAULT NOW()
 );

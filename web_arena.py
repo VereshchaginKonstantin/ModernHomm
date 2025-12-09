@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Модуль арены для админ-панели
+Модуль арены для веб-интерфейса
 Позволяет просматривать записи боёв и играть в реальном времени через браузер
 """
 
@@ -17,14 +17,14 @@ from functools import wraps
 from db.models import Base, GameUser, Unit, UserUnit, Game, GameStatus, BattleUnit, Field, GameLog, Obstacle
 from db.repository import Database
 from game_engine import GameEngine
-from admin_templates import HEADER_TEMPLATE, BASE_STYLE, FOOTER_TEMPLATE, get_admin_version, get_bot_version
+from web_templates import HEADER_TEMPLATE, BASE_STYLE, FOOTER_TEMPLATE, get_web_version, get_bot_version
 import hashlib
 
 
 def get_static_version():
     """Получить версию для cache busting статических файлов"""
-    admin_ver = get_admin_version()
-    return hashlib.md5(admin_ver.encode()).hexdigest()[:8]
+    web_ver = get_web_version()
+    return hashlib.md5(web_ver.encode()).hexdigest()[:8]
 
 logger = logging.getLogger(__name__)
 
@@ -428,6 +428,11 @@ PLAY_TEMPLATE = """
                     </div>
                 </div>
 
+                <!-- UI подсказки (не записываются в лог) -->
+                <div class="game-hints" id="game-hints">
+                    <div class="hint-content" id="hint-content"></div>
+                </div>
+
                 <div class="battle-log" id="battle-log">
                     <h3>📋 Журнал боя</h3>
                     <div class="log-entries" id="log-entries"></div>
@@ -509,6 +514,11 @@ PLAY_GAME_TEMPLATE = """
                     </div>
                 </div>
 
+                <!-- UI подсказки (не записываются в лог) -->
+                <div class="game-hints" id="game-hints">
+                    <div class="hint-content" id="hint-content"></div>
+                </div>
+
                 <div class="battle-log" id="battle-log">
                     <h3>📋 Журнал боя</h3>
                     <div class="log-entries" id="log-entries"></div>
@@ -552,7 +562,7 @@ def index():
         completed_games=completed_games,
         active_games=active_games,
         has_active_game=has_active_game,
-        admin_version=get_admin_version(),
+        web_version=get_web_version(),
         bot_version=get_bot_version(),
         static_version=get_static_version(),
         total_players=total_players
@@ -590,7 +600,7 @@ def replay_list():
         REPLAY_LIST_TEMPLATE,
         active_page='arena',
         games=games_data,
-        admin_version=get_admin_version(),
+        web_version=get_web_version(),
         bot_version=get_bot_version(),
         static_version=get_static_version()
     )
@@ -612,7 +622,7 @@ def replay_view(game_id):
         player1=game_data['player1'],
         player2=game_data['player2'],
         game_data=json.dumps(game_data, default=json_serial),
-        admin_version=get_admin_version(),
+        web_version=get_web_version(),
         bot_version=get_bot_version(),
         static_version=get_static_version()
     )
@@ -651,7 +661,7 @@ def play():
             current_player=None,
             opponents=[],
             waiting_game=waiting_game,
-            admin_version=get_admin_version(),
+            web_version=get_web_version(),
             bot_version=get_bot_version(),
             static_version=get_static_version(),
             error_message="Ваш игровой профиль не найден. Зарегистрируйтесь в Telegram боте."
@@ -663,7 +673,7 @@ def play():
         current_player=current_player,
         opponents=opponents,
         waiting_game=waiting_game,
-        admin_version=get_admin_version(),
+        web_version=get_web_version(),
         bot_version=get_bot_version(),
         static_version=get_static_version()
     )
@@ -705,7 +715,7 @@ def play_game(game_id, player_id=None):
         player_id=player_id,
         player1_name=player1_name,
         player2_name=player2_name,
-        admin_version=get_admin_version(),
+        web_version=get_web_version(),
         bot_version=get_bot_version(),
         static_version=get_static_version()
     )
@@ -896,9 +906,27 @@ def api_game_state(game_id):
         # Поле
         field = session_db.query(Field).filter_by(id=game.field_id).first()
 
+        # Логи игры
+        logs = session_db.query(GameLog).filter_by(game_id=game_id).order_by(GameLog.created_at).all()
+        logs_data = [{
+            'event_type': log.event_type,
+            'message': log.message,
+            'created_at': log.created_at.isoformat()
+        } for log in logs]
+
+        # Имена игроков
+        player1 = session_db.query(GameUser).filter_by(id=game.player1_id).first()
+        player2 = session_db.query(GameUser).filter_by(id=game.player2_id).first()
+        player1_name = (player1.username or player1.name) if player1 else 'Игрок 1'
+        player2_name = (player2.username or player2.name) if player2 else 'Игрок 2'
+
         return jsonify({
             'game_id': game.id,
             'status': game.status.value,
+            'player1_id': game.player1_id,
+            'player2_id': game.player2_id,
+            'player1_name': player1_name,
+            'player2_name': player2_name,
             'current_player_id': game.current_player_id,
             'winner_id': game.winner_id,
             'field': {
@@ -906,7 +934,8 @@ def api_game_state(game_id):
                 'height': field.height
             } if field else None,
             'units': units_data,
-            'obstacles': obstacles_data
+            'obstacles': obstacles_data,
+            'logs': logs_data
         })
 
 

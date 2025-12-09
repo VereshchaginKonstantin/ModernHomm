@@ -13,13 +13,13 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Копирование приложения
-COPY admin_app.py .
-COPY admin_images_manager.py .
-COPY admin_arena.py .
-COPY admin_templates.py .
+COPY web_interface.py .
+COPY web_images_manager.py .
+COPY web_arena.py .
+COPY web_templates.py .
 COPY game_engine.py .
 COPY config.json .
-COPY ADMIN_VERSION .
+COPY WEB_VERSION .
 COPY VERSION .
 
 # Копирование Python модуля db (модели и репозиторий)
@@ -39,4 +39,4 @@ USER appuser
 EXPOSE 5000
 
 # Запуск приложения
-CMD ["python", "admin_app.py"]
+CMD ["python", "web_interface.py"]

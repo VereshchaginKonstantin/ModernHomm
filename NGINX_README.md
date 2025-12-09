@@ -2,12 +2,12 @@
 
 ## Обзор
 
-Nginx настроен как reverse proxy для веб-интерфейса ModernHomm. Он принимает HTTP запросы на порту 80 и проксирует их на Flask приложение (admin), работающее на порту 5000 внутри Docker сети.
+Nginx настроен как reverse proxy для веб-интерфейса ModernHomm. Он принимает HTTP запросы на порту 80 и проксирует их на Flask приложение (web), работающее на порту 5000 внутри Docker сети.
 
 ## Архитектура
 
 ```
-Клиент → nginx:80 (хост) → nginx контейнер → admin:5000 → Flask приложение
+Клиент → nginx:80 (хост) → nginx контейнер → web:5000 → Flask приложение
 ```
 
 ## Конфигурация
@@ -17,7 +17,7 @@ Nginx настроен как reverse proxy для веб-интерфейса M
 В `docker-compose.yml` настроены три основных сервиса:
 
 1. **postgres** - База данных PostgreSQL
-2. **admin** - Flask приложение (порт 5000 внутри сети)
+2. **web** - Flask приложение (порт 5000 внутри сети)
 3. **nginx** - Reverse proxy (порт 80 на хосте)
 
 ### Nginx конфигурация
@@ -26,8 +26,8 @@ Nginx настроен как reverse proxy для веб-интерфейса M
 
 **Upstream:**
 ```nginx
-upstream admin_backend {
-    server admin:5000;
+upstream web_backend {
+    server web:5000;
 }
 ```
 
@@ -35,12 +35,12 @@ upstream admin_backend {
 
 1. **Для доменов modernhomm.ru и www.modernhomm.ru:**
    - Слушает на порту 80
-   - Проксирует все запросы на `admin:5000`
+   - Проксирует все запросы на `web:5000`
    - Поддерживает WebSocket соединения
 
 2. **Для IP адреса 130.49.176.128:**
    - Слушает на порту 80 (default_server)
-   - Проксирует все запросы на `admin:5000`
+   - Проксирует все запросы на `web:5000`
    - Поддерживает WebSocket соединения
 
 ## Настройка DNS
@@ -74,7 +74,7 @@ docker compose ps
 docker compose logs nginx
 
 # Проверить логи веб-интерфейса
-docker compose logs admin
+docker compose logs web
 
 # Тест HTTP запроса
 curl -I http://localhost/
@@ -138,15 +138,15 @@ docker compose logs -f
 # Только nginx
 docker compose logs -f nginx
 
-# Только admin
-docker compose logs -f admin
+# Только web
+docker compose logs -f web
 ```
 
 ### Проверка сетевого соединения
 
 ```bash
-# Проверка доступности admin из nginx контейнера
-docker compose exec nginx wget -O- http://admin:5000/
+# Проверка доступности web из nginx контейнера
+docker compose exec nginx wget -O- http://web:5000/
 
 # Проверка портов на хосте
 netstat -tlnp | grep :80
@@ -168,8 +168,8 @@ netstat -tlnp | grep :80
 
 1. **Заменить Flask dev server на Gunicorn:**
    ```bash
-   # В Dockerfile.admin
-   CMD ["gunicorn", "-w", "4", "-b", "0.0.0.0:5000", "admin_app:app"]
+   # В Dockerfile.web
+   CMD ["gunicorn", "-w", "4", "-b", "0.0.0.0:5000", "web_interface:app"]
    ```
 
 2. **Увеличить worker_connections в nginx:**
@@ -195,15 +195,15 @@ netstat -tlnp | grep :80
 
 ## Troubleshooting
 
-**Проблема:** nginx не может подключиться к admin
+**Проблема:** nginx не может подключиться к web
 
 **Решение:**
 ```bash
 # Проверить что контейнеры в одной сети
 docker network inspect modernhomm_modernhomm_network
 
-# Проверить что admin работает
-docker compose exec admin wget -O- http://localhost:5000/
+# Проверить что web работает
+docker compose exec web wget -O- http://localhost:5000/
 ```
 
 **Проблема:** Порт 80 уже занят
@@ -220,6 +220,6 @@ sudo systemctl stop apache2
 **Проблема:** 502 Bad Gateway
 
 **Решение:**
-- Проверить что admin контейнер запущен: `docker compose ps`
-- Проверить логи admin: `docker compose logs admin`
-- Проверить что admin слушает на 5000: `docker compose exec admin netstat -tlnp`
+- Проверить что web контейнер запущен: `docker compose ps`
+- Проверить логи web: `docker compose logs web`
+- Проверить что web слушает на 5000: `docker compose exec web netstat -tlnp`

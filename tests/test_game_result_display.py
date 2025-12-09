@@ -21,17 +21,37 @@ from game_engine import GameEngine
 
 @pytest.fixture(scope="function")
 def db_session():
-    """Создание тестовой базы данных"""
+    """Создание тестовой сессии базы данных"""
+    from sqlalchemy import text
     engine = create_engine("postgresql://postgres:postgres@localhost:5433/telegram_bot_test")
-    Base.metadata.create_all(engine)
     Session = sessionmaker(bind=engine)
     session = Session()
 
+    # Очищаем тестовые данные перед тестом
+    try:
+        session.execute(text("DELETE FROM battle_units"))
+        session.execute(text("DELETE FROM game_logs"))
+        session.execute(text("DELETE FROM games"))
+        session.execute(text("DELETE FROM user_units"))
+        session.execute(text("DELETE FROM game_users"))
+        session.commit()
+    except Exception:
+        session.rollback()
+
     yield session
 
-    session.rollback()
+    # Очищаем тестовые данные после теста
+    try:
+        session.execute(text("DELETE FROM battle_units"))
+        session.execute(text("DELETE FROM game_logs"))
+        session.execute(text("DELETE FROM games"))
+        session.execute(text("DELETE FROM user_units"))
+        session.execute(text("DELETE FROM game_users"))
+        session.commit()
+    except Exception:
+        session.rollback()
+
     session.close()
-    Base.metadata.drop_all(engine)
 
 
 @pytest.fixture

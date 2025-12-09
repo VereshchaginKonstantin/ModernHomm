@@ -1,16 +1,16 @@
 #!/usr/bin/env python3
 """
-Общие HTML-шаблоны для админ-панели
+Общие HTML-шаблоны для веб-интерфейса
 """
 
 import os
 from datetime import datetime
 
 
-def get_admin_version():
-    """Получить версию веб-интерфейса из файла ADMIN_VERSION"""
+def get_web_version():
+    """Получить версию веб-интерфейса из файла WEB_VERSION"""
     try:
-        with open('ADMIN_VERSION', 'r', encoding='utf-8') as f:
+        with open('WEB_VERSION', 'r', encoding='utf-8') as f:
             return f.read().strip()
     except FileNotFoundError:
         return "unknown"
@@ -360,8 +360,8 @@ BASE_STYLE = """
 
 FOOTER_TEMPLATE = """
 <div class="version-footer">
-    <span class="version-label">Admin:</span>
-    <span class="version-value">{{ admin_version }}</span>
+    <span class="version-label">Web:</span>
+    <span class="version-value">{{ web_version }}</span>
     <span class="version-divider">|</span>
     <span class="version-label">Bot:</span>
     <span class="version-bot">{{ bot_version }}</span>

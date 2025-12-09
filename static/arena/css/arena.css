@@ -300,6 +300,42 @@
     font-size: 16px;
 }
 
+/* Блок UI подсказок (не сохраняется в лог) */
+.game-hints {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    border-radius: 8px;
+    padding: 12px 20px;
+    box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3);
+    margin-bottom: 15px;
+    min-height: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.hint-content {
+    color: white;
+    font-size: 15px;
+    font-weight: 500;
+    text-align: center;
+    text-shadow: 0 1px 2px rgba(0,0,0,0.2);
+}
+
+.hint-content:empty::before {
+    content: "💡 Выберите юнита с зеленым индикатором для начала хода";
+    opacity: 0.85;
+}
+
+/* Анимация смены подсказки */
+.hint-content.changing {
+    animation: hintPulse 0.3s ease-out;
+}
+
+@keyframes hintPulse {
+    0% { opacity: 0.5; transform: scale(0.98); }
+    100% { opacity: 1; transform: scale(1); }
+}
+
 /* Панель действий */
 .action-panel {
     background: white;

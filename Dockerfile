@@ -17,13 +17,13 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY bot.py .
 COPY game_engine.py .
 COPY field_renderer.py .
-COPY admin_app.py .
-COPY admin_arena.py .
-COPY admin_templates.py .
-COPY admin_images_manager.py .
+COPY web_interface.py .
+COPY web_arena.py .
+COPY web_templates.py .
+COPY web_images_manager.py .
 COPY config.json .
 COPY VERSION .
-COPY ADMIN_VERSION .
+COPY WEB_VERSION .
 
 # Копирование Python модуля db (модели и репозиторий)
 COPY db/ ./db/

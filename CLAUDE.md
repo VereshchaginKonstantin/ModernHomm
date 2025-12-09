@@ -171,7 +171,7 @@ docker-compose -f docker-compose.test.yml down
 - Error handling and logging setup
 
 **database.py** - Database layer:
-- `User` model - stores Telegram user information (telegram_id, username, first_name, last_name, first_seen, last_seen)
+- `User` model - stores Telegram user information (telegram_id, username, first_seen, last_seen)
 - `Message` model - stores all received messages (telegram_user_id, message_text, message_date, username)
 - `Database` class - provides methods for database operations:
   - `save_user()` - saves or updates user information
