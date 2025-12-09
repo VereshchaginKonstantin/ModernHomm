@@ -2973,7 +2973,11 @@ class SimpleBot:
 
                 if opponent and opponent.telegram_id:
                     try:
-                        opponent_actions = engine.get_available_actions(game_id, opponent_id)
+                        # Создаём новую сессию для получения действий противника
+                        with self.db.get_session() as session:
+                            engine_for_opponent = GameEngine(session)
+                            opponent_actions = engine_for_opponent.get_available_actions(game_id, opponent_id)
+
                         opponent_keyboard = self._create_game_keyboard(game_id, opponent_id, opponent_actions)
 
                         # Отправляем PNG поле противнику
@@ -3173,7 +3177,11 @@ class SimpleBot:
 
                 if opponent and opponent.telegram_id:
                     try:
-                        opponent_actions = engine.get_available_actions(game_id, opponent_id)
+                        # Создаём новую сессию для получения действий противника
+                        with self.db.get_session() as session:
+                            engine_for_opponent = GameEngine(session)
+                            opponent_actions = engine_for_opponent.get_available_actions(game_id, opponent_id)
+
                         opponent_keyboard = self._create_game_keyboard(game_id, opponent_id, opponent_actions)
 
                         # Отправляем PNG поле противнику
