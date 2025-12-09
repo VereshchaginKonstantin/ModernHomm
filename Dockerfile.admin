@@ -15,13 +15,21 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Копирование приложения
 COPY admin_app.py .
 COPY admin_images_manager.py .
+COPY admin_arena.py .
+COPY admin_templates.py .
+COPY game_engine.py .
 COPY config.json .
+COPY ADMIN_VERSION .
+COPY VERSION .
 
 # Копирование Python модуля db (модели и репозиторий)
 COPY db/ ./db/
 
 # Создание директории для статических файлов (картинки юнитов)
 RUN mkdir -p static/unit_images
+
+# Копирование статических файлов арены
+COPY static/arena/ ./static/arena/
 
 # Создание непривилегированного пользователя
 RUN useradd -m -u 1000 appuser && chown -R appuser:appuser /app
