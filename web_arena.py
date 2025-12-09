@@ -405,6 +405,17 @@ PLAY_TEMPLATE = """
                         </div>
                         <div class="player-units" id="player1-units"></div>
                         <div id="p1-turn" class="turn-indicator" style="display:none">Ваш ход!</div>
+
+                        <div class="action-panel" id="action-panel" style="display: none;">
+                            <div class="action-buttons-main">
+                                <button id="btn-move" class="btn btn-primary btn-action">🚶 Двигаться</button>
+                                <button id="btn-attack" class="btn btn-danger btn-action">⚔️ Атаковать</button>
+                                <button id="btn-skip" class="btn btn-secondary btn-action">⏭️ Пропустить</button>
+                            </div>
+                            <div class="action-buttons-escape">
+                                <button id="btn-cancel" class="btn btn-escape">🏃 Сбежать с поля боя</button>
+                            </div>
+                        </div>
                     </div>
 
                     <div id="phaser-game"></div>
@@ -428,19 +439,6 @@ PLAY_TEMPLATE = """
                         </div>
                         <div class="player-units" id="player2-units"></div>
                         <div id="p2-turn" class="turn-indicator" style="display:none">Ход противника</div>
-                    </div>
-                </div>
-
-                <div class="action-panel" id="action-panel" style="display: none;">
-                    <h3>Выберите действие</h3>
-                    <div id="selected-unit-info"></div>
-                    <div class="action-buttons-main">
-                        <button id="btn-move" class="btn btn-primary btn-action">🚶 Двигаться</button>
-                        <button id="btn-attack" class="btn btn-danger btn-action">⚔️ Атаковать</button>
-                        <button id="btn-skip" class="btn btn-secondary btn-action">⏭️ Пропустить</button>
-                    </div>
-                    <div class="action-buttons-escape">
-                        <button id="btn-cancel" class="btn btn-escape">🏃 Сбежать с поля боя</button>
                     </div>
                 </div>
 
@@ -507,6 +505,17 @@ PLAY_GAME_TEMPLATE = """
                         </div>
                         <div class="player-units" id="player1-units"></div>
                         <div id="p1-turn" class="turn-indicator" style="display:none">Ваш ход!</div>
+
+                        <div class="action-panel" id="action-panel" style="display: none;">
+                            <div class="action-buttons-main">
+                                <button id="btn-move" class="btn btn-primary btn-action">🚶 Двигаться</button>
+                                <button id="btn-attack" class="btn btn-danger btn-action">⚔️ Атаковать</button>
+                                <button id="btn-skip" class="btn btn-secondary btn-action">⏭️ Пропустить</button>
+                            </div>
+                            <div class="action-buttons-escape">
+                                <button id="btn-cancel" class="btn btn-escape">🏃 Сбежать с поля боя</button>
+                            </div>
+                        </div>
                     </div>
 
                     <div id="phaser-game"></div>
@@ -530,19 +539,6 @@ PLAY_GAME_TEMPLATE = """
                         </div>
                         <div class="player-units" id="player2-units"></div>
                         <div id="p2-turn" class="turn-indicator" style="display:none">Ход противника</div>
-                    </div>
-                </div>
-
-                <div class="action-panel" id="action-panel" style="display: none;">
-                    <h3>Выберите действие</h3>
-                    <div id="selected-unit-info"></div>
-                    <div class="action-buttons-main">
-                        <button id="btn-move" class="btn btn-primary btn-action">🚶 Двигаться</button>
-                        <button id="btn-attack" class="btn btn-danger btn-action">⚔️ Атаковать</button>
-                        <button id="btn-skip" class="btn btn-secondary btn-action">⏭️ Пропустить</button>
-                    </div>
-                    <div class="action-buttons-escape">
-                        <button id="btn-cancel" class="btn btn-escape">🏃 Сбежать с поля боя</button>
                     </div>
                 </div>
 
