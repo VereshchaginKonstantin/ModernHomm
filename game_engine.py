@@ -286,6 +286,12 @@ class GameEngine:
             turn_switched = True
 
         game.last_move_at = datetime.utcnow()
+
+        # Логируем перемещение
+        player = self.db.query(GameUser).filter_by(id=player_id).first()
+        unit_name = unit.name if unit else "Юнит"
+        self._log_event(game.id, "move", f"🚶 {player.name}: {unit_name} {old_pos} → ({target_x}, {target_y})")
+
         self.db.commit()
 
         return True, f"Юнит перемещен с {old_pos} на ({target_x}, {target_y})", turn_switched
@@ -1420,8 +1426,7 @@ class GameEngine:
         game_end_log += f"   📦 Убито юнитов {loser.name}: {format_coins(killed_enemy_value)}\n"
         if lost_own_value > 0:
             game_end_log += f"   ⚰️ Потеряно своих юнитов: {format_coins(lost_own_value)}\n"
-        game_end_log += f"   💵 Награда (70% + потери): +{format_coins(reward)}\n"
-        game_end_log += f"   💹 Чистая прибыль: {format_coins(net_profit)}"
+        game_end_log += f"   💵 Награда (70% + потери): +{format_coins(reward)}"
         self._log_event(game.id, "game_ended", game_end_log)
 
         self.db.commit()

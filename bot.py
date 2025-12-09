@@ -2109,8 +2109,13 @@ class SimpleBot:
                         actions = engine.get_available_actions(game_id, game_user.id)
                         keyboard = self._create_game_keyboard(game_id, game_user.id, actions)
 
-                        # Используем _edit_field для обновления поля с PNG
-                        await self._edit_field(query, game_id, f"✅ {movement_message}", keyboard)
+                        # Обновляем текст без рисования поля
+                        await self._edit_message_universal(
+                            query,
+                            f"✅ {movement_message}",
+                            reply_markup=InlineKeyboardMarkup(keyboard),
+                            parse_mode=self.parse_mode
+                        )
 
                         # Отправить уведомление о перемещении противнику
                         game = session.query(Game).filter_by(id=game_id).first()
@@ -2215,9 +2220,14 @@ class SimpleBot:
                         'available_cells': available_cells
                     }
 
-                    # Используем _edit_field для показа поля с доступными позициями
+                    # Показываем позиции без рисования поля
                     caption = f"🏃 Выберите позицию для перемещения\n\nДоступно позиций: {len(available_cells)}\n\n💬 Вы можете отправить название ячейки текстом (например: A1, B3)"
-                    await self._edit_field(query, game_id, caption, keyboard)
+                    await self._edit_message_universal(
+                        query,
+                        caption,
+                        reply_markup=InlineKeyboardMarkup(keyboard),
+                        parse_mode=self.parse_mode
+                    )
 
             except Exception as e:
                 logger.error(f"Ошибка при показе доступных позиций: {e}")
@@ -2256,12 +2266,17 @@ class SimpleBot:
                         # Игра завершена - отправить результаты обоим игрокам
                         await self._handle_game_completion(query, game, message, context)
                     else:
-                        # Игра продолжается - обновить поле
+                        # Игра продолжается - обновить текст без поля
                         actions = engine.get_available_actions(game_id, game_user.id)
                         keyboard = self._create_game_keyboard(game_id, game_user.id, actions)
 
-                        # Используем _edit_field для обновления поля с PNG
-                        await self._edit_field(query, game_id, "✅ Атака выполнена!", keyboard)
+                        # Обновляем текст без рисования поля
+                        await self._edit_message_universal(
+                            query,
+                            "✅ Атака выполнена!",
+                            reply_markup=InlineKeyboardMarkup(keyboard),
+                            parse_mode=self.parse_mode
+                        )
 
                         # Создаем кнопку "Текущая игра"
                         current_game_keyboard = InlineKeyboardMarkup([
@@ -2307,10 +2322,11 @@ class SimpleBot:
                                     opponent_actions = engine.get_available_actions(game_id, opponent_id)
                                     opponent_keyboard = self._create_game_keyboard(game_id, opponent_id, opponent_actions)
 
-                                    # Отправляем PNG поле противнику
-                                    await self._send_field_image(
+                                    # Отправляем статус игры противнику (без поля)
+                                    await self._send_game_status(
                                         chat_id=opponent.telegram_id,
                                         game_id=game_id,
+                                        player_id=opponent_id,
                                         caption="🎮 Теперь ваш ход!",
                                         context=context,
                                         keyboard=opponent_keyboard
@@ -2575,6 +2591,20 @@ class SimpleBot:
             # Проверить, что игрок участвует в игре
             if game.player1_id != game_user.id and game.player2_id != game_user.id:
                 await self._edit_message_universal(query, "❌ Вы не участвуете в этой игре", parse_mode=self.parse_mode)
+                return
+
+            # Если игра завершена - показать сообщение без кнопок
+            from db.models import GameStatus
+            if game.status == GameStatus.COMPLETED:
+                winner = self.db.get_game_user_by_id(game.winner_id)
+                winner_name = winner.name if winner else "Unknown"
+                result_text = f"🏆 Игра #{game_id} завершена!\n\nПобедитель: {winner_name}"
+                await self._edit_message_universal(
+                    query,
+                    result_text,
+                    reply_markup=None,
+                    parse_mode=self.parse_mode
+                )
                 return
 
             # Получить информацию об игре
@@ -3128,16 +3158,15 @@ class SimpleBot:
                                 to_cell = cell_input
                                 movement_message = f"📍 {unit_name} переместился на {to_cell}"
 
-                            # Отправляем PNG поле
+                            # Отправляем статус без поля
                             actions = engine.get_available_actions(game_id, game_user.id)
                             keyboard = self._create_game_keyboard(game_id, game_user.id, actions)
 
-                            await self._send_field_image(
+                            await context.bot.send_message(
                                 chat_id=update.effective_chat.id,
-                                game_id=game_id,
-                                caption=f"✅ {movement_message}",
-                                context=context,
-                                keyboard=keyboard
+                                text=f"✅ {movement_message}",
+                                parse_mode=self.parse_mode,
+                                reply_markup=InlineKeyboardMarkup(keyboard) if keyboard else None
                             )
                         else:
                             await update.message.reply_text(

@@ -974,6 +974,10 @@ class PlayScene extends Phaser.Scene {
             const result = await response.json();
 
             if (result.success) {
+                // Сначала обновляем состояние и счётчик логов, чтобы polling не показал эту же атаку
+                await this.refreshGameState();
+                lastShownLogCount = this.gameState.logs ? this.gameState.logs.length : 0;
+
                 // Анимация атаки на поле
                 const attacker = this.units.get(unitId);
                 const target = this.units.get(targetId);
@@ -987,15 +991,8 @@ class PlayScene extends Phaser.Scene {
                     await this.showBattleOverlay(attackerData, targetData, result.message, 5000);
                 }
 
-                // Атака логируется на сервере, лог подгрузится через syncLogs
                 // Показываем краткую подсказку
                 this.showHint('⚔️ Атака выполнена!');
-
-                // Обновляем состояние (включая логи с сервера)
-                await this.refreshGameState();
-
-                // Обновляем счётчик показанных логов, чтобы не показывать эту атаку повторно
-                lastShownLogCount = this.gameState.logs ? this.gameState.logs.length : 0;
 
                 // Проверяем завершение игры
                 if (result.game_status === 'completed') {
