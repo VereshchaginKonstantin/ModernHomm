@@ -1854,6 +1854,50 @@ class SimpleBot:
                         reply_markup=InlineKeyboardMarkup(keyboard) if keyboard else None
                     )
 
+    async def _send_log_to_both_players(self, game_id: int, context: ContextTypes.DEFAULT_TYPE):
+        """
+        Отправить последнюю запись лога игры обоим игрокам
+
+        Args:
+            game_id: ID игры
+            context: Контекст бота
+        """
+        try:
+            from db.models import GameLog
+
+            # Получить последнюю запись лога
+            with self.db.get_session() as session:
+                latest_log = session.query(GameLog).filter_by(
+                    game_id=game_id
+                ).order_by(GameLog.created_at.desc()).first()
+
+                if not latest_log:
+                    return
+
+                log_message = f"📝 <b>Лог игры #{game_id}</b>\n{latest_log.message}"
+
+                # Получить игру и обоих игроков
+                game = self.db.get_game_by_id(game_id)
+                if not game:
+                    return
+
+                player1 = self.db.get_game_user_by_id(game.player1_id)
+                player2 = self.db.get_game_user_by_id(game.player2_id)
+
+                # Отправить обоим игрокам
+                for player in [player1, player2]:
+                    if player and player.telegram_id:
+                        try:
+                            await context.bot.send_message(
+                                chat_id=player.telegram_id,
+                                text=log_message,
+                                parse_mode='HTML'
+                            )
+                        except Exception as e:
+                            logger.error(f"Ошибка при отправке лога игроку {player.name}: {e}")
+        except Exception as e:
+            logger.error(f"Ошибка при отправке лога обоим игрокам: {e}")
+
     async def _handle_game_completion(self, query, game, attack_message: str, context):
         """
         Обработка завершения игры - отправка результатов обоим игрокам и очистка кнопок
@@ -2262,6 +2306,9 @@ class SimpleBot:
 
                         # Если ход сменился, отправить уведомление противнику с полем
                         if turn_switched:
+                            # Отправить запись лога о смене хода обоим игрокам
+                            await self._send_log_to_both_players(game_id, context)
+
                             game = self.db.get_game_by_id(game_id)
                             opponent_id = game.player2_id if game.player1_id == game_user.id else game.player1_id
                             opponent = self.db.get_game_user_by_id(opponent_id)
@@ -2416,6 +2463,9 @@ class SimpleBot:
 
                         # Если ход сменился, отправить уведомление противнику
                         if turn_switched:
+                            # Отправить запись лога о смене хода обоим игрокам
+                            await self._send_log_to_both_players(game_id, context)
+
                             opponent_id = game.player2_id if game.player1_id == game_user.id else game.player1_id
                             opponent = self.db.get_game_user_by_id(opponent_id)
 
@@ -2469,6 +2519,9 @@ class SimpleBot:
 
                     # Если ход сменился, отправить уведомление противнику
                     if turn_switched:
+                        # Отправить запись лога о смене хода обоим игрокам
+                        await self._send_log_to_both_players(game_id, context)
+
                         game = self.db.get_game_by_id(game_id)
                         opponent_id = game.player2_id if game.player1_id == game_user.id else game.player1_id
                         opponent = self.db.get_game_user_by_id(opponent_id)

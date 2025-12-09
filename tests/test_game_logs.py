@@ -382,5 +382,191 @@ class TestGameLogs:
             assert len(logs) == 0
 
 
+class TestTurnSwitchLogging:
+    """Тесты для логирования смены хода"""
+
+    @pytest.fixture(autouse=True)
+    def setup(self):
+        """Подготовка тестовой базы данных"""
+        self.db = Database("postgresql://postgres:postgres@localhost:5433/telegram_bot_test")
+
+        # Очистка данных перед тестом
+        with self.db.get_session() as session:
+            from db.models import BattleUnit
+            session.query(BattleUnit).delete()
+            session.query(GameLog).delete()
+            session.query(Game).delete()
+            session.query(UserUnit).delete()
+            session.query(GameUser).delete()
+            session.commit()
+
+        yield
+
+        # Очистка после теста
+        with self.db.get_session() as session:
+            from db.models import BattleUnit
+            session.query(BattleUnit).delete()
+            session.query(GameLog).delete()
+            session.query(Game).delete()
+            session.query(UserUnit).delete()
+            session.query(GameUser).delete()
+            session.commit()
+
+    def test_turn_switch_creates_log_entry(self):
+        """Тест: смена хода создает запись в логе с типом turn_switch"""
+        from game_engine import GameEngine
+
+        with self.db.get_session() as session:
+            field = session.query(Field).first()
+            if not field:
+                pytest.skip("No fields in database")
+
+            unit = session.query(Unit).first()
+            if not unit:
+                pytest.skip("No units in database")
+
+            # Создаем игроков
+            player1 = GameUser(telegram_id=2001, name="TurnPlayer1", username="turnplayer1", balance=1000)
+            player2 = GameUser(telegram_id=2002, name="TurnPlayer2", username="turnplayer2", balance=1000)
+            session.add(player1)
+            session.add(player2)
+            session.flush()
+
+            # Создаем юнитов для игроков
+            user_unit1 = UserUnit(game_user_id=player1.id, unit_type_id=unit.id, count=5)
+            user_unit2 = UserUnit(game_user_id=player2.id, unit_type_id=unit.id, count=5)
+            session.add(user_unit1)
+            session.add(user_unit2)
+            session.commit()
+
+            # Создаем игру через GameEngine
+            engine = GameEngine(session)
+            game, message = engine.create_game(player1.id, "turnplayer2")
+            game_id = game.id
+
+            # Принимаем игру
+            engine.accept_game(game_id, player2.id)
+
+            # Получаем юнита для хода
+            from db.models import BattleUnit
+            battle_units = session.query(BattleUnit).filter_by(
+                game_id=game_id,
+                player_id=player1.id
+            ).all()
+
+            # Пропускаем ходы всех юнитов первого игрока, чтобы сменился ход
+            for bu in battle_units:
+                engine.skip_unit_turn(game_id, player1.id, bu.id)
+
+        # Проверяем, что создана запись в логе о смене хода
+        with self.db.get_session() as session:
+            turn_switch_logs = session.query(GameLog).filter_by(
+                game_id=game_id,
+                event_type="turn_switch"
+            ).all()
+
+            assert len(turn_switch_logs) > 0, "Должна быть хотя бы одна запись о смене хода"
+
+            # Проверяем формат сообщения
+            latest_log = turn_switch_logs[-1]
+            assert "🔄 Ход переходит к" in latest_log.message
+            assert "TurnPlayer2" in latest_log.message or "turnplayer2" in latest_log.message
+
+    def test_turn_switch_log_contains_player_name(self):
+        """Тест: лог смены хода содержит имя игрока, к которому переходит ход"""
+        from game_engine import GameEngine
+
+        with self.db.get_session() as session:
+            field = session.query(Field).first()
+            if not field:
+                pytest.skip("No fields in database")
+
+            unit = session.query(Unit).first()
+            if not unit:
+                pytest.skip("No units in database")
+
+            # Создаем игроков с уникальными именами
+            player1 = GameUser(telegram_id=2003, name="Альфа", username="alpha_user", balance=1000)
+            player2 = GameUser(telegram_id=2004, name="Бета", username="beta_user", balance=1000)
+            session.add(player1)
+            session.add(player2)
+            session.flush()
+
+            # Создаем юнитов
+            user_unit1 = UserUnit(game_user_id=player1.id, unit_type_id=unit.id, count=5)
+            user_unit2 = UserUnit(game_user_id=player2.id, unit_type_id=unit.id, count=5)
+            session.add(user_unit1)
+            session.add(user_unit2)
+            session.commit()
+
+            # Создаем игру
+            engine = GameEngine(session)
+            game, _ = engine.create_game(player1.id, "beta_user")
+            game_id = game.id
+
+            # Принимаем игру
+            engine.accept_game(game_id, player2.id)
+
+            # Пропускаем все ходы первого игрока
+            from db.models import BattleUnit
+            battle_units = session.query(BattleUnit).filter_by(
+                game_id=game_id,
+                player_id=player1.id
+            ).all()
+
+            for bu in battle_units:
+                engine.skip_unit_turn(game_id, player1.id, bu.id)
+
+        # Проверяем содержимое лога
+        with self.db.get_session() as session:
+            turn_log = session.query(GameLog).filter_by(
+                game_id=game_id,
+                event_type="turn_switch"
+            ).order_by(GameLog.created_at.desc()).first()
+
+            assert turn_log is not None
+            # Должно содержать username или name игрока 2
+            assert "beta_user" in turn_log.message or "Бета" in turn_log.message
+
+    def test_turn_switch_log_event_type(self):
+        """Тест: event_type для смены хода должен быть 'turn_switch'"""
+        with self.db.get_session() as session:
+            field = session.query(Field).first()
+            if not field:
+                pytest.skip("No fields in database")
+
+            # Создаем тестовую запись лога напрямую
+            player1 = GameUser(telegram_id=2005, name="TestP1", balance=1000)
+            player2 = GameUser(telegram_id=2006, name="TestP2", balance=1000)
+            session.add(player1)
+            session.add(player2)
+            session.flush()
+
+            game = Game(
+                player1_id=player1.id,
+                player2_id=player2.id,
+                field_id=field.id,
+                status=GameStatus.IN_PROGRESS.value
+            )
+            session.add(game)
+            session.flush()
+
+            # Создаем лог смены хода
+            log = GameLog(
+                game_id=game.id,
+                event_type="turn_switch",
+                message="🔄 Ход переходит к TestP2"
+            )
+            session.add(log)
+            session.commit()
+            log_id = log.id
+
+        # Проверяем
+        with self.db.get_session() as session:
+            log = session.query(GameLog).filter_by(id=log_id).first()
+            assert log.event_type == "turn_switch"
+            assert "🔄" in log.message
+
+
 if __name__ == '__main__':
     pytest.main([__file__, '-v'])

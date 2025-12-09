@@ -528,9 +528,11 @@ class PlayScene extends Phaser.Scene {
                 this.showTargetUnitPortrait(targetData);
             }
         } else {
-            // Скрываем портрет цели если не над целью
-            const targetPortrait = document.getElementById('target-unit-portrait');
-            if (targetPortrait) targetPortrait.style.display = 'none';
+            // Скрываем портреты целей если не над целью
+            const targetP1 = document.getElementById('p1-target-portrait');
+            const targetP2 = document.getElementById('p2-target-portrait');
+            if (targetP1) targetP1.style.display = 'none';
+            if (targetP2) targetP2.style.display = 'none';
         }
     }
 
@@ -651,13 +653,31 @@ class PlayScene extends Phaser.Scene {
     }
 
     /**
-     * Показать портрет активного юнита (слева)
+     * Получить префикс для портретов в зависимости от текущего игрока
+     * Активный игрок показывает портрет на своей стороне
+     */
+    getPortraitPrefix(isAttacker) {
+        const currentPlayerId = this.gameState.current_player_id;
+        const player1Id = this.gameState.player1_id;
+
+        if (isAttacker) {
+            // Атакующий юнит показывается на стороне текущего игрока
+            return currentPlayerId === player1Id ? 'p1' : 'p2';
+        } else {
+            // Цель показывается на противоположной стороне
+            return currentPlayerId === player1Id ? 'p2' : 'p1';
+        }
+    }
+
+    /**
+     * Показать портрет активного юнита (на стороне текущего игрока)
      */
     showActiveUnitPortrait(unitData) {
-        const portrait = document.getElementById('active-unit-portrait');
-        const img = document.getElementById('active-unit-image');
-        const name = document.getElementById('active-unit-name');
-        const stats = document.getElementById('active-unit-stats');
+        const prefix = this.getPortraitPrefix(true);
+        const portrait = document.getElementById(`${prefix}-active-portrait`);
+        const img = document.getElementById(`${prefix}-active-image`);
+        const name = document.getElementById(`${prefix}-active-name`);
+        const stats = document.getElementById(`${prefix}-active-stats`);
 
         if (portrait && unitData.unit_type) {
             // Устанавливаем изображение (нормализуем путь)
@@ -681,13 +701,14 @@ class PlayScene extends Phaser.Scene {
     }
 
     /**
-     * Показать портрет цели атаки (справа)
+     * Показать портрет цели атаки (на стороне противника)
      */
     showTargetUnitPortrait(targetData) {
-        const portrait = document.getElementById('target-unit-portrait');
-        const img = document.getElementById('target-unit-image');
-        const name = document.getElementById('target-unit-name');
-        const stats = document.getElementById('target-unit-stats');
+        const prefix = this.getPortraitPrefix(false);
+        const portrait = document.getElementById(`${prefix}-target-portrait`);
+        const img = document.getElementById(`${prefix}-target-image`);
+        const name = document.getElementById(`${prefix}-target-name`);
+        const stats = document.getElementById(`${prefix}-target-stats`);
 
         if (portrait && targetData.unit_type) {
             // Устанавливаем изображение (нормализуем путь)
@@ -714,11 +735,16 @@ class PlayScene extends Phaser.Scene {
      * Скрыть портреты юнитов
      */
     hideUnitPortraits() {
-        const activePortrait = document.getElementById('active-unit-portrait');
-        const targetPortrait = document.getElementById('target-unit-portrait');
+        // Скрываем все портреты на обеих сторонах
+        const portraits = [
+            'p1-active-portrait', 'p1-target-portrait',
+            'p2-active-portrait', 'p2-target-portrait'
+        ];
 
-        if (activePortrait) activePortrait.style.display = 'none';
-        if (targetPortrait) targetPortrait.style.display = 'none';
+        portraits.forEach(id => {
+            const portrait = document.getElementById(id);
+            if (portrait) portrait.style.display = 'none';
+        });
     }
 
     /**

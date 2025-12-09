@@ -190,7 +190,7 @@
     font-size: 14px;
 }
 
-/* Журнал боя */
+/* Лог игры */
 .battle-log {
     background: white;
     border-radius: 8px;
@@ -415,12 +415,12 @@
 }
 
 /* Активный юнит - синяя рамка */
-#active-unit-portrait {
+.active-portrait {
     border-color: #3498db;
     box-shadow: 0 4px 15px rgba(52, 152, 219, 0.4);
 }
 
-#active-unit-portrait::before {
+.active-portrait::before {
     content: "⚔️ Атакующий";
     display: block;
     color: #3498db;
@@ -432,12 +432,12 @@
 }
 
 /* Цель атаки - красная рамка */
-#target-unit-portrait {
+.target-portrait {
     border-color: #e74c3c;
     box-shadow: 0 4px 15px rgba(231, 76, 60, 0.4);
 }
 
-#target-unit-portrait::before {
+.target-portrait::before {
     content: "🎯 Цель атаки";
     display: block;
     color: #e74c3c;

@@ -290,7 +290,7 @@ REPLAY_VIEW_TEMPLATE = """
             </div>
 
             <div class="battle-log" id="battle-log">
-                <h3>📋 Журнал боя</h3>
+                <h3>📋 Лог игры</h3>
                 <div class="log-entries" id="log-entries"></div>
             </div>
         </div>
@@ -388,12 +388,19 @@ PLAY_TEMPLATE = """
                 <div class="battle-info">
                     <div class="player-info player1">
                         <h3 id="p1-name">Игрок 1</h3>
-                        <!-- Изображение активного юнита (слева) -->
-                        <div class="unit-portrait" id="active-unit-portrait" style="display:none;">
-                            <img id="active-unit-image" src="" alt="Активный юнит">
+                        <!-- Портреты юнитов для игрока 1 -->
+                        <div class="unit-portrait active-portrait" id="p1-active-portrait" style="display:none;">
+                            <img id="p1-active-image" src="" alt="Активный юнит">
                             <div class="unit-portrait-info">
-                                <span id="active-unit-name" class="unit-portrait-name"></span>
-                                <span id="active-unit-stats" class="unit-portrait-stats"></span>
+                                <span id="p1-active-name" class="unit-portrait-name"></span>
+                                <span id="p1-active-stats" class="unit-portrait-stats"></span>
+                            </div>
+                        </div>
+                        <div class="unit-portrait target-portrait" id="p1-target-portrait" style="display:none;">
+                            <img id="p1-target-image" src="" alt="Цель атаки">
+                            <div class="unit-portrait-info">
+                                <span id="p1-target-name" class="unit-portrait-name"></span>
+                                <span id="p1-target-stats" class="unit-portrait-stats"></span>
                             </div>
                         </div>
                         <div class="player-units" id="player1-units"></div>
@@ -404,12 +411,19 @@ PLAY_TEMPLATE = """
 
                     <div class="player-info player2">
                         <h3 id="p2-name">Игрок 2</h3>
-                        <!-- Изображение атакуемого юнита (справа) -->
-                        <div class="unit-portrait" id="target-unit-portrait" style="display:none;">
-                            <img id="target-unit-image" src="" alt="Цель атаки">
+                        <!-- Портреты юнитов для игрока 2 -->
+                        <div class="unit-portrait active-portrait" id="p2-active-portrait" style="display:none;">
+                            <img id="p2-active-image" src="" alt="Активный юнит">
                             <div class="unit-portrait-info">
-                                <span id="target-unit-name" class="unit-portrait-name"></span>
-                                <span id="target-unit-stats" class="unit-portrait-stats"></span>
+                                <span id="p2-active-name" class="unit-portrait-name"></span>
+                                <span id="p2-active-stats" class="unit-portrait-stats"></span>
+                            </div>
+                        </div>
+                        <div class="unit-portrait target-portrait" id="p2-target-portrait" style="display:none;">
+                            <img id="p2-target-image" src="" alt="Цель атаки">
+                            <div class="unit-portrait-info">
+                                <span id="p2-target-name" class="unit-portrait-name"></span>
+                                <span id="p2-target-stats" class="unit-portrait-stats"></span>
                             </div>
                         </div>
                         <div class="player-units" id="player2-units"></div>
@@ -434,7 +448,7 @@ PLAY_TEMPLATE = """
                 </div>
 
                 <div class="battle-log" id="battle-log">
-                    <h3>📋 Журнал боя</h3>
+                    <h3>📋 Лог игры</h3>
                     <div class="log-entries" id="log-entries"></div>
                 </div>
             </div>
@@ -474,12 +488,19 @@ PLAY_GAME_TEMPLATE = """
                 <div class="battle-info">
                     <div class="player-info player1">
                         <h3 id="p1-name">{{ player1_name }}</h3>
-                        <!-- Изображение активного юнита (слева) -->
-                        <div class="unit-portrait" id="active-unit-portrait" style="display:none;">
-                            <img id="active-unit-image" src="" alt="Активный юнит">
+                        <!-- Портреты юнитов для игрока 1 -->
+                        <div class="unit-portrait active-portrait" id="p1-active-portrait" style="display:none;">
+                            <img id="p1-active-image" src="" alt="Активный юнит">
                             <div class="unit-portrait-info">
-                                <span id="active-unit-name" class="unit-portrait-name"></span>
-                                <span id="active-unit-stats" class="unit-portrait-stats"></span>
+                                <span id="p1-active-name" class="unit-portrait-name"></span>
+                                <span id="p1-active-stats" class="unit-portrait-stats"></span>
+                            </div>
+                        </div>
+                        <div class="unit-portrait target-portrait" id="p1-target-portrait" style="display:none;">
+                            <img id="p1-target-image" src="" alt="Цель атаки">
+                            <div class="unit-portrait-info">
+                                <span id="p1-target-name" class="unit-portrait-name"></span>
+                                <span id="p1-target-stats" class="unit-portrait-stats"></span>
                             </div>
                         </div>
                         <div class="player-units" id="player1-units"></div>
@@ -490,12 +511,19 @@ PLAY_GAME_TEMPLATE = """
 
                     <div class="player-info player2">
                         <h3 id="p2-name">{{ player2_name }}</h3>
-                        <!-- Изображение атакуемого юнита (справа) -->
-                        <div class="unit-portrait" id="target-unit-portrait" style="display:none;">
-                            <img id="target-unit-image" src="" alt="Цель атаки">
+                        <!-- Портреты юнитов для игрока 2 -->
+                        <div class="unit-portrait active-portrait" id="p2-active-portrait" style="display:none;">
+                            <img id="p2-active-image" src="" alt="Активный юнит">
                             <div class="unit-portrait-info">
-                                <span id="target-unit-name" class="unit-portrait-name"></span>
-                                <span id="target-unit-stats" class="unit-portrait-stats"></span>
+                                <span id="p2-active-name" class="unit-portrait-name"></span>
+                                <span id="p2-active-stats" class="unit-portrait-stats"></span>
+                            </div>
+                        </div>
+                        <div class="unit-portrait target-portrait" id="p2-target-portrait" style="display:none;">
+                            <img id="p2-target-image" src="" alt="Цель атаки">
+                            <div class="unit-portrait-info">
+                                <span id="p2-target-name" class="unit-portrait-name"></span>
+                                <span id="p2-target-stats" class="unit-portrait-stats"></span>
                             </div>
                         </div>
                         <div class="player-units" id="player2-units"></div>
@@ -520,7 +548,7 @@ PLAY_GAME_TEMPLATE = """
                 </div>
 
                 <div class="battle-log" id="battle-log">
-                    <h3>📋 Журнал боя</h3>
+                    <h3>📋 Лог игры</h3>
                     <div class="log-entries" id="log-entries"></div>
                 </div>
             </div>

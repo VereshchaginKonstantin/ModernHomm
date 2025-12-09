@@ -1151,6 +1151,11 @@ class GameEngine:
         for unit in units:
             unit.has_moved = 0
 
+        # Добавить запись в лог о смене хода
+        current_player = self.db.query(GameUser).filter_by(id=game.current_player_id).first()
+        player_name = current_player.username or current_player.name if current_player else "Игрок"
+        self._log_event(game.id, "turn_switch", f"🔄 Ход переходит к {player_name}")
+
     def _check_game_over(self, game: Game) -> Optional[int]:
         """
         Проверить, окончена ли игра
