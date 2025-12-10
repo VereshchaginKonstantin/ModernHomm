@@ -29,17 +29,38 @@ def get_bot_version():
 HEADER_TEMPLATE = """
 <nav class="navbar">
     <div class="nav-links">
-        <a href="{{ url_for('index') }}" class="nav-link {{ 'active' if active_page == 'home' else '' }}">Список юнитов</a>
-        <a href="{{ url_for('admin_images') }}" class="nav-link {{ 'active' if active_page == 'images' else '' }}">Картинки</a>
-        <a href="{{ url_for('admin_units_list') }}" class="nav-link {{ 'active' if active_page == 'units' else '' }}">Управление</a>
-        {% if session.username == 'okarien' %}
-        <a href="{{ url_for('races.races_list') }}" class="nav-link {{ 'active' if active_page == 'races' else '' }}">🏰 Расы</a>
-        {% endif %}
+        <!-- Арена -->
         <a href="{{ url_for('arena.index') }}" class="nav-link {{ 'active' if active_page == 'arena' else '' }}">🏟️ Арена</a>
-        <a href="{{ url_for('leaderboard') }}" class="nav-link {{ 'active' if active_page == 'leaderboard' else '' }}">Рейтинг</a>
-        <a href="{{ url_for('help_page') }}" class="nav-link {{ 'active' if active_page == 'help' else '' }}">Справка</a>
-        <a href="{{ url_for('export_units') }}" class="nav-link">Экспорт</a>
-        <a href="{{ url_for('logout') }}" class="nav-link" style="margin-left: auto;">Выход ({{ session.username }})</a>
+
+        <!-- Армия (dropdown) -->
+        <div class="nav-dropdown">
+            <a href="#" class="nav-link {{ 'active' if active_page in ['army', 'user_race', 'army_settings'] else '' }}">⚔️ Армия ▾</a>
+            <div class="dropdown-content">
+                <a href="{{ url_for('army.user_race') }}" class="{{ 'active' if active_page == 'user_race' else '' }}">🏰 Настройка расы</a>
+                <a href="{{ url_for('army.army_settings') }}" class="{{ 'active' if active_page == 'army_settings' else '' }}">🎖️ Настройка армии</a>
+            </div>
+        </div>
+
+        <!-- Админ настройки (dropdown) -->
+        <div class="nav-dropdown">
+            <a href="#" class="nav-link {{ 'active' if active_page in ['home', 'images', 'units', 'races', 'leaderboard'] else '' }}">⚙️ Настройки ▾</a>
+            <div class="dropdown-content">
+                <a href="{{ url_for('index') }}" class="{{ 'active' if active_page == 'home' else '' }}">📋 Список юнитов</a>
+                <a href="{{ url_for('admin_images') }}" class="{{ 'active' if active_page == 'images' else '' }}">🖼️ Картинки</a>
+                <a href="{{ url_for('admin_units_list') }}" class="{{ 'active' if active_page == 'units' else '' }}">🔧 Управление</a>
+                {% if session.username == 'okarien' %}
+                <a href="{{ url_for('races.races_list') }}" class="{{ 'active' if active_page == 'races' else '' }}">🏰 Расы</a>
+                {% endif %}
+                <a href="{{ url_for('leaderboard') }}" class="{{ 'active' if active_page == 'leaderboard' else '' }}">🏆 Рейтинг</a>
+                <a href="{{ url_for('export_units') }}">📤 Экспорт</a>
+            </div>
+        </div>
+
+        <!-- Справка -->
+        <a href="{{ url_for('help_page') }}" class="nav-link {{ 'active' if active_page == 'help' else '' }}">❓ Справка</a>
+
+        <!-- Выход -->
+        <a href="{{ url_for('logout') }}" class="nav-link" style="margin-left: auto;">🚪 Выход ({{ session.username }})</a>
     </div>
 </nav>
 """
@@ -74,6 +95,44 @@ BASE_STYLE = """
         }
         .nav-link.active {
             background-color: #3498db;
+        }
+        /* Dropdown menu styles */
+        .nav-dropdown {
+            position: relative;
+            display: inline-block;
+        }
+        .nav-dropdown > .nav-link {
+            cursor: pointer;
+        }
+        .dropdown-content {
+            display: none;
+            position: absolute;
+            background-color: #34495e;
+            min-width: 200px;
+            box-shadow: 0 8px 16px rgba(0,0,0,0.2);
+            z-index: 1000;
+            border-radius: 4px;
+            top: 100%;
+            left: 0;
+        }
+        .dropdown-content a {
+            color: white;
+            padding: 12px 16px;
+            text-decoration: none;
+            display: block;
+            transition: background-color 0.2s;
+        }
+        .dropdown-content a:hover {
+            background-color: #4a6278;
+        }
+        .dropdown-content a.active {
+            background-color: #3498db;
+        }
+        .nav-dropdown:hover .dropdown-content {
+            display: block;
+        }
+        .nav-dropdown:hover > .nav-link {
+            background-color: #34495e;
         }
         .content {
             padding: 0 20px 20px 20px;
@@ -324,11 +383,48 @@ BASE_STYLE = """
         .btn-success:hover {
             background-color: #218838;
         }
-        /* Footer с версией */
-        .version-footer {
+        /* Footer с версией и балансом */
+        .footer-container {
             position: fixed;
             bottom: 10px;
             right: 15px;
+            display: flex;
+            flex-direction: column;
+            align-items: flex-end;
+            gap: 8px;
+            z-index: 1000;
+        }
+        .user-balance {
+            background: rgba(44, 62, 80, 0.95);
+            color: #ecf0f1;
+            padding: 10px 15px;
+            border-radius: 6px;
+            font-size: 13px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+            display: flex;
+            gap: 15px;
+        }
+        .balance-item {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+        .balance-icon {
+            font-size: 16px;
+        }
+        .balance-value {
+            font-weight: bold;
+        }
+        .balance-coins {
+            color: #f1c40f;
+        }
+        .balance-glory {
+            color: #e74c3c;
+        }
+        .balance-crystals {
+            color: #9b59b6;
+        }
+        .version-footer {
             background: rgba(44, 62, 80, 0.9);
             color: #bdc3c7;
             padding: 8px 15px;
@@ -336,7 +432,6 @@ BASE_STYLE = """
             font-size: 11px;
             font-family: 'Courier New', monospace;
             box-shadow: 0 2px 8px rgba(0,0,0,0.2);
-            z-index: 1000;
             line-height: 1.4;
         }
         .version-footer .version-label {
@@ -357,11 +452,29 @@ BASE_STYLE = """
 """
 
 FOOTER_TEMPLATE = """
-<div class="version-footer">
-    <span class="version-label">Web:</span>
-    <span class="version-value">{{ web_version }}</span>
-    <span class="version-divider">|</span>
-    <span class="version-label">Bot:</span>
-    <span class="version-bot">{{ bot_version }}</span>
+<div class="footer-container">
+    {% if user_balance %}
+    <div class="user-balance">
+        <div class="balance-item">
+            <span class="balance-icon">🪙</span>
+            <span class="balance-value balance-coins">{{ user_balance.coins }}</span>
+        </div>
+        <div class="balance-item">
+            <span class="balance-icon">⭐</span>
+            <span class="balance-value balance-glory">{{ user_balance.glory }}</span>
+        </div>
+        <div class="balance-item">
+            <span class="balance-icon">💎</span>
+            <span class="balance-value balance-crystals">{{ user_balance.crystals }}</span>
+        </div>
+    </div>
+    {% endif %}
+    <div class="version-footer">
+        <span class="version-label">Web:</span>
+        <span class="version-value">{{ web_version }}</span>
+        <span class="version-divider">|</span>
+        <span class="version-label">Bot:</span>
+        <span class="version-bot">{{ bot_version }}</span>
+    </div>
 </div>
 """

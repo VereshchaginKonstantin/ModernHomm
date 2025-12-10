@@ -21,6 +21,7 @@ COPY web_interface.py .
 COPY web_arena.py .
 COPY web_templates.py .
 COPY web_races.py .
+COPY web_army.py .
 COPY config.json .
 COPY VERSION .
 COPY WEB_VERSION .

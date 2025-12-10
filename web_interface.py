@@ -17,6 +17,7 @@ from db.models import Unit, GameUser
 from decimal import Decimal
 from web_arena import arena_bp
 from web_races import races_bp
+from web_army import army_bp
 from web_templates import get_web_version, get_bot_version, FOOTER_TEMPLATE
 
 # Создать Flask приложение
@@ -29,16 +30,37 @@ app.config['MAX_CONTENT_LENGTH'] = 5 * 1024 * 1024  # 5 MB max file size
 app.register_blueprint(arena_bp)
 # Регистрация Blueprint для управления расами
 app.register_blueprint(races_bp)
+# Регистрация Blueprint для управления армией
+app.register_blueprint(army_bp)
 
 
 @app.context_processor
 def inject_versions():
-    """Добавить версии во все шаблоны"""
-    return {
+    """Добавить версии и баланс пользователя во все шаблоны"""
+    context = {
         'web_version': get_web_version(),
         'bot_version': get_bot_version(),
         'footer_html': FOOTER_TEMPLATE
     }
+
+    # Добавить баланс пользователя, если он авторизован
+    if 'username' in session:
+        try:
+            from db.repository import Database
+            db_url = os.getenv('DATABASE_URL', 'postgresql://postgres:postgres@localhost:5434/telegram_bot')
+            db_instance = Database(db_url)
+            with db_instance.get_session() as db_session:
+                user = db_session.query(GameUser).filter_by(username=session['username']).first()
+                if user:
+                    context['user_balance'] = {
+                        'coins': int(user.balance) if user.balance else 0,
+                        'glory': user.glory or 0,
+                        'crystals': user.crystals or 0
+                    }
+        except Exception:
+            pass  # Если не удалось получить баланс, просто не показываем его
+
+    return context
 
 
 def get_static_version():
