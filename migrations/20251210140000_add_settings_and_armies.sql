@@ -1,4 +1,15 @@
 -- +goose Up
+-- Удаление старых таблиц (переименование setting -> race)
+DROP TABLE IF EXISTS unit_images CASCADE;
+DROP TABLE IF EXISTS user_settings CASCADE;
+DROP TABLE IF EXISTS setting_level_skins CASCADE;
+DROP TABLE IF EXISTS setting_units CASCADE;
+DROP TABLE IF EXISTS settings CASCADE;
+DROP TABLE IF EXISTS game_settings CASCADE;
+
+-- Удаление старой версии unit_levels (если существует)
+DROP TABLE IF EXISTS unit_levels CASCADE;
+
 -- Добавление crystals и glory в game_users
 ALTER TABLE game_users ADD COLUMN IF NOT EXISTS crystals INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE game_users ADD COLUMN IF NOT EXISTS glory INTEGER NOT NULL DEFAULT 0;
@@ -13,7 +24,7 @@ CREATE TABLE IF NOT EXISTS game_races (
     updated_at TIMESTAMP NOT NULL DEFAULT NOW()
 );
 
--- Таблица юнитов расы (7 уровней)
+-- Таблица юнитов расы (7 уровней, только базовые параметры и флаги)
 CREATE TABLE IF NOT EXISTS race_units (
     id SERIAL PRIMARY KEY,
     race_id INTEGER NOT NULL REFERENCES game_races(id) ON DELETE CASCADE,
@@ -21,28 +32,21 @@ CREATE TABLE IF NOT EXISTS race_units (
     name VARCHAR(255) NOT NULL,
     icon VARCHAR(10) NOT NULL DEFAULT '🎮',
     image_path VARCHAR(512),
-    attack INTEGER NOT NULL DEFAULT 10,
-    defense INTEGER NOT NULL DEFAULT 5,
-    min_damage INTEGER NOT NULL DEFAULT 1,
-    max_damage INTEGER NOT NULL DEFAULT 3,
-    health INTEGER NOT NULL DEFAULT 10,
-    speed INTEGER NOT NULL DEFAULT 4,
-    initiative INTEGER NOT NULL DEFAULT 10,
-    cost NUMERIC(10,2) NOT NULL DEFAULT 100,
+    is_flying BOOLEAN NOT NULL DEFAULT FALSE,
+    is_kamikaze BOOLEAN NOT NULL DEFAULT FALSE,
     created_at TIMESTAMP NOT NULL DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS idx_race_units_race_id ON race_units(race_id);
 
--- Таблица скинов уровней расы
-CREATE TABLE IF NOT EXISTS race_level_skins (
+-- Таблица уровней юнитов (только стоимость по уровням)
+CREATE TABLE IF NOT EXISTS unit_levels (
     id SERIAL PRIMARY KEY,
     race_id INTEGER NOT NULL REFERENCES game_races(id) ON DELETE CASCADE,
     level INTEGER NOT NULL CHECK (level >= 1 AND level <= 7),
-    image_path VARCHAR(512),
-    name VARCHAR(255),
+    cost NUMERIC(10,2) NOT NULL DEFAULT 100,
     created_at TIMESTAMP NOT NULL DEFAULT NOW()
 );
-CREATE INDEX IF NOT EXISTS idx_race_level_skins_race_id ON race_level_skins(race_id);
+CREATE INDEX IF NOT EXISTS idx_unit_levels_race_id ON unit_levels(race_id);
 
 -- Таблица пользовательских рас
 CREATE TABLE IF NOT EXISTS user_races (
@@ -53,6 +57,24 @@ CREATE TABLE IF NOT EXISTS user_races (
 );
 CREATE INDEX IF NOT EXISTS idx_user_races_user_id ON user_races(user_id);
 CREATE INDEX IF NOT EXISTS idx_user_races_race_id ON user_races(race_id);
+
+-- Таблица пользовательских юнитов расы (с боевыми характеристиками)
+CREATE TABLE IF NOT EXISTS user_race_units (
+    id SERIAL PRIMARY KEY,
+    user_race_id INTEGER NOT NULL REFERENCES user_races(id) ON DELETE CASCADE,
+    race_unit_id INTEGER NOT NULL REFERENCES race_units(id) ON DELETE CASCADE,
+    attack INTEGER NOT NULL DEFAULT 10,
+    defense INTEGER NOT NULL DEFAULT 5,
+    min_damage INTEGER NOT NULL DEFAULT 1,
+    max_damage INTEGER NOT NULL DEFAULT 3,
+    health INTEGER NOT NULL DEFAULT 10,
+    speed INTEGER NOT NULL DEFAULT 4,
+    initiative INTEGER NOT NULL DEFAULT 10,
+    created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_user_race_units_user_race_id ON user_race_units(user_race_id);
+CREATE INDEX IF NOT EXISTS idx_user_race_units_race_unit_id ON user_race_units(race_unit_id);
 
 -- Таблица армий (тип хранится как строка)
 CREATE TABLE IF NOT EXISTS armies (
@@ -70,7 +92,7 @@ CREATE TABLE IF NOT EXISTS army_units (
     id SERIAL PRIMARY KEY,
     army_id INTEGER NOT NULL REFERENCES armies(id) ON DELETE CASCADE,
     race_unit_id INTEGER NOT NULL REFERENCES race_units(id) ON DELETE CASCADE,
-    skin_id INTEGER REFERENCES race_level_skins(id) ON DELETE SET NULL,
+    unit_level_id INTEGER REFERENCES unit_levels(id) ON DELETE SET NULL,
     count INTEGER NOT NULL DEFAULT 1,
     created_at TIMESTAMP NOT NULL DEFAULT NOW()
 );
@@ -80,8 +102,9 @@ CREATE INDEX IF NOT EXISTS idx_army_units_race_unit_id ON army_units(race_unit_i
 -- +goose Down
 DROP TABLE IF EXISTS army_units;
 DROP TABLE IF EXISTS armies;
+DROP TABLE IF EXISTS user_race_units;
 DROP TABLE IF EXISTS user_races;
-DROP TABLE IF EXISTS race_level_skins;
+DROP TABLE IF EXISTS unit_levels;
 DROP TABLE IF EXISTS race_units;
 DROP TABLE IF EXISTS game_races;
 ALTER TABLE game_users DROP COLUMN IF EXISTS crystals;

@@ -9,7 +9,7 @@ from datetime import datetime
 from flask import Blueprint, render_template_string, request, jsonify, session, redirect, url_for
 from functools import wraps
 
-from db.models import Base, GameUser, GameRace, RaceUnit, RaceLevelSkin, UserRace, Army, ArmyUnit
+from db.models import Base, GameUser, GameRace, RaceUnit, UnitLevel, UserRace, UserRaceUnit, Army, ArmyUnit
 from db.repository import Database
 from web_templates import HEADER_TEMPLATE, BASE_STYLE, FOOTER_TEMPLATE
 

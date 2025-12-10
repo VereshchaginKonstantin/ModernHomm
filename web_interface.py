@@ -15,7 +15,6 @@ from werkzeug.utils import secure_filename
 from db import Database
 from db.models import Unit, GameUser
 from decimal import Decimal
-from web_images_manager import images_bp
 from web_arena import arena_bp
 from web_races import races_bp
 from web_templates import get_web_version, get_bot_version, FOOTER_TEMPLATE
@@ -26,8 +25,6 @@ app.secret_key = 'your-secret-key-change-in-production'
 app.config['UPLOAD_FOLDER'] = 'static/unit_images'
 app.config['MAX_CONTENT_LENGTH'] = 5 * 1024 * 1024  # 5 MB max file size
 
-# Регистрация Blueprint для управления изображениями и сеттингами
-app.register_blueprint(images_bp)
 # Регистрация Blueprint для арены
 app.register_blueprint(arena_bp)
 # Регистрация Blueprint для управления расами
