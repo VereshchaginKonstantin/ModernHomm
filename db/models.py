@@ -283,31 +283,31 @@ class GameLog(Base):
         return f"<GameLog(id={self.id}, game_id={self.game_id}, event_type={self.event_type})>"
 
 
-class GameSetting(Base):
-    """Модель игрового сеттинга (набор юнитов для игры)"""
-    __tablename__ = 'game_settings'
+class GameRace(Base):
+    """Модель игровой расы (набор юнитов для игры)"""
+    __tablename__ = 'game_races'
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     name = Column(String(255), nullable=False, unique=True)
     description = Column(Text, nullable=True)
-    is_free = Column(Boolean, nullable=False, default=False)  # Бесплатный сеттинг
+    is_free = Column(Boolean, nullable=False, default=False)  # Бесплатная раса
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 
     # Связи
-    setting_units = relationship("SettingUnit", back_populates="setting", cascade="all, delete-orphan")
-    level_skins = relationship("SettingLevelSkin", back_populates="setting", cascade="all, delete-orphan")
+    race_units = relationship("RaceUnit", back_populates="race", cascade="all, delete-orphan")
+    level_skins = relationship("RaceLevelSkin", back_populates="race", cascade="all, delete-orphan")
 
     def __repr__(self):
-        return f"<GameSetting(id={self.id}, name={self.name}, is_free={self.is_free})>"
+        return f"<GameRace(id={self.id}, name={self.name}, is_free={self.is_free})>"
 
 
-class SettingUnit(Base):
-    """Модель юнита сеттинга (7 юнитов по уровням для каждого сеттинга)"""
-    __tablename__ = 'setting_units'
+class RaceUnit(Base):
+    """Модель юнита расы (7 юнитов по уровням для каждой расы)"""
+    __tablename__ = 'race_units'
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    setting_id = Column(Integer, ForeignKey('game_settings.id', ondelete='CASCADE'), nullable=False, index=True)
+    race_id = Column(Integer, ForeignKey('game_races.id', ondelete='CASCADE'), nullable=False, index=True)
     level = Column(Integer, nullable=False)  # Уровень юнита (1-7)
     name = Column(String(255), nullable=False)
     icon = Column(String(10), nullable=False, default='🎮')
@@ -323,59 +323,59 @@ class SettingUnit(Base):
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
     # Связь
-    setting = relationship("GameSetting", back_populates="setting_units")
+    race = relationship("GameRace", back_populates="race_units")
 
     __table_args__ = (
-        CheckConstraint('level >= 1 AND level <= 7', name='setting_unit_level_range'),
+        CheckConstraint('level >= 1 AND level <= 7', name='race_unit_level_range'),
     )
 
     def __repr__(self):
-        return f"<SettingUnit(id={self.id}, setting_id={self.setting_id}, level={self.level}, name={self.name})>"
+        return f"<RaceUnit(id={self.id}, race_id={self.race_id}, level={self.level}, name={self.name})>"
 
 
-class SettingLevelSkin(Base):
-    """Модель скина уровня сеттинга"""
-    __tablename__ = 'setting_level_skins'
+class RaceLevelSkin(Base):
+    """Модель скина уровня расы"""
+    __tablename__ = 'race_level_skins'
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    setting_id = Column(Integer, ForeignKey('game_settings.id', ondelete='CASCADE'), nullable=False, index=True)
+    race_id = Column(Integer, ForeignKey('game_races.id', ondelete='CASCADE'), nullable=False, index=True)
     level = Column(Integer, nullable=False)  # Уровень (1-7)
     image_path = Column(String(512), nullable=True)  # Путь к изображению скина
     name = Column(String(255), nullable=True)  # Название скина
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
     # Связь
-    setting = relationship("GameSetting", back_populates="level_skins")
+    race = relationship("GameRace", back_populates="level_skins")
 
     __table_args__ = (
         CheckConstraint('level >= 1 AND level <= 7', name='skin_level_range'),
     )
 
     def __repr__(self):
-        return f"<SettingLevelSkin(id={self.id}, setting_id={self.setting_id}, level={self.level})>"
+        return f"<RaceLevelSkin(id={self.id}, race_id={self.race_id}, level={self.level})>"
 
 
-class UserSetting(Base):
-    """Модель пользовательского сеттинга (связь пользователя с сеттингом)"""
-    __tablename__ = 'user_settings'
+class UserRace(Base):
+    """Модель пользовательской расы (связь пользователя с расой)"""
+    __tablename__ = 'user_races'
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     user_id = Column(Integer, ForeignKey('game_users.id', ondelete='CASCADE'), nullable=False, index=True)
-    setting_id = Column(Integer, ForeignKey('game_settings.id', ondelete='CASCADE'), nullable=False, index=True)
+    race_id = Column(Integer, ForeignKey('game_races.id', ondelete='CASCADE'), nullable=False, index=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
     # Связи
     user = relationship("GameUser")
-    setting = relationship("GameSetting")
-    armies = relationship("Army", back_populates="user_setting", cascade="all, delete-orphan")
+    race = relationship("GameRace")
+    armies = relationship("Army", back_populates="user_race", cascade="all, delete-orphan")
 
     __table_args__ = (
-        # Уникальность пользователь + сеттинг
+        # Уникальность пользователь + раса
         {'extend_existing': True},
     )
 
     def __repr__(self):
-        return f"<UserSetting(id={self.id}, user_id={self.user_id}, setting_id={self.setting_id})>"
+        return f"<UserRace(id={self.id}, user_id={self.user_id}, race_id={self.race_id})>"
 
 
 class Army(Base):
@@ -387,14 +387,14 @@ class Army(Base):
     TYPE_MERCENARY = "mercenary"  # Наёмная (покупка юнитов)
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    user_setting_id = Column(Integer, ForeignKey('user_settings.id', ondelete='CASCADE'), nullable=False, index=True)
+    user_race_id = Column(Integer, ForeignKey('user_races.id', ondelete='CASCADE'), nullable=False, index=True)
     name = Column(String(255), nullable=False)
     army_type = Column(String(20), nullable=False, default=TYPE_MERCENARY)  # rated или mercenary
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 
     # Связи
-    user_setting = relationship("UserSetting", back_populates="armies")
+    user_race = relationship("UserRace", back_populates="armies")
     army_units = relationship("ArmyUnit", back_populates="army", cascade="all, delete-orphan")
 
     def __repr__(self):
@@ -407,15 +407,15 @@ class ArmyUnit(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     army_id = Column(Integer, ForeignKey('armies.id', ondelete='CASCADE'), nullable=False, index=True)
-    setting_unit_id = Column(Integer, ForeignKey('setting_units.id', ondelete='CASCADE'), nullable=False, index=True)
-    skin_id = Column(Integer, ForeignKey('setting_level_skins.id', ondelete='SET NULL'), nullable=True)
+    race_unit_id = Column(Integer, ForeignKey('race_units.id', ondelete='CASCADE'), nullable=False, index=True)
+    skin_id = Column(Integer, ForeignKey('race_level_skins.id', ondelete='SET NULL'), nullable=True)
     count = Column(Integer, nullable=False, default=1)  # Количество юнитов в стеке
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
     # Связи
     army = relationship("Army", back_populates="army_units")
-    setting_unit = relationship("SettingUnit")
-    skin = relationship("SettingLevelSkin")
+    race_unit = relationship("RaceUnit")
+    skin = relationship("RaceLevelSkin")
 
     def __repr__(self):
         return f"<ArmyUnit(id={self.id}, army_id={self.army_id}, count={self.count})>"

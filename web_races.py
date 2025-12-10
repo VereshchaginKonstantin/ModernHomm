@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Модуль управления сеттингами для веб-интерфейса
+Модуль управления расами для веб-интерфейса
 """
 
 import os
@@ -9,14 +9,14 @@ from datetime import datetime
 from flask import Blueprint, render_template_string, request, jsonify, session, redirect, url_for
 from functools import wraps
 
-from db.models import Base, GameUser, GameSetting, SettingUnit, SettingLevelSkin, UserSetting, Army, ArmyUnit
+from db.models import Base, GameUser, GameRace, RaceUnit, RaceLevelSkin, UserRace, Army, ArmyUnit
 from db.repository import Database
 from web_templates import HEADER_TEMPLATE, BASE_STYLE, FOOTER_TEMPLATE
 
 logger = logging.getLogger(__name__)
 
-# Blueprint для сеттингов
-settings_bp = Blueprint('settings', __name__, url_prefix='/admin/settings')
+# Blueprint для рас
+races_bp = Blueprint('races', __name__, url_prefix='/admin/races')
 
 # Получаем подключение к БД
 db_url = os.getenv('DATABASE_URL', 'postgresql://postgres:postgres@localhost:5434/telegram_bot')
@@ -35,19 +35,19 @@ def admin_required(f):
 
 # ==================== Шаблоны ====================
 
-SETTINGS_LIST_TEMPLATE = """
+RACES_LIST_TEMPLATE = """
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Сеттинги - Админ-панель</title>
+    <title>Расы - Админ-панель</title>
     <meta charset="utf-8">
     """ + BASE_STYLE + """
     <style>
-        .settings-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 20px; margin-top: 20px; }
-        .setting-card { background: #2a2a2a; border-radius: 10px; padding: 20px; }
-        .setting-card h3 { margin: 0 0 10px 0; color: #ffd700; }
-        .setting-card .description { color: #aaa; font-size: 14px; margin-bottom: 15px; }
-        .setting-card .badge { display: inline-block; padding: 3px 8px; border-radius: 5px; font-size: 12px; margin-right: 5px; }
+        .races-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 20px; margin-top: 20px; }
+        .race-card { background: #2a2a2a; border-radius: 10px; padding: 20px; }
+        .race-card h3 { margin: 0 0 10px 0; color: #ffd700; }
+        .race-card .description { color: #aaa; font-size: 14px; margin-bottom: 15px; }
+        .race-card .badge { display: inline-block; padding: 3px 8px; border-radius: 5px; font-size: 12px; margin-right: 5px; }
         .badge-free { background: #2ecc71; color: white; }
         .badge-paid { background: #e74c3c; color: white; }
         .btn { display: inline-block; padding: 8px 15px; border-radius: 5px; text-decoration: none; margin-right: 5px; }
@@ -61,39 +61,39 @@ SETTINGS_LIST_TEMPLATE = """
 <body>
     """ + HEADER_TEMPLATE + """
     <div class="content">
-        <h1>⚙️ Управление сеттингами</h1>
+        <h1>🏰 Управление расами</h1>
 
-        <a href="{{ url_for('settings.create_setting') }}" class="btn btn-success add-btn">➕ Создать сеттинг</a>
+        <a href="{{ url_for('races.create_race') }}" class="btn btn-success add-btn">➕ Создать расу</a>
 
-        <div class="settings-grid">
-            {% for setting in settings %}
-            <div class="setting-card">
-                <h3>{{ setting.name }}</h3>
-                <p class="description">{{ setting.description or 'Нет описания' }}</p>
+        <div class="races-grid">
+            {% for race in races %}
+            <div class="race-card">
+                <h3>{{ race.name }}</h3>
+                <p class="description">{{ race.description or 'Нет описания' }}</p>
                 <div>
-                    {% if setting.is_free %}
-                    <span class="badge badge-free">Бесплатный</span>
+                    {% if race.is_free %}
+                    <span class="badge badge-free">Бесплатная</span>
                     {% else %}
-                    <span class="badge badge-paid">Платный</span>
+                    <span class="badge badge-paid">Платная</span>
                     {% endif %}
-                    <span class="badge" style="background: #9b59b6;">{{ setting.setting_units|length }}/7 юнитов</span>
+                    <span class="badge" style="background: #9b59b6;">{{ race.race_units|length }}/7 юнитов</span>
                 </div>
                 <div style="margin-top: 15px;">
-                    <a href="{{ url_for('settings.edit_setting', setting_id=setting.id) }}" class="btn btn-primary btn-sm">✏️ Редактировать</a>
-                    <a href="{{ url_for('settings.setting_skins', setting_id=setting.id) }}" class="btn btn-primary btn-sm">🎨 Скины</a>
-                    <button onclick="deleteSetting({{ setting.id }})" class="btn btn-danger btn-sm">🗑️ Удалить</button>
+                    <a href="{{ url_for('races.edit_race', race_id=race.id) }}" class="btn btn-primary btn-sm">✏️ Редактировать</a>
+                    <a href="{{ url_for('races.race_skins', race_id=race.id) }}" class="btn btn-primary btn-sm">🎨 Скины</a>
+                    <button onclick="deleteRace({{ race.id }})" class="btn btn-danger btn-sm">🗑️ Удалить</button>
                 </div>
             </div>
             {% else %}
-            <p style="color: #aaa;">Сеттинги не найдены. Создайте первый сеттинг!</p>
+            <p style="color: #aaa;">Расы не найдены. Создайте первую расу!</p>
             {% endfor %}
         </div>
     </div>
 
     <script>
-    function deleteSetting(settingId) {
-        if (confirm('Вы уверены, что хотите удалить этот сеттинг?')) {
-            fetch('/admin/settings/' + settingId + '/delete', {
+    function deleteRace(raceId) {
+        if (confirm('Вы уверены, что хотите удалить эту расу?')) {
+            fetch('/admin/races/' + raceId + '/delete', {
                 method: 'POST'
             }).then(response => response.json())
               .then(data => {
@@ -110,11 +110,11 @@ SETTINGS_LIST_TEMPLATE = """
 </html>
 """
 
-CREATE_SETTING_TEMPLATE = """
+CREATE_RACE_TEMPLATE = """
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Создать сеттинг - Админ-панель</title>
+    <title>Создать расу - Админ-панель</title>
     <meta charset="utf-8">
     """ + BASE_STYLE + """
     <style>
@@ -132,37 +132,37 @@ CREATE_SETTING_TEMPLATE = """
 <body>
     """ + HEADER_TEMPLATE + """
     <div class="content">
-        <h1>➕ Создать сеттинг</h1>
+        <h1>➕ Создать расу</h1>
 
-        <form method="POST" action="{{ url_for('settings.create_setting') }}">
+        <form method="POST" action="{{ url_for('races.create_race') }}">
             <div class="form-group">
                 <label>Название</label>
-                <input type="text" name="name" required placeholder="Название сеттинга">
+                <input type="text" name="name" required placeholder="Название расы">
             </div>
 
             <div class="form-group">
                 <label>Описание</label>
-                <textarea name="description" placeholder="Описание сеттинга (необязательно)"></textarea>
+                <textarea name="description" placeholder="Описание расы (необязательно)"></textarea>
             </div>
 
             <div class="form-group checkbox-group">
                 <input type="checkbox" name="is_free" id="is_free">
-                <label for="is_free" style="margin-bottom: 0;">Бесплатный сеттинг</label>
+                <label for="is_free" style="margin-bottom: 0;">Бесплатная раса</label>
             </div>
 
             <button type="submit" class="btn btn-success">Создать</button>
-            <a href="{{ url_for('settings.settings_list') }}" class="btn btn-secondary">Отмена</a>
+            <a href="{{ url_for('races.races_list') }}" class="btn btn-secondary">Отмена</a>
         </form>
     </div>
 </body>
 </html>
 """
 
-EDIT_SETTING_TEMPLATE = """
+EDIT_RACE_TEMPLATE = """
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Редактировать сеттинг - Админ-панель</title>
+    <title>Редактировать расу - Админ-панель</title>
     <meta charset="utf-8">
     """ + BASE_STYLE + """
     <style>
@@ -188,31 +188,31 @@ EDIT_SETTING_TEMPLATE = """
 <body>
     """ + HEADER_TEMPLATE + """
     <div class="content">
-        <h1>✏️ Редактировать сеттинг: {{ setting.name }}</h1>
+        <h1>✏️ Редактировать расу: {{ race.name }}</h1>
 
-        <form method="POST" action="{{ url_for('settings.edit_setting', setting_id=setting.id) }}">
+        <form method="POST" action="{{ url_for('races.edit_race', race_id=race.id) }}">
             <div class="form-group">
                 <label>Название</label>
-                <input type="text" name="name" required value="{{ setting.name }}">
+                <input type="text" name="name" required value="{{ race.name }}">
             </div>
 
             <div class="form-group">
                 <label>Описание</label>
-                <textarea name="description">{{ setting.description or '' }}</textarea>
+                <textarea name="description">{{ race.description or '' }}</textarea>
             </div>
 
             <div class="form-group checkbox-group">
-                <input type="checkbox" name="is_free" id="is_free" {% if setting.is_free %}checked{% endif %}>
-                <label for="is_free" style="margin-bottom: 0;">Бесплатный сеттинг</label>
+                <input type="checkbox" name="is_free" id="is_free" {% if race.is_free %}checked{% endif %}>
+                <label for="is_free" style="margin-bottom: 0;">Бесплатная раса</label>
             </div>
 
             <button type="submit" class="btn btn-success">💾 Сохранить</button>
-            <a href="{{ url_for('settings.settings_list') }}" class="btn btn-secondary">Назад</a>
+            <a href="{{ url_for('races.races_list') }}" class="btn btn-secondary">Назад</a>
         </form>
 
         <div class="units-section">
-            <h2>⚔️ Юниты сеттинга (7 уровней)</h2>
-            <a href="{{ url_for('settings.add_setting_unit', setting_id=setting.id) }}" class="btn btn-primary">➕ Добавить юнит</a>
+            <h2>⚔️ Юниты расы (7 уровней)</h2>
+            <a href="{{ url_for('races.add_race_unit', race_id=race.id) }}" class="btn btn-primary">➕ Добавить юнит</a>
 
             <div class="units-grid">
                 {% for level in range(1, 8) %}
@@ -226,12 +226,12 @@ EDIT_SETTING_TEMPLATE = """
                         💥 {{ unit.min_damage }}-{{ unit.max_damage }} | 🏃 {{ unit.speed }} | ⚡ {{ unit.initiative }}
                     </div>
                     <div style="margin-top: 10px;">
-                        <a href="{{ url_for('settings.edit_setting_unit', setting_id=setting.id, unit_id=unit.id) }}" class="btn btn-primary" style="padding: 5px 10px; font-size: 12px;">✏️</a>
+                        <a href="{{ url_for('races.edit_race_unit', race_id=race.id, unit_id=unit.id) }}" class="btn btn-primary" style="padding: 5px 10px; font-size: 12px;">✏️</a>
                         <button onclick="deleteUnit({{ unit.id }})" class="btn btn-danger" style="padding: 5px 10px; font-size: 12px;">🗑️</button>
                     </div>
                     {% else %}
                     <h4 style="color: #666;">Не задан</h4>
-                    <a href="{{ url_for('settings.add_setting_unit', setting_id=setting.id) }}?level={{ level }}" class="btn btn-primary" style="padding: 5px 10px; font-size: 12px; margin-top: 10px;">➕ Добавить</a>
+                    <a href="{{ url_for('races.add_race_unit', race_id=race.id) }}?level={{ level }}" class="btn btn-primary" style="padding: 5px 10px; font-size: 12px; margin-top: 10px;">➕ Добавить</a>
                     {% endif %}
                 </div>
                 {% endfor %}
@@ -279,7 +279,7 @@ ADD_UNIT_TEMPLATE = """
 <body>
     """ + HEADER_TEMPLATE + """
     <div class="content">
-        <h1>➕ Добавить юнит для: {{ setting.name }}</h1>
+        <h1>➕ Добавить юнит для: {{ race.name }}</h1>
 
         <form method="POST">
             <div class="form-group">
@@ -348,7 +348,7 @@ ADD_UNIT_TEMPLATE = """
             </div>
 
             <button type="submit" class="btn btn-success">Создать</button>
-            <a href="{{ url_for('settings.edit_setting', setting_id=setting.id) }}" class="btn btn-secondary">Отмена</a>
+            <a href="{{ url_for('races.edit_race', race_id=race.id) }}" class="btn btn-secondary">Отмена</a>
         </form>
     </div>
 </body>
@@ -359,7 +359,7 @@ SKINS_TEMPLATE = """
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Скины сеттинга - Админ-панель</title>
+    <title>Скины расы - Админ-панель</title>
     <meta charset="utf-8">
     """ + BASE_STYLE + """
     <style>
@@ -378,10 +378,10 @@ SKINS_TEMPLATE = """
 <body>
     """ + HEADER_TEMPLATE + """
     <div class="content">
-        <h1>🎨 Скины для: {{ setting.name }}</h1>
+        <h1>🎨 Скины для: {{ race.name }}</h1>
 
-        <a href="{{ url_for('settings.add_skin', setting_id=setting.id) }}" class="btn btn-success">➕ Добавить скин</a>
-        <a href="{{ url_for('settings.edit_setting', setting_id=setting.id) }}" class="btn btn-secondary">← Назад к сеттингу</a>
+        <a href="{{ url_for('races.add_skin', race_id=race.id) }}" class="btn btn-success">➕ Добавить скин</a>
+        <a href="{{ url_for('races.edit_race', race_id=race.id) }}" class="btn btn-secondary">← Назад к расе</a>
 
         <div class="skins-grid">
             {% for level in range(1, 8) %}
@@ -396,13 +396,13 @@ SKINS_TEMPLATE = """
                 <div class="no-image">Нет изображения</div>
                 {% endif %}
                 <div>
-                    <a href="{{ url_for('settings.edit_skin', setting_id=setting.id, skin_id=skin.id) }}" class="btn btn-primary" style="padding: 5px 10px; font-size: 12px;">✏️</a>
+                    <a href="{{ url_for('races.edit_skin', race_id=race.id, skin_id=skin.id) }}" class="btn btn-primary" style="padding: 5px 10px; font-size: 12px;">✏️</a>
                     <button onclick="deleteSkin({{ skin.id }})" class="btn btn-danger" style="padding: 5px 10px; font-size: 12px;">🗑️</button>
                 </div>
                 {% else %}
                 <h4 style="color: #666;">Не задан</h4>
                 <div class="no-image">Нет скина</div>
-                <a href="{{ url_for('settings.add_skin', setting_id=setting.id) }}?level={{ level }}" class="btn btn-primary" style="padding: 5px 10px; font-size: 12px;">➕</a>
+                <a href="{{ url_for('races.add_skin', race_id=race.id) }}?level={{ level }}" class="btn btn-primary" style="padding: 5px 10px; font-size: 12px;">➕</a>
                 {% endif %}
             </div>
             {% endfor %}
@@ -432,85 +432,85 @@ SKINS_TEMPLATE = """
 
 # ==================== Маршруты ====================
 
-@settings_bp.route('/')
+@races_bp.route('/')
 @admin_required
-def settings_list():
-    """Список сеттингов"""
+def races_list():
+    """Список рас"""
     with db.get_session() as session_db:
-        settings = session_db.query(GameSetting).all()
-        return render_template_string(SETTINGS_LIST_TEMPLATE, settings=settings)
+        races = session_db.query(GameRace).all()
+        return render_template_string(RACES_LIST_TEMPLATE, races=races)
 
 
-@settings_bp.route('/create', methods=['GET', 'POST'])
+@races_bp.route('/create', methods=['GET', 'POST'])
 @admin_required
-def create_setting():
-    """Создать новый сеттинг"""
+def create_race():
+    """Создать новую расу"""
     if request.method == 'POST':
         name = request.form.get('name')
         description = request.form.get('description')
         is_free = request.form.get('is_free') == 'on'
 
         with db.get_session() as session_db:
-            setting = GameSetting(
+            race = GameRace(
                 name=name,
                 description=description,
                 is_free=is_free
             )
-            session_db.add(setting)
+            session_db.add(race)
             session_db.commit()
-            return redirect(url_for('settings.edit_setting', setting_id=setting.id))
+            return redirect(url_for('races.edit_race', race_id=race.id))
 
-    return render_template_string(CREATE_SETTING_TEMPLATE)
+    return render_template_string(CREATE_RACE_TEMPLATE)
 
 
-@settings_bp.route('/<int:setting_id>/edit', methods=['GET', 'POST'])
+@races_bp.route('/<int:race_id>/edit', methods=['GET', 'POST'])
 @admin_required
-def edit_setting(setting_id):
-    """Редактировать сеттинг"""
+def edit_race(race_id):
+    """Редактировать расу"""
     with db.get_session() as session_db:
-        setting = session_db.query(GameSetting).filter_by(id=setting_id).first()
-        if not setting:
-            return redirect(url_for('settings.settings_list'))
+        race = session_db.query(GameRace).filter_by(id=race_id).first()
+        if not race:
+            return redirect(url_for('races.races_list'))
 
         if request.method == 'POST':
-            setting.name = request.form.get('name')
-            setting.description = request.form.get('description')
-            setting.is_free = request.form.get('is_free') == 'on'
+            race.name = request.form.get('name')
+            race.description = request.form.get('description')
+            race.is_free = request.form.get('is_free') == 'on'
             session_db.commit()
-            return redirect(url_for('settings.edit_setting', setting_id=setting_id))
+            return redirect(url_for('races.edit_race', race_id=race_id))
 
         # Получаем юниты по уровням
-        units = session_db.query(SettingUnit).filter_by(setting_id=setting_id).all()
+        units = session_db.query(RaceUnit).filter_by(race_id=race_id).all()
         units_by_level = {u.level: u for u in units}
 
-        return render_template_string(EDIT_SETTING_TEMPLATE, setting=setting, units_by_level=units_by_level)
+        return render_template_string(EDIT_RACE_TEMPLATE, race=race, units_by_level=units_by_level)
 
 
-@settings_bp.route('/<int:setting_id>/delete', methods=['POST'])
+@races_bp.route('/<int:race_id>/delete', methods=['POST'])
 @admin_required
-def delete_setting(setting_id):
-    """Удалить сеттинг"""
+def delete_race(race_id):
+    """Удалить расу"""
     with db.get_session() as session_db:
-        setting = session_db.query(GameSetting).filter_by(id=setting_id).first()
-        if setting:
-            session_db.delete(setting)
+        race = session_db.query(GameRace).filter_by(id=race_id).first()
+        if race:
+            session_db.delete(race)
             session_db.commit()
             return jsonify({'success': True})
-        return jsonify({'success': False, 'message': 'Сеттинг не найден'})
+        return jsonify({'success': False, 'message': 'Раса не найдена'})
 
 
-@settings_bp.route('/<int:setting_id>/unit/add', methods=['GET', 'POST'])
+@races_bp.route('/<int:race_id>/unit/add', methods=['GET', 'POST'])
 @admin_required
-def add_setting_unit(setting_id):
-    """Добавить юнит в сеттинг"""
+def add_race_unit(race_id):
+    """Добавить юнит в расу"""
     with db.get_session() as session_db:
-        setting = session_db.query(GameSetting).filter_by(id=setting_id).first()
-        if not setting:
-            return redirect(url_for('settings.settings_list'))
+        race = session_db.query(GameRace).filter_by(id=race_id).first()
+        if not race:
+            return redirect(url_for('races.races_list'))
 
         if request.method == 'POST':
-            unit = SettingUnit(
-                setting_id=setting_id,
+            unit = RaceUnit(
+                race_id=race_id,
                 level=int(request.form.get('level')),
                 name=request.form.get('name'),
                 icon=request.form.get('icon', '🎮'),
@@ -526,22 +526,22 @@ def add_setting_unit(setting_id):
             )
             session_db.add(unit)
             session_db.commit()
-            return redirect(url_for('settings.edit_setting', setting_id=setting_id))
+            return redirect(url_for('races.edit_race', race_id=race_id))
 
         default_level = int(request.args.get('level', 1))
-        return render_template_string(ADD_UNIT_TEMPLATE, setting=setting, default_level=default_level)
+        return render_template_string(ADD_UNIT_TEMPLATE, race=race, default_level=default_level)
 
 
-@settings_bp.route('/<int:setting_id>/unit/<int:unit_id>/edit', methods=['GET', 'POST'])
+@races_bp.route('/<int:race_id>/unit/<int:unit_id>/edit', methods=['GET', 'POST'])
 @admin_required
-def edit_setting_unit(setting_id, unit_id):
-    """Редактировать юнит сеттинга"""
+def edit_race_unit(race_id, unit_id):
+    """Редактировать юнит расы"""
     with db.get_session() as session_db:
-        setting = session_db.query(GameSetting).filter_by(id=setting_id).first()
-        unit = session_db.query(SettingUnit).filter_by(id=unit_id, setting_id=setting_id).first()
+        race = session_db.query(GameRace).filter_by(id=race_id).first()
+        unit = session_db.query(RaceUnit).filter_by(id=unit_id, race_id=race_id).first()
 
         if not setting or not unit:
-            return redirect(url_for('settings.settings_list'))
+            return redirect(url_for('races.races_list'))
 
         if request.method == 'POST':
             unit.level = int(request.form.get('level'))
@@ -557,7 +557,7 @@ def edit_setting_unit(setting_id, unit_id):
             unit.initiative = int(request.form.get('initiative', 10))
             unit.cost = float(request.form.get('cost', 100))
             session_db.commit()
-            return redirect(url_for('settings.edit_setting', setting_id=setting_id))
+            return redirect(url_for('races.edit_race', race_id=race_id))
 
         # Используем тот же шаблон с предзаполненными данными
         template = ADD_UNIT_TEMPLATE.replace('Добавить юнит', 'Редактировать юнит').replace(
@@ -574,15 +574,15 @@ def edit_setting_unit(setting_id, unit_id):
             'value="100" min="0"', f'value="{unit.cost}" min="0"'
         )
 
-        return render_template_string(template, setting=setting, default_level=unit.level)
+        return render_template_string(template, race=race, default_level=unit.level)
 
 
-@settings_bp.route('/unit/<int:unit_id>/delete', methods=['POST'])
+@races_bp.route('/unit/<int:unit_id>/delete', methods=['POST'])
 @admin_required
-def delete_setting_unit(unit_id):
-    """Удалить юнит сеттинга"""
+def delete_race_unit(unit_id):
+    """Удалить юнит расы"""
     with db.get_session() as session_db:
-        unit = session_db.query(SettingUnit).filter_by(id=unit_id).first()
+        unit = session_db.query(RaceUnit).filter_by(id=unit_id).first()
         if unit:
             session_db.delete(unit)
             session_db.commit()
@@ -590,40 +590,40 @@ def delete_setting_unit(unit_id):
         return jsonify({'success': False, 'message': 'Юнит не найден'})
 
 
-@settings_bp.route('/<int:setting_id>/skins')
+@races_bp.route('/<int:race_id>/skins')
 @admin_required
-def setting_skins(setting_id):
-    """Скины сеттинга"""
+def race_skins(race_id):
+    """Скины расы"""
     with db.get_session() as session_db:
-        setting = session_db.query(GameSetting).filter_by(id=setting_id).first()
-        if not setting:
-            return redirect(url_for('settings.settings_list'))
+        race = session_db.query(GameRace).filter_by(id=race_id).first()
+        if not race:
+            return redirect(url_for('races.races_list'))
 
-        skins = session_db.query(SettingLevelSkin).filter_by(setting_id=setting_id).all()
+        skins = session_db.query(RaceLevelSkin).filter_by(race_id=race_id).all()
         skins_by_level = {s.level: s for s in skins}
 
-        return render_template_string(SKINS_TEMPLATE, setting=setting, skins_by_level=skins_by_level)
+        return render_template_string(SKINS_TEMPLATE, race=race, skins_by_level=skins_by_level)
 
 
-@settings_bp.route('/<int:setting_id>/skin/add', methods=['GET', 'POST'])
+@races_bp.route('/<int:race_id>/skin/add', methods=['GET', 'POST'])
 @admin_required
-def add_skin(setting_id):
+def add_skin(race_id):
     """Добавить скин"""
     with db.get_session() as session_db:
-        setting = session_db.query(GameSetting).filter_by(id=setting_id).first()
-        if not setting:
-            return redirect(url_for('settings.settings_list'))
+        race = session_db.query(GameRace).filter_by(id=race_id).first()
+        if not race:
+            return redirect(url_for('races.races_list'))
 
         if request.method == 'POST':
-            skin = SettingLevelSkin(
-                setting_id=setting_id,
+            skin = RaceLevelSkin(
+                race_id=race_id,
                 level=int(request.form.get('level')),
                 name=request.form.get('name'),
                 image_path=request.form.get('image_path') or None
             )
             session_db.add(skin)
             session_db.commit()
-            return redirect(url_for('settings.setting_skins', setting_id=setting_id))
+            return redirect(url_for('races.race_skins', race_id=race_id))
 
         default_level = int(request.args.get('level', 1))
         template = """
@@ -645,7 +645,7 @@ def add_skin(setting_id):
 <body>
     """ + HEADER_TEMPLATE + """
     <div class="content">
-        <h1>➕ Добавить скин для: {{ setting.name }}</h1>
+        <h1>➕ Добавить скин для: {{ race.name }}</h1>
 
         <form method="POST">
             <div class="form-group">
@@ -668,32 +668,32 @@ def add_skin(setting_id):
             </div>
 
             <button type="submit" class="btn btn-success">Создать</button>
-            <a href="{{ url_for('settings.setting_skins', setting_id=setting.id) }}" class="btn btn-secondary">Отмена</a>
+            <a href="{{ url_for('races.race_skins', race_id=race.id) }}" class="btn btn-secondary">Отмена</a>
         </form>
     </div>
 </body>
 </html>
 """
-        return render_template_string(template, setting=setting, default_level=default_level)
+        return render_template_string(template, race=race, default_level=default_level)
 
 
-@settings_bp.route('/<int:setting_id>/skin/<int:skin_id>/edit', methods=['GET', 'POST'])
+@races_bp.route('/<int:race_id>/skin/<int:skin_id>/edit', methods=['GET', 'POST'])
 @admin_required
-def edit_skin(setting_id, skin_id):
+def edit_skin(race_id, skin_id):
     """Редактировать скин"""
     with db.get_session() as session_db:
-        setting = session_db.query(GameSetting).filter_by(id=setting_id).first()
-        skin = session_db.query(SettingLevelSkin).filter_by(id=skin_id, setting_id=setting_id).first()
+        race = session_db.query(GameRace).filter_by(id=race_id).first()
+        skin = session_db.query(RaceLevelSkin).filter_by(id=skin_id, race_id=race_id).first()
 
         if not setting or not skin:
-            return redirect(url_for('settings.settings_list'))
+            return redirect(url_for('races.races_list'))
 
         if request.method == 'POST':
             skin.level = int(request.form.get('level'))
             skin.name = request.form.get('name')
             skin.image_path = request.form.get('image_path') or None
             session_db.commit()
-            return redirect(url_for('settings.setting_skins', setting_id=setting_id))
+            return redirect(url_for('races.race_skins', race_id=race_id))
 
         template = """
 <!DOCTYPE html>
@@ -737,21 +737,21 @@ def edit_skin(setting_id, skin_id):
             </div>
 
             <button type="submit" class="btn btn-success">💾 Сохранить</button>
-            <a href="{{ url_for('settings.setting_skins', setting_id=setting.id) }}" class="btn btn-secondary">Отмена</a>
+            <a href="{{ url_for('races.race_skins', race_id=race.id) }}" class="btn btn-secondary">Отмена</a>
         </form>
     </div>
 </body>
 </html>
 """
-        return render_template_string(template, setting=setting, skin=skin)
+        return render_template_string(template, race=race, skin=skin)
 
 
-@settings_bp.route('/skin/<int:skin_id>/delete', methods=['POST'])
+@races_bp.route('/skin/<int:skin_id>/delete', methods=['POST'])
 @admin_required
 def delete_skin(skin_id):
     """Удалить скин"""
     with db.get_session() as session_db:
-        skin = session_db.query(SettingLevelSkin).filter_by(id=skin_id).first()
+        skin = session_db.query(RaceLevelSkin).filter_by(id=skin_id).first()
         if skin:
             session_db.delete(skin)
             session_db.commit()

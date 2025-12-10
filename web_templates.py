@@ -33,7 +33,7 @@ HEADER_TEMPLATE = """
         <a href="{{ url_for('admin_images') }}" class="nav-link {{ 'active' if active_page == 'images' else '' }}">Картинки</a>
         <a href="{{ url_for('admin_units_list') }}" class="nav-link {{ 'active' if active_page == 'units' else '' }}">Управление</a>
         {% if session.username == 'okarien' %}
-        <a href="{{ url_for('settings.settings_list') }}" class="nav-link {{ 'active' if active_page == 'settings' else '' }}">⚙️ Сеттинги</a>
+        <a href="{{ url_for('races.races_list') }}" class="nav-link {{ 'active' if active_page == 'races' else '' }}">🏰 Расы</a>
         <a href="{{ url_for('images_manager.settings_list') }}" class="nav-link {{ 'active' if active_page == 'img_settings' else '' }}">Старые сеттинги</a>
         <a href="{{ url_for('images_manager.unit_images_list') }}" class="nav-link {{ 'active' if active_page == 'unit_images' else '' }}">Изображения</a>
         <a href="{{ url_for('images_manager.unit_levels_list') }}" class="nav-link {{ 'active' if active_page == 'unit_levels' else '' }}">Уровни</a>
