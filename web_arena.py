@@ -102,6 +102,56 @@ def notify_opponent(game_id: int, player_id: int, message: str, action_type: str
             send_telegram_notification(opponent.telegram_id, full_message, reply_markup)
 
 
+def notify_current_player(game_id: int, player_id: int, message: str, action_type: str = 'move'):
+    """Отправить уведомление текущему игроку (веб-игроку) о его собственном ходе"""
+    with db.get_session() as session_db:
+        player = session_db.query(GameUser).filter_by(id=player_id).first()
+
+        if player and player.telegram_id:
+            # Формируем кнопку для перехода к игре
+            reply_markup = {
+                'inline_keyboard': [[
+                    {'text': '🎮 Текущая игра', 'callback_data': f'show_game:{game_id}'}
+                ]]
+            }
+
+            # Отправляем уведомление
+            emoji = '⚔️' if action_type == 'attack' else '📍'
+            full_message = f"{emoji} Вы: {message}"
+            send_telegram_notification(player.telegram_id, full_message, reply_markup)
+
+
+def notify_game_completion(game_id: int, winner_id: int, message: str):
+    """Отправить уведомление о завершении игры обоим игрокам"""
+    with db.get_session() as session_db:
+        game = session_db.query(Game).filter_by(id=game_id).first()
+        if not game:
+            return
+
+        winner = session_db.query(GameUser).filter_by(id=winner_id).first()
+        loser_id = game.player1_id if winner_id == game.player2_id else game.player2_id
+        loser = session_db.query(GameUser).filter_by(id=loser_id).first()
+
+        if not winner or not loser:
+            return
+
+        # Формируем сообщение о завершении
+        result_message = f"{message}\n\n"
+        result_message += "🏆 " + "=" * 20 + "\n"
+        result_message += "   ИГРА ЗАВЕРШЕНА!\n"
+        result_message += "=" * 20 + "\n\n"
+        result_message += f"👑 <b>Победитель:</b> {winner.name}\n"
+        result_message += f"💔 <b>Проигравший:</b> {loser.name}\n"
+
+        # Отправляем уведомление победителю
+        if winner.telegram_id:
+            send_telegram_notification(winner.telegram_id, result_message)
+
+        # Отправляем уведомление проигравшему
+        if loser.telegram_id:
+            send_telegram_notification(loser.telegram_id, result_message)
+
+
 def login_required(f):
     """Декоратор для проверки авторизации"""
     @wraps(f)
@@ -1263,13 +1313,21 @@ def api_make_move(game_id):
         # Получаем обновлённое состояние
         game = session_db.query(Game).filter_by(id=game_id).first()
 
-        # Отправляем уведомление противнику в Telegram
+        # Отправляем уведомления в Telegram
         if success:
             try:
+                # Уведомление текущему игроку (веб-игроку) о его собственном ходе
+                notify_current_player(game_id, player_id, message, action_type)
+
+                # Уведомление противнику
                 notify_opponent(game_id, player_id, message, action_type)
 
-                # Если ход сменился - дополнительное уведомление о смене хода
-                if turn_switched and game:
+                # Проверяем, завершилась ли игра
+                if game and game.status == GameStatus.COMPLETED and game.winner_id:
+                    # Игра завершена - отправляем уведомления обоим игрокам
+                    notify_game_completion(game_id, game.winner_id, message)
+                elif turn_switched and game:
+                    # Если ход сменился - дополнительное уведомление о смене хода
                     opponent_id = game.player2_id if game.player1_id == player_id else game.player1_id
                     opponent = session_db.query(GameUser).filter_by(id=opponent_id).first()
                     if opponent and opponent.telegram_id:
