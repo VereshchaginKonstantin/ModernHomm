@@ -21,6 +21,7 @@ COPY web_interface.py .
 COPY web_arena.py .
 COPY web_templates.py .
 COPY web_images_manager.py .
+COPY web_settings.py .
 COPY config.json .
 COPY VERSION .
 COPY WEB_VERSION .
