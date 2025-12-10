@@ -17,6 +17,7 @@ from db.models import Unit, GameUser
 from decimal import Decimal
 from web_images_manager import images_bp
 from web_arena import arena_bp
+from web_settings import settings_bp
 from web_templates import get_web_version, get_bot_version, FOOTER_TEMPLATE
 
 # Создать Flask приложение
@@ -29,6 +30,8 @@ app.config['MAX_CONTENT_LENGTH'] = 5 * 1024 * 1024  # 5 MB max file size
 app.register_blueprint(images_bp)
 # Регистрация Blueprint для арены
 app.register_blueprint(arena_bp)
+# Регистрация Blueprint для управления сеттингами
+app.register_blueprint(settings_bp)
 
 
 @app.context_processor
