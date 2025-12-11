@@ -10,7 +10,7 @@ import requests
 import logging
 from datetime import datetime
 from decimal import Decimal
-from flask import Blueprint, render_template_string, request, jsonify, session, redirect, url_for
+from flask import Blueprint, render_template_string, request, jsonify, session, redirect, url_for, make_response
 from sqlalchemy import text, desc
 from functools import wraps
 
@@ -30,6 +30,20 @@ logger = logging.getLogger(__name__)
 
 # Blueprint для арены
 arena_bp = Blueprint('arena', __name__, url_prefix='/arena')
+
+
+# CORS декоратор для Unity WebGL запросов
+@arena_bp.after_request
+def after_request(response):
+    """Добавляет CORS заголовки для запросов от Unity WebGL"""
+    origin = request.headers.get('Origin', '')
+    # Разрешаем запросы от localhost и modernhomm.ru
+    if origin or request.headers.get('X-Requested-With') == 'UnityWebRequest':
+        response.headers['Access-Control-Allow-Origin'] = '*'
+        response.headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS'
+        response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization'
+    return response
+
 
 # Получаем подключение к БД
 db_url = os.getenv('DATABASE_URL', 'postgresql://postgres:postgres@localhost:5434/telegram_bot')
@@ -202,6 +216,12 @@ ARENA_INDEX_TEMPLATE = """
                 {% else %}
                 <a href="{{ url_for('arena.play') }}" class="btn btn-primary">Играть</a>
                 {% endif %}
+            </div>
+
+            <div class="arena-mode-card">
+                <h2>🎮 Unity схватка</h2>
+                <p>Играть через Unity WebGL интерфейс</p>
+                <a href="/unityArena/" class="btn btn-primary">Открыть Unity</a>
             </div>
         </div>
 
