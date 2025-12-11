@@ -174,7 +174,6 @@ class UserRace(Base):
     # Связи
     user = relationship("GameUser")
     race = relationship("GameRace")
-    armies = relationship("Army", back_populates="user_race", cascade="all, delete-orphan")
     user_race_units = relationship("UserRaceUnit", back_populates="user_race", cascade="all, delete-orphan")
 
     __table_args__ = (
@@ -237,7 +236,7 @@ class Army(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 
     # Связи
-    user_race = relationship("UserRace", back_populates="armies")
+    user_race = relationship("UserRace")
     army_units = relationship("ArmyUnit", back_populates="army", cascade="all, delete-orphan")
 
     def __repr__(self):

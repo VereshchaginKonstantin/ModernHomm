@@ -192,7 +192,7 @@ SELECT_RACE_TEMPLATE = '''
                 <div class="description">{{ race.description or 'Без описания' }}</div>
                 <div class="units-preview">
                     {% for unit in race.race_units[:7] %}
-                    <span title="{{ unit.name }} (ур. {{ unit.level }})">{{ unit.icon }}</span>
+                    <span title="{{ unit.name }} (ур. {{ unit.unit_level.level if unit.unit_level else '?' }})">{{ unit.unit_level.icon if unit.unit_level else '🎮' }}</span>
                     {% endfor %}
                 </div>
                 {% if not race.is_owned %}
@@ -340,9 +340,9 @@ EDIT_USER_RACE_TEMPLATE = '''
             {% for unit_data in units %}
             <div class="unit-card {{ 'configured' if unit_data.user_unit else 'not-configured' }}">
                 <h3>
-                    <span class="unit-icon">{{ unit_data.race_unit.icon }}</span>
+                    <span class="unit-icon">{{ unit_data.race_unit.unit_level.icon if unit_data.race_unit.unit_level else '🎮' }}</span>
                     {{ unit_data.race_unit.name }}
-                    <span class="level-badge">Ур. {{ unit_data.race_unit.level }}</span>
+                    <span class="level-badge">Ур. {{ unit_data.race_unit.unit_level.level if unit_data.race_unit.unit_level else '?' }}</span>
                 </h3>
 
                 <div class="badges">
@@ -488,7 +488,7 @@ EDIT_USER_RACE_UNIT_TEMPLATE = '''
 <body>
 ''' + HEADER_TEMPLATE + '''
     <div class="content">
-        <h1>{{ race_unit.icon }} {{ race_unit.name }} (Ур. {{ race_unit.level }})</h1>
+        <h1>{{ race_unit.unit_level.icon if race_unit.unit_level else '🎮' }} {{ race_unit.name }} (Ур. {{ race_unit.unit_level.level if race_unit.unit_level else '?' }})</h1>
 
         {% with messages = get_flashed_messages(with_categories=true) %}
             {% if messages %}
@@ -699,7 +699,7 @@ def edit_user_race(user_race_id):
         # Получаем все юниты расы (7 уровней)
         race_units = session_db.query(RaceUnit).filter(
             RaceUnit.race_id == user_race.race_id
-        ).order_by(RaceUnit.level).all()
+        ).order_by(RaceUnit.unit_level_id).all()
 
         # Получаем настроенные юниты пользователя
         user_units = {uu.race_unit_id: uu for uu in session_db.query(UserRaceUnit).filter(

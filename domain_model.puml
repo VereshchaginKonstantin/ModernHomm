@@ -149,6 +149,7 @@ package "Army" #LightYellow {
     class UnitLevel {
         +id: Integer <<PK>>
         +level: Integer <<unique>>
+        +icon: String(10)
         +prestige_min: Integer
         +prestige_max: Integer
         +created_at: DateTime
@@ -171,7 +172,6 @@ package "Race" #LightPink {
         +race_id: Integer <<FK>>
         +unit_level_id: Integer <<FK>>
         +name: String(255)
-        +icon: String(10)
         +is_flying: Boolean
         +is_kamikaze: Boolean
         +created_at: DateTime
@@ -260,13 +260,13 @@ RaceUnit "1" --> "*" RaceUnitSkin : skins
 ' UserRace relationships
 UserRace "*" --> "1" GameUser : user
 UserRace "*" --> "1" GameRace : race
-UserRace "1" --> "*" Army : armies
 UserRace "1" --> "*" UserRaceUnit : user_race_units
 
 UserRaceUnit "*" --> "1" RaceUnit : race_unit
 UserRaceUnit "*" --> "1" RaceUnitSkin : skin
 
 ' Army relationships
+Army "*" --> "1" UserRace : user_race
 Army "1" --> "*" ArmyUnit : army_units
 ArmyUnit "*" --> "1" RaceUnit : race_unit
 ArmyUnit "*" --> "0..1" UnitLevel : unit_level

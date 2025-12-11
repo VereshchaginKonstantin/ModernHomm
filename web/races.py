@@ -327,7 +327,7 @@ UNIT_SKINS_TEMPLATE = """
 <body>
     """ + HEADER_TEMPLATE + """
     <div class="content">
-        <h1>🎨 Скины уровня расы: {{ unit.icon }} {{ unit.name }} (ур. {{ unit.level }})</h1>
+        <h1>🎨 Скины уровня расы: {{ unit.unit_level.icon if unit.unit_level else '🎮' }} {{ unit.name }} (ур. {{ unit.unit_level.level if unit.unit_level else '?' }})</h1>
         <p style="color: #aaa;">Раса: {{ race.name }}</p>
 
         <a href="{{ url_for('races.add_unit_skin', race_id=race.id, unit_id=unit.id) }}" class="btn btn-success">➕ Добавить скин уровня расы</a>
@@ -527,8 +527,8 @@ ADD_SKIN_TEMPLATE = """
 <body>
     """ + HEADER_TEMPLATE + """
     <div class="content">
-        <h1>➕ Добавить скин уровня расы для: {{ unit.icon }} {{ unit.name }}</h1>
-        <p style="color: #aaa;">Раса: {{ race.name }} | Уровень: {{ unit.level }}</p>
+        <h1>➕ Добавить скин уровня расы для: {{ unit.unit_level.icon if unit.unit_level else '🎮' }} {{ unit.name }}</h1>
+        <p style="color: #aaa;">Раса: {{ race.name }} | Уровень: {{ unit.unit_level.level if unit.unit_level else '?' }}</p>
 
         <form method="POST" enctype="multipart/form-data">
             <div class="form-group">
@@ -637,7 +637,7 @@ EDIT_SKIN_TEMPLATE = """
     """ + HEADER_TEMPLATE + """
     <div class="content">
         <h1>✏️ Редактировать скин уровня расы: {{ skin.name }}</h1>
-        <p style="color: #aaa;">Юнит: {{ unit.icon }} {{ unit.name }} | Раса: {{ race.name }}</p>
+        <p style="color: #aaa;">Юнит: {{ unit.unit_level.icon if unit.unit_level else '🎮' }} {{ unit.name }} | Раса: {{ race.name }}</p>
 
         <form method="POST" enctype="multipart/form-data">
             <div class="form-group">

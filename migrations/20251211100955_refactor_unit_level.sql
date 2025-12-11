@@ -8,6 +8,21 @@ DELETE FROM unit_levels;
 ALTER TABLE unit_levels DROP COLUMN IF EXISTS race_id;
 ALTER TABLE unit_levels DROP COLUMN IF EXISTS cost;
 
+-- Удаляем устаревшие колонки из старой структуры unit_levels
+ALTER TABLE unit_levels DROP COLUMN IF EXISTS name;
+ALTER TABLE unit_levels DROP COLUMN IF EXISTS description;
+ALTER TABLE unit_levels DROP COLUMN IF EXISTS min_damage;
+ALTER TABLE unit_levels DROP COLUMN IF EXISTS max_damage;
+ALTER TABLE unit_levels DROP COLUMN IF EXISTS min_defense;
+ALTER TABLE unit_levels DROP COLUMN IF EXISTS max_defense;
+ALTER TABLE unit_levels DROP COLUMN IF EXISTS min_health;
+ALTER TABLE unit_levels DROP COLUMN IF EXISTS max_health;
+ALTER TABLE unit_levels DROP COLUMN IF EXISTS min_speed;
+ALTER TABLE unit_levels DROP COLUMN IF EXISTS max_speed;
+ALTER TABLE unit_levels DROP COLUMN IF EXISTS min_cost;
+ALTER TABLE unit_levels DROP COLUMN IF EXISTS max_cost;
+ALTER TABLE unit_levels DROP COLUMN IF EXISTS updated_at;
+
 -- Добавляем диапазон престижа в unit_levels
 ALTER TABLE unit_levels ADD COLUMN IF NOT EXISTS prestige_min INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE unit_levels ADD COLUMN IF NOT EXISTS prestige_max INTEGER NOT NULL DEFAULT 100;
