@@ -80,7 +80,6 @@ RACES_LIST_TEMPLATE = """
                 </div>
                 <div style="margin-top: 15px;">
                     <a href="{{ url_for('races.edit_race', race_id=race.id) }}" class="btn btn-primary btn-sm">✏️ Редактировать</a>
-                    <a href="{{ url_for('races.race_skins', race_id=race.id) }}" class="btn btn-primary btn-sm">🎨 Скины</a>
                     <button onclick="deleteRace({{ race.id }})" class="btn btn-danger btn-sm">🗑️ Удалить</button>
                 </div>
             </div>
@@ -106,6 +105,7 @@ RACES_LIST_TEMPLATE = """
         }
     }
     </script>
+    {{ footer_html|safe }}
 </body>
 </html>
 """
@@ -154,6 +154,7 @@ CREATE_RACE_TEMPLATE = """
             <a href="{{ url_for('races.races_list') }}" class="btn btn-secondary">Отмена</a>
         </form>
     </div>
+    {{ footer_html|safe }}
 </body>
 </html>
 """
@@ -237,6 +238,7 @@ EDIT_RACE_TEMPLATE = """
             </div>
         </div>
     </div>
+    {{ footer_html|safe }}
 </body>
 </html>
 """
@@ -295,6 +297,7 @@ EDIT_UNIT_TEMPLATE = """
             <a href="{{ url_for('races.edit_race', race_id=race.id) }}" class="btn btn-secondary">Назад</a>
         </form>
     </div>
+    {{ footer_html|safe }}
 </body>
 </html>
 """
@@ -364,6 +367,7 @@ UNIT_SKINS_TEMPLATE = """
         }
     }
     </script>
+    {{ footer_html|safe }}
 </body>
 </html>
 """
@@ -553,6 +557,7 @@ ADD_SKIN_TEMPLATE = """
             <a href="{{ url_for('races.unit_skins', race_id=race.id, unit_id=unit.id) }}" class="btn btn-secondary">Отмена</a>
         </form>
     </div>
+    {{ footer_html|safe }}
 </body>
 </html>
 """
@@ -632,6 +637,7 @@ EDIT_SKIN_TEMPLATE = """
             <a href="{{ url_for('races.unit_skins', race_id=race.id, unit_id=unit.id) }}" class="btn btn-secondary">Отмена</a>
         </form>
     </div>
+    {{ footer_html|safe }}
 </body>
 </html>
 """

@@ -37,11 +37,9 @@ app.register_blueprint(army_bp)
 @app.context_processor
 def inject_versions():
     """Добавить версии и баланс пользователя во все шаблоны"""
-    context = {
-        'web_version': get_web_version(),
-        'bot_version': get_bot_version(),
-        'footer_html': FOOTER_TEMPLATE
-    }
+    web_version = get_web_version()
+    bot_version = get_bot_version()
+    user_balance = None
 
     # Добавить баланс пользователя, если он авторизован
     if 'username' in session:
@@ -52,7 +50,7 @@ def inject_versions():
             with db_instance.get_session() as db_session:
                 user = db_session.query(GameUser).filter_by(username=session['username']).first()
                 if user:
-                    context['user_balance'] = {
+                    user_balance = {
                         'coins': int(user.balance) if user.balance else 0,
                         'glory': user.glory or 0,
                         'crystals': user.crystals or 0
@@ -60,7 +58,20 @@ def inject_versions():
         except Exception:
             pass  # Если не удалось получить баланс, просто не показываем его
 
-    return context
+    # Рендерим footer с переменными
+    footer_html = render_template_string(
+        FOOTER_TEMPLATE,
+        web_version=web_version,
+        bot_version=bot_version,
+        user_balance=user_balance
+    )
+
+    return {
+        'web_version': web_version,
+        'bot_version': bot_version,
+        'user_balance': user_balance,
+        'footer_html': footer_html
+    }
 
 
 def get_static_version():
