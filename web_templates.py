@@ -32,11 +32,12 @@ HEADER_TEMPLATE = """
         <!-- Арена -->
         <a href="{{ url_for('arena.index') }}" class="nav-link {{ 'active' if active_page == 'arena' else '' }}">🏟️ Арена</a>
 
-        <!-- Армия (пока пусто) -->
+        <!-- Армия -->
         <div class="nav-dropdown">
             <a href="#" class="nav-link {{ 'active' if active_page in ['army', 'user_race', 'army_settings'] else '' }}">⚔️ Армия ▾</a>
             <div class="dropdown-content">
-                <span class="dropdown-placeholder">В разработке...</span>
+                <a href="{{ url_for('army.user_races_list') }}" class="{{ 'active' if active_page == 'user_race' else '' }}">🏰 Мои расы</a>
+                <a href="{{ url_for('army.army_settings') }}" class="{{ 'active' if active_page == 'army_settings' else '' }}">🎖️ Армии</a>
             </div>
         </div>
 

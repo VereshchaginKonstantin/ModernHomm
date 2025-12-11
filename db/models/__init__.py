@@ -19,7 +19,7 @@ from .battle import GameStatus, Field, Game, BattleUnit, Obstacle, GameLog
 # Модели армии, юнитов и рас
 from .army import (
     Unit, UnitCustomIcon, UserUnit,
-    GameRace, RaceUnit, UnitLevel,
+    GameRace, RaceUnit, RaceUnitSkin, UnitLevel,
     UserRace, UserRaceUnit,
     Army, ArmyUnit
 )
@@ -33,7 +33,7 @@ __all__ = [
     'GameStatus', 'Field', 'Game', 'BattleUnit', 'Obstacle', 'GameLog',
     # Army
     'Unit', 'UnitCustomIcon', 'UserUnit',
-    'GameRace', 'RaceUnit', 'UnitLevel',
+    'GameRace', 'RaceUnit', 'RaceUnitSkin', 'UnitLevel',
     'UserRace', 'UserRaceUnit',
     'Army', 'ArmyUnit'
 ]

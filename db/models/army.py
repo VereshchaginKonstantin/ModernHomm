@@ -4,7 +4,7 @@
 """
 
 from datetime import datetime
-from sqlalchemy import Column, Integer, String, Text, DateTime, ForeignKey, Numeric, CheckConstraint, Boolean
+from sqlalchemy import Column, Integer, String, Text, DateTime, ForeignKey, Numeric, CheckConstraint, Boolean, UniqueConstraint
 from sqlalchemy.orm import relationship
 
 from .base import Base
@@ -113,8 +113,9 @@ class RaceUnit(Base):
     is_kamikaze = Column(Boolean, nullable=False, default=False)  # Камикадзе
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
-    # Связь
+    # Связи
     race = relationship("GameRace", back_populates="race_units")
+    skins = relationship("RaceUnitSkin", back_populates="race_unit", cascade="all, delete-orphan")
 
     __table_args__ = (
         CheckConstraint('level >= 1 AND level <= 7', name='race_unit_level_range'),
@@ -122,6 +123,25 @@ class RaceUnit(Base):
 
     def __repr__(self):
         return f"<RaceUnit(id={self.id}, race_id={self.race_id}, level={self.level}, name={self.name})>"
+
+
+class RaceUnitSkin(Base):
+    """Модель скина юнита расы (внешний вид для юнита определённого уровня)"""
+    __tablename__ = 'race_unit_skins'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    race_unit_id = Column(Integer, ForeignKey('race_units.id', ondelete='CASCADE'), nullable=False, index=True)
+    name = Column(String(255), nullable=False)  # Название скина
+    icon = Column(String(10), nullable=False, default='🎮')  # Иконка скина
+    image_path = Column(String(512), nullable=True)  # Путь к изображению скина
+    description = Column(Text, nullable=True)  # Описание скина
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    # Связь
+    race_unit = relationship("RaceUnit", back_populates="skins")
+
+    def __repr__(self):
+        return f"<RaceUnitSkin(id={self.id}, race_unit_id={self.race_unit_id}, name={self.name})>"
 
 
 class UnitLevel(Base):
@@ -176,6 +196,7 @@ class UserRaceUnit(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     user_race_id = Column(Integer, ForeignKey('user_races.id', ondelete='CASCADE'), nullable=False, index=True)
     race_unit_id = Column(Integer, ForeignKey('race_units.id', ondelete='CASCADE'), nullable=False, index=True)
+    skin_id = Column(Integer, ForeignKey('race_unit_skins.id', ondelete='RESTRICT'), nullable=False, index=True)  # Обязательная ссылка на скин
 
     # Боевые характеристики (наследуются от RaceUnit, но хранятся у пользователя)
     attack = Column(Integer, nullable=False, default=10)
@@ -192,9 +213,15 @@ class UserRaceUnit(Base):
     # Связи
     user_race = relationship("UserRace", back_populates="user_race_units")
     race_unit = relationship("RaceUnit")
+    skin = relationship("RaceUnitSkin")
+
+    # Уникальность: один юнит расы на пользовательскую расу (один юнит на уровень)
+    __table_args__ = (
+        UniqueConstraint('user_race_id', 'race_unit_id', name='unique_user_race_unit'),
+    )
 
     def __repr__(self):
-        return f"<UserRaceUnit(id={self.id}, user_race_id={self.user_race_id}, race_unit_id={self.race_unit_id})>"
+        return f"<UserRaceUnit(id={self.id}, user_race_id={self.user_race_id}, race_unit_id={self.race_unit_id}, skin_id={self.skin_id})>"
 
 
 class Army(Base):
