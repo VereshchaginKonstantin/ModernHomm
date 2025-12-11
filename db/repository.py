@@ -9,7 +9,15 @@ from contextlib import contextmanager
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, Session
 
-from .models import Base, User, Message, Config, GameUser, Unit, UserUnit, Game, GameStatus, Field, BattleUnit
+from .models import (
+    Base,
+    # Core
+    User, Message, Config, GameUser,
+    # Battle
+    Game, GameStatus, Field, BattleUnit,
+    # Army
+    Unit, UserUnit
+)
 from decimal import Decimal
 
 
