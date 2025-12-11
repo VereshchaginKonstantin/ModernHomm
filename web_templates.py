@@ -32,18 +32,17 @@ HEADER_TEMPLATE = """
         <!-- Арена -->
         <a href="{{ url_for('arena.index') }}" class="nav-link {{ 'active' if active_page == 'arena' else '' }}">🏟️ Арена</a>
 
-        <!-- Армия (dropdown) -->
+        <!-- Армия (пока пусто) -->
         <div class="nav-dropdown">
             <a href="#" class="nav-link {{ 'active' if active_page in ['army', 'user_race', 'army_settings'] else '' }}">⚔️ Армия ▾</a>
             <div class="dropdown-content">
-                <a href="{{ url_for('army.user_race') }}" class="{{ 'active' if active_page == 'user_race' else '' }}">🏰 Настройка расы</a>
-                <a href="{{ url_for('army.army_settings') }}" class="{{ 'active' if active_page == 'army_settings' else '' }}">🎖️ Настройка армии</a>
+                <span class="dropdown-placeholder">В разработке...</span>
             </div>
         </div>
 
         <!-- Админ настройки (dropdown) -->
         <div class="nav-dropdown">
-            <a href="#" class="nav-link {{ 'active' if active_page in ['home', 'images', 'units', 'races', 'leaderboard'] else '' }}">⚙️ Настройки ▾</a>
+            <a href="#" class="nav-link {{ 'active' if active_page in ['home', 'images', 'units', 'races', 'leaderboard'] else '' }}">⚙️ Админ настройки ▾</a>
             <div class="dropdown-content">
                 <a href="{{ url_for('index') }}" class="{{ 'active' if active_page == 'home' else '' }}">📋 Список юнитов</a>
                 <a href="{{ url_for('admin_images') }}" class="{{ 'active' if active_page == 'images' else '' }}">🖼️ Картинки</a>
@@ -127,6 +126,12 @@ BASE_STYLE = """
         }
         .dropdown-content a.active {
             background-color: #3498db;
+        }
+        .dropdown-placeholder {
+            color: #95a5a6;
+            padding: 12px 16px;
+            display: block;
+            font-style: italic;
         }
         .nav-dropdown:hover .dropdown-content {
             display: block;
