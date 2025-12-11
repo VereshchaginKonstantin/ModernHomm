@@ -43,13 +43,14 @@ HEADER_TEMPLATE = """
 
         <!-- Админ настройки (dropdown) -->
         <div class="nav-dropdown">
-            <a href="#" class="nav-link {{ 'active' if active_page in ['home', 'images', 'units', 'races', 'leaderboard'] else '' }}">⚙️ Админ настройки ▾</a>
+            <a href="#" class="nav-link {{ 'active' if active_page in ['home', 'images', 'units', 'races', 'unit_levels', 'leaderboard'] else '' }}">⚙️ Админ настройки ▾</a>
             <div class="dropdown-content">
                 <a href="{{ url_for('index') }}" class="{{ 'active' if active_page == 'home' else '' }}">📋 Список юнитов</a>
                 <a href="{{ url_for('admin_images') }}" class="{{ 'active' if active_page == 'images' else '' }}">🖼️ Картинки</a>
                 <a href="{{ url_for('admin_units_list') }}" class="{{ 'active' if active_page == 'units' else '' }}">🔧 Управление</a>
                 {% if session.username == 'okarien' %}
                 <a href="{{ url_for('races.races_list') }}" class="{{ 'active' if active_page == 'races' else '' }}">🏰 Расы</a>
+                <a href="{{ url_for('races.unit_levels_list') }}" class="{{ 'active' if active_page == 'unit_levels' else '' }}">📊 Уровни юнитов</a>
                 {% endif %}
                 <a href="{{ url_for('leaderboard') }}" class="{{ 'active' if active_page == 'leaderboard' else '' }}">🏆 Рейтинг</a>
                 <a href="{{ url_for('export_units') }}">📤 Экспорт</a>

@@ -255,7 +255,6 @@ EDIT_UNIT_TEMPLATE = """
         .form-group label { display: block; margin-bottom: 5px; color: #ffd700; }
         .form-group input, .form-group select { width: 100%; padding: 10px; border: 1px solid #444; background: #2a2a2a; color: white; border-radius: 5px; }
         .form-row { display: grid; grid-template-columns: repeat(2, 1fr); gap: 15px; }
-        .form-row-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px; }
         .checkbox-group { display: flex; align-items: center; gap: 10px; margin-bottom: 15px; }
         .checkbox-group input[type="checkbox"] { width: 20px; height: 20px; }
         .btn { padding: 10px 20px; border: none; border-radius: 5px; cursor: pointer; text-decoration: none; display: inline-block; margin-right: 10px; }
@@ -266,7 +265,7 @@ EDIT_UNIT_TEMPLATE = """
 <body>
     """ + HEADER_TEMPLATE + """
     <div class="content">
-        <h1>✏️ Редактировать Юнит расы уровня {{ unit.level }}: {{ race.name }}</h1>
+        <h1>✏️ Редактировать Юнит расы: {{ race.name }}</h1>
 
         <form method="POST">
             <div class="form-row">
@@ -280,15 +279,16 @@ EDIT_UNIT_TEMPLATE = """
                 </div>
             </div>
 
-            <div class="form-row">
-                <div class="form-group">
-                    <label>Минимальный престиж</label>
-                    <input type="number" name="prestige_min" value="{{ unit.prestige_min or 0 }}" min="0">
-                </div>
-                <div class="form-group">
-                    <label>Максимальный престиж</label>
-                    <input type="number" name="prestige_max" value="{{ unit.prestige_max or 100 }}" min="0">
-                </div>
+            <div class="form-group">
+                <label>Уровень юнита</label>
+                <select name="unit_level_id">
+                    <option value="">-- Не выбран --</option>
+                    {% for level in unit_levels %}
+                    <option value="{{ level.id }}" {% if unit.unit_level_id == level.id %}selected{% endif %}>
+                        Уровень {{ level.level }} (престиж {{ level.prestige_min }} - {{ level.prestige_max }})
+                    </option>
+                    {% endfor %}
+                </select>
             </div>
 
             <div class="checkbox-group">
@@ -410,31 +410,26 @@ def create_race():
             session_db.add(race)
             session_db.flush()  # Получаем ID расы
 
+            # Получаем справочник уровней юнитов
+            unit_levels = session_db.query(UnitLevel).order_by(UnitLevel.level).all()
+            unit_levels_by_level = {ul.level: ul for ul in unit_levels}
+
             # Автоматически создаём 7 юнитов (по одному на каждый уровень)
             default_unit_names = [
                 'Крестьянин', 'Лучник', 'Грифон', 'Мечник',
                 'Монах', 'Всадник', 'Ангел'
             ]
             for level in range(1, 8):
+                unit_level = unit_levels_by_level.get(level)
                 unit = RaceUnit(
                     race_id=race.id,
-                    level=level,
+                    unit_level_id=unit_level.id if unit_level else None,
                     name=default_unit_names[level - 1],
                     icon='🎮',
                     is_flying=False,
                     is_kamikaze=False
                 )
                 session_db.add(unit)
-
-            # Создаём уровни стоимости (по умолчанию)
-            default_costs = [50, 100, 200, 400, 800, 1500, 3000]
-            for level in range(1, 8):
-                unit_level = UnitLevel(
-                    race_id=race.id,
-                    level=level,
-                    cost=default_costs[level - 1]
-                )
-                session_db.add(unit_level)
 
             session_db.commit()
             return redirect(url_for('races.edit_race', race_id=race.id))
@@ -458,9 +453,9 @@ def edit_race(race_id):
             session_db.commit()
             return redirect(url_for('races.edit_race', race_id=race_id))
 
-        # Получаем юниты по уровням
+        # Получаем юниты по уровням (уровень теперь берётся из связанного UnitLevel)
         units = session_db.query(RaceUnit).filter_by(race_id=race_id).all()
-        units_by_level = {u.level: u for u in units}
+        units_by_level = {u.unit_level.level: u for u in units if u.unit_level}
 
         return render_template_string(EDIT_RACE_TEMPLATE, race=race, units_by_level=units_by_level)
 
@@ -494,12 +489,13 @@ def edit_race_unit(race_id, unit_id):
             unit.icon = request.form.get('icon', '🎮')
             unit.is_flying = request.form.get('is_flying') == 'on'
             unit.is_kamikaze = request.form.get('is_kamikaze') == 'on'
-            unit.prestige_min = int(request.form.get('prestige_min', 0) or 0)
-            unit.prestige_max = int(request.form.get('prestige_max', 100) or 100)
+            unit_level_id = request.form.get('unit_level_id')
+            unit.unit_level_id = int(unit_level_id) if unit_level_id else None
             session_db.commit()
             return redirect(url_for('races.edit_race', race_id=race_id))
 
-        return render_template_string(EDIT_UNIT_TEMPLATE, race=race, unit=unit)
+        unit_levels = session_db.query(UnitLevel).order_by(UnitLevel.level).all()
+        return render_template_string(EDIT_UNIT_TEMPLATE, race=race, unit=unit, unit_levels=unit_levels)
 
 
 @races_bp.route('/<int:race_id>/unit/<int:unit_id>/skins')
@@ -774,3 +770,142 @@ def skin_image(skin_id):
         # Возвращаем пустую картинку 1x1 PNG если изображение не найдено
         empty_png = b'\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\x06\x00\x00\x00\x1f\x15\xc4\x89\x00\x00\x00\nIDATx\x9cc\x00\x01\x00\x00\x05\x00\x01\r\n-\xb4\x00\x00\x00\x00IEND\xaeB`\x82'
         return Response(empty_png, mimetype='image/png', status=404)
+
+
+# ==================== Управление уровнями юнитов ====================
+
+UNIT_LEVELS_LIST_TEMPLATE = """
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Уровни юнитов - Админ-панель</title>
+    <meta charset="utf-8">
+    """ + BASE_STYLE + """
+    <style>
+        body { background: #1a1a2e; color: #eee; }
+        .content { padding: 20px; }
+        h1 { color: #ffd700; }
+        table { width: 100%; border-collapse: collapse; background: #222; }
+        th, td { padding: 12px; text-align: left; border-bottom: 1px solid #444; }
+        th { background: #333; color: #ffd700; }
+        .btn { padding: 8px 16px; border: none; border-radius: 4px; cursor: pointer; text-decoration: none; display: inline-block; }
+        .btn-primary { background: #3498db; color: white; }
+        .btn-success { background: #2ecc71; color: white; }
+        .btn-secondary { background: #666; color: white; }
+    </style>
+</head>
+<body>
+    """ + HEADER_TEMPLATE + """
+    <div class="content">
+        <h1>📊 Уровни юнитов</h1>
+        <p style="color: #aaa;">Справочник уровней юнитов с диапазонами престижа для найма</p>
+
+        <table>
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>Уровень</th>
+                    <th>Мин. престиж</th>
+                    <th>Макс. престиж</th>
+                    <th>Действия</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for level in levels %}
+                <tr>
+                    <td>{{ level.id }}</td>
+                    <td>{{ level.level }}</td>
+                    <td>{{ level.prestige_min }}</td>
+                    <td>{{ level.prestige_max }}</td>
+                    <td>
+                        <a href="{{ url_for('races.edit_unit_level', level_id=level.id) }}" class="btn btn-primary">Редактировать</a>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+
+        <div style="margin-top: 20px;">
+            <a href="{{ url_for('races.races_list') }}" class="btn btn-secondary">Назад к расам</a>
+        </div>
+    </div>
+    """ + FOOTER_TEMPLATE + """
+</body>
+</html>
+"""
+
+EDIT_UNIT_LEVEL_TEMPLATE = """
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Редактировать уровень юнита - Админ-панель</title>
+    <meta charset="utf-8">
+    """ + BASE_STYLE + """
+    <style>
+        body { background: #1a1a2e; color: #eee; }
+        .content { padding: 20px; }
+        h1 { color: #ffd700; }
+        .form-group { margin-bottom: 15px; }
+        .form-group label { display: block; margin-bottom: 5px; color: #ffd700; }
+        .form-group input { width: 100%; max-width: 300px; padding: 10px; border: 1px solid #444; background: #2a2a2a; color: white; border-radius: 5px; }
+        .btn { padding: 10px 20px; border: none; border-radius: 5px; cursor: pointer; text-decoration: none; display: inline-block; margin-right: 10px; }
+        .btn-success { background: #2ecc71; color: white; }
+        .btn-secondary { background: #666; color: white; }
+    </style>
+</head>
+<body>
+    """ + HEADER_TEMPLATE + """
+    <div class="content">
+        <h1>Редактировать уровень {{ level.level }}</h1>
+
+        <form method="POST">
+            <div class="form-group">
+                <label>Уровень (1-7)</label>
+                <input type="number" name="level" min="1" max="7" value="{{ level.level }}" required readonly>
+            </div>
+
+            <div class="form-group">
+                <label>Минимальный престиж</label>
+                <input type="number" name="prestige_min" min="0" value="{{ level.prestige_min }}" required>
+            </div>
+
+            <div class="form-group">
+                <label>Максимальный престиж</label>
+                <input type="number" name="prestige_max" min="0" value="{{ level.prestige_max }}" required>
+            </div>
+
+            <button type="submit" class="btn btn-success">Сохранить</button>
+            <a href="{{ url_for('races.unit_levels_list') }}" class="btn btn-secondary">Отмена</a>
+        </form>
+    </div>
+    """ + FOOTER_TEMPLATE + """
+</body>
+</html>
+"""
+
+
+@races_bp.route('/unit-levels')
+@admin_required
+def unit_levels_list():
+    """Список уровней юнитов"""
+    with db.get_session() as session_db:
+        levels = session_db.query(UnitLevel).order_by(UnitLevel.level).all()
+        return render_template_string(UNIT_LEVELS_LIST_TEMPLATE, levels=levels, active_page='unit_levels')
+
+
+@races_bp.route('/unit-levels/<int:level_id>/edit', methods=['GET', 'POST'])
+@admin_required
+def edit_unit_level(level_id):
+    """Редактировать уровень юнита"""
+    with db.get_session() as session_db:
+        level = session_db.query(UnitLevel).filter_by(id=level_id).first()
+        if not level:
+            return redirect(url_for('races.unit_levels_list'))
+
+        if request.method == 'POST':
+            level.prestige_min = int(request.form.get('prestige_min', 0))
+            level.prestige_max = int(request.form.get('prestige_max', 100))
+            session_db.commit()
+            return redirect(url_for('races.unit_levels_list'))
+
+        return render_template_string(EDIT_UNIT_LEVEL_TEMPLATE, level=level, active_page='unit_levels')

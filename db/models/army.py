@@ -93,7 +93,6 @@ class GameRace(Base):
 
     # Связи
     race_units = relationship("RaceUnit", back_populates="race", cascade="all, delete-orphan")
-    unit_levels = relationship("UnitLevel", back_populates="race", cascade="all, delete-orphan")
 
     def __repr__(self):
         return f"<GameRace(id={self.id}, name={self.name}, is_free={self.is_free})>"
@@ -105,25 +104,20 @@ class RaceUnit(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     race_id = Column(Integer, ForeignKey('game_races.id', ondelete='CASCADE'), nullable=False, index=True)
-    level = Column(Integer, nullable=False)  # Уровень юнита (1-7)
+    unit_level_id = Column(Integer, ForeignKey('unit_levels.id', ondelete='RESTRICT'), nullable=True, index=True)  # Ссылка на уровень юнита
     name = Column(String(255), nullable=False)
     icon = Column(String(10), nullable=False, default='🎮')
     is_flying = Column(Boolean, nullable=False, default=False)  # Летающий юнит
     is_kamikaze = Column(Boolean, nullable=False, default=False)  # Камикадзе
-    prestige_min = Column(Integer, nullable=False, default=0)  # Минимальный престиж для найма
-    prestige_max = Column(Integer, nullable=False, default=100)  # Максимальный престиж для найма
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
     # Связи
     race = relationship("GameRace", back_populates="race_units")
+    unit_level = relationship("UnitLevel")
     skins = relationship("RaceUnitSkin", back_populates="race_unit", cascade="all, delete-orphan")
 
-    __table_args__ = (
-        CheckConstraint('level >= 1 AND level <= 7', name='race_unit_level_range'),
-    )
-
     def __repr__(self):
-        return f"<RaceUnit(id={self.id}, race_id={self.race_id}, level={self.level}, name={self.name})>"
+        return f"<RaceUnit(id={self.id}, race_id={self.race_id}, unit_level_id={self.unit_level_id}, name={self.name})>"
 
 
 class RaceUnitSkin(Base):
@@ -146,24 +140,21 @@ class RaceUnitSkin(Base):
 
 
 class UnitLevel(Base):
-    """Модель уровня юнита (стоимость по уровням)"""
+    """Модель уровня юнита (справочник уровней с диапазоном престижа)"""
     __tablename__ = 'unit_levels'
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    race_id = Column(Integer, ForeignKey('game_races.id', ondelete='CASCADE'), nullable=False, index=True)
-    level = Column(Integer, nullable=False)  # Уровень (1-7)
-    cost = Column(Numeric(10, 2), nullable=False, default=100)  # Стоимость юнита этого уровня
+    level = Column(Integer, nullable=False, unique=True)  # Уровень (1-7)
+    prestige_min = Column(Integer, nullable=False, default=0)  # Минимальный престиж для найма
+    prestige_max = Column(Integer, nullable=False, default=100)  # Максимальный престиж для найма
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-
-    # Связь
-    race = relationship("GameRace", back_populates="unit_levels")
 
     __table_args__ = (
         CheckConstraint('level >= 1 AND level <= 7', name='unit_level_range'),
     )
 
     def __repr__(self):
-        return f"<UnitLevel(id={self.id}, race_id={self.race_id}, level={self.level}, cost={self.cost})>"
+        return f"<UnitLevel(id={self.id}, level={self.level}, prestige_min={self.prestige_min}, prestige_max={self.prestige_max})>"
 
 
 class UserRace(Base):
