@@ -1,0 +1,274 @@
+@startuml ModernHomm Domain Model
+
+skinparam linetype ortho
+skinparam classAttributeIconSize 0
+
+' ============= CORE =============
+package "Core" #LightBlue {
+    class User {
+        +id: Integer <<PK>>
+        +telegram_id: BigInteger <<unique>>
+        +username: String(255)
+        +first_seen: DateTime
+        +last_seen: DateTime
+    }
+
+    class Message {
+        +id: Integer <<PK>>
+        +telegram_user_id: BigInteger
+        +message_text: Text
+        +message_date: DateTime
+        +username: String(255)
+    }
+
+    class Config {
+        +id: Integer <<PK>>
+        +key: String(255) <<unique>>
+        +value: Text
+        +description: Text
+        +created_at: DateTime
+        +updated_at: DateTime
+    }
+
+    class GameUser {
+        +id: Integer <<PK>>
+        +telegram_id: BigInteger <<unique>>
+        +name: String(255)
+        +username: String(255) <<unique>>
+        +balance: Numeric(12,2)
+        +crystals: Integer
+        +glory: Integer
+        +wins: Integer
+        +losses: Integer
+        +password_hash: String(255)
+        +created_at: DateTime
+        +updated_at: DateTime
+    }
+}
+
+' ============= BATTLE =============
+package "Battle" #LightGreen {
+    enum GameStatus {
+        WAITING
+        IN_PROGRESS
+        COMPLETED
+    }
+
+    class Field {
+        +id: Integer <<PK>>
+        +width: Integer
+        +height: Integer
+        +name: String(50) <<unique>>
+    }
+
+    class Game {
+        +id: Integer <<PK>>
+        +player1_id: Integer <<FK>>
+        +player2_id: Integer <<FK>>
+        +field_id: Integer <<FK>>
+        +status: GameStatus
+        +current_player_id: Integer <<FK>>
+        +winner_id: Integer <<FK>>
+        +created_at: DateTime
+        +started_at: DateTime
+        +completed_at: DateTime
+        +last_move_at: DateTime
+    }
+
+    class BattleUnit {
+        +id: Integer <<PK>>
+        +game_id: Integer <<FK>>
+        +user_unit_id: Integer <<FK>>
+        +player_id: Integer <<FK>>
+        +position_x: Integer
+        +position_y: Integer
+        +total_count: Integer
+        +remaining_hp: Integer
+        +morale: Numeric(10,2)
+        +fatigue: Numeric(10,2)
+        +has_moved: Integer
+        +deferred: Integer
+    }
+
+    class Obstacle {
+        +id: Integer <<PK>>
+        +game_id: Integer <<FK>>
+        +position_x: Integer
+        +position_y: Integer
+    }
+
+    class GameLog {
+        +id: Integer <<PK>>
+        +game_id: Integer <<FK>>
+        +event_type: String(50)
+        +message: Text
+        +game_state: Text
+        +created_at: DateTime
+    }
+}
+
+' ============= ARMY =============
+package "Army" #LightYellow {
+    class Unit {
+        +id: Integer <<PK>>
+        +name: String(255) <<unique>>
+        +icon: String(10)
+        +image_path: String(512)
+        +description: String(1000)
+        +price: Numeric(12,2)
+        +damage: Integer
+        +defense: Integer
+        +range: Integer
+        +health: Integer
+        +speed: Integer
+        +luck: Numeric(5,4)
+        +crit_chance: Numeric(5,4)
+        +dodge_chance: Numeric(5,4)
+        +is_kamikaze: Integer
+        +is_flying: Integer
+        +counterattack_chance: Numeric(5,4)
+        +effective_against_unit_id: Integer <<FK>>
+        +owner_id: Integer <<FK>>
+    }
+
+    class UnitCustomIcon {
+        +id: Integer <<PK>>
+        +unit_id: Integer <<FK>> <<unique>>
+        +custom_icon: String(10)
+        +created_at: DateTime
+        +updated_at: DateTime
+    }
+
+    class UserUnit {
+        +id: Integer <<PK>>
+        +game_user_id: Integer <<FK>>
+        +unit_type_id: Integer <<FK>>
+        +count: Integer
+    }
+
+    class UnitLevel {
+        +id: Integer <<PK>>
+        +level: Integer <<unique>>
+        +prestige_min: Integer
+        +prestige_max: Integer
+        +created_at: DateTime
+    }
+}
+
+' ============= RACE =============
+package "Race" #LightPink {
+    class GameRace {
+        +id: Integer <<PK>>
+        +name: String(255) <<unique>>
+        +description: Text
+        +is_free: Boolean
+        +created_at: DateTime
+        +updated_at: DateTime
+    }
+
+    class RaceUnit {
+        +id: Integer <<PK>>
+        +race_id: Integer <<FK>>
+        +unit_level_id: Integer <<FK>>
+        +name: String(255)
+        +icon: String(10)
+        +is_flying: Boolean
+        +is_kamikaze: Boolean
+        +created_at: DateTime
+    }
+
+    class RaceUnitSkin {
+        +id: Integer <<PK>>
+        +race_unit_id: Integer <<FK>>
+        +name: String(255)
+        +image_data: LargeBinary
+        +image_mime_type: String(50)
+        +description: Text
+        +created_at: DateTime
+    }
+
+    class UserRace {
+        +id: Integer <<PK>>
+        +user_id: Integer <<FK>>
+        +race_id: Integer <<FK>>
+        +created_at: DateTime
+    }
+
+    class UserRaceUnit {
+        +id: Integer <<PK>>
+        +user_race_id: Integer <<FK>>
+        +race_unit_id: Integer <<FK>>
+        +skin_id: Integer <<FK>>
+        +attack: Integer
+        +defense: Integer
+        +min_damage: Integer
+        +max_damage: Integer
+        +health: Integer
+        +speed: Integer
+        +initiative: Integer
+        +created_at: DateTime
+        +updated_at: DateTime
+    }
+
+    class Army {
+        +id: Integer <<PK>>
+        +user_race_id: Integer <<FK>>
+        +name: String(255)
+        +army_type: String(20)
+        +created_at: DateTime
+        +updated_at: DateTime
+    }
+
+    class ArmyUnit {
+        +id: Integer <<PK>>
+        +army_id: Integer <<FK>>
+        +race_unit_id: Integer <<FK>>
+        +unit_level_id: Integer <<FK>>
+        +count: Integer
+        +created_at: DateTime
+    }
+}
+
+' ============= RELATIONSHIPS =============
+
+' Core -> Battle
+GameUser "1" --> "*" Game : player1
+GameUser "1" --> "*" Game : player2
+GameUser "1" --> "*" Game : current_player
+GameUser "1" --> "*" Game : winner
+GameUser "1" --> "*" BattleUnit : player
+GameUser "1" --> "*" UserUnit : units
+
+' Battle relationships
+Game "*" --> "1" Field : field
+Game "1" --> "*" BattleUnit : battle_units
+Game "1" --> "*" Obstacle : obstacles
+Game "1" --> "*" GameLog : logs
+BattleUnit "*" --> "1" UserUnit : user_unit
+
+' Army relationships
+Unit "1" --> "0..1" UnitCustomIcon : custom_icon
+Unit "0..1" <-- Unit : effective_against
+Unit "*" --> "0..1" GameUser : owner
+UserUnit "*" --> "1" Unit : unit
+
+' Race relationships
+GameRace "1" --> "*" RaceUnit : race_units
+RaceUnit "*" --> "0..1" UnitLevel : unit_level
+RaceUnit "1" --> "*" RaceUnitSkin : skins
+
+' UserRace relationships
+UserRace "*" --> "1" GameUser : user
+UserRace "*" --> "1" GameRace : race
+UserRace "1" --> "*" Army : armies
+UserRace "1" --> "*" UserRaceUnit : user_race_units
+
+UserRaceUnit "*" --> "1" RaceUnit : race_unit
+UserRaceUnit "*" --> "1" RaceUnitSkin : skin
+
+' Army relationships
+Army "1" --> "*" ArmyUnit : army_units
+ArmyUnit "*" --> "1" RaceUnit : race_unit
+ArmyUnit "*" --> "0..1" UnitLevel : unit_level
+
+@enduml
