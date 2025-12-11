@@ -3,7 +3,7 @@
 Простой тест для проверки функциональности поиска сообщений
 """
 
-from database import Database
+from db import Database
 
 def test_search_messages():
     """Тест поиска сообщений по username"""

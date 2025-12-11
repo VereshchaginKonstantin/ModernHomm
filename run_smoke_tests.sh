@@ -47,10 +47,10 @@ echo ""
 # Запускаем pytest
 if [ "$1" == "--full" ]; then
     echo -e "${YELLOW}Запуск полных приёмочных тестов (включая проверку версий)...${NC}"
-    pytest tests/test_smoke.py -v --tb=short
+    pytest tests/smoke/ -v --tb=short
 else
     echo -e "${YELLOW}Запуск smoke тестов...${NC}"
-    pytest tests/test_smoke.py -v -k "TestWebSmoke or TestBotSmoke" --tb=short
+    pytest tests/smoke/ -v -k "TestWebSmoke or TestBotSmoke" --tb=short
 fi
 
 RESULT=$?
