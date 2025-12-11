@@ -108,9 +108,10 @@ class RaceUnit(Base):
     level = Column(Integer, nullable=False)  # Уровень юнита (1-7)
     name = Column(String(255), nullable=False)
     icon = Column(String(10), nullable=False, default='🎮')
-    image_path = Column(String(512), nullable=True)
     is_flying = Column(Boolean, nullable=False, default=False)  # Летающий юнит
     is_kamikaze = Column(Boolean, nullable=False, default=False)  # Камикадзе
+    prestige_min = Column(Integer, nullable=False, default=0)  # Минимальный престиж для найма
+    prestige_max = Column(Integer, nullable=False, default=100)  # Максимальный престиж для найма
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
     # Связи
@@ -126,14 +127,12 @@ class RaceUnit(Base):
 
 
 class RaceUnitSkin(Base):
-    """Модель скина юнита расы (внешний вид для юнита определённого уровня)"""
+    """Модель скина уровня расы (внешний вид для юнита определённого уровня)"""
     __tablename__ = 'race_unit_skins'
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     race_unit_id = Column(Integer, ForeignKey('race_units.id', ondelete='CASCADE'), nullable=False, index=True)
     name = Column(String(255), nullable=False)  # Название скина
-    icon = Column(String(10), nullable=False, default='🎮')  # Иконка скина
-    image_path = Column(String(512), nullable=True)  # Путь к изображению скина (устаревшее)
     image_data = Column(LargeBinary, nullable=True)  # Бинарные данные изображения
     image_mime_type = Column(String(50), nullable=True)  # MIME тип изображения (image/png, image/jpeg)
     description = Column(Text, nullable=True)  # Описание скина

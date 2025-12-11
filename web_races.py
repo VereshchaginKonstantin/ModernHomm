@@ -228,7 +228,7 @@ EDIT_RACE_TEMPLATE = """
                     </div>
                     <div style="margin-top: 10px;">
                         <a href="{{ url_for('races.edit_race_unit', race_id=race.id, unit_id=unit.id) }}" class="btn btn-primary" style="padding: 5px 10px; font-size: 12px;">✏️ Юнит</a>
-                        <a href="{{ url_for('races.unit_skins', race_id=race.id, unit_id=unit.id) }}" class="btn btn-success" style="padding: 5px 10px; font-size: 12px;">🎨 Скины</a>
+                        <a href="{{ url_for('races.unit_skins', race_id=race.id, unit_id=unit.id) }}" class="btn btn-success" style="padding: 5px 10px; font-size: 12px;">🎨 Скины уровня</a>
                     </div>
                     {% else %}
                     <h4 style="color: #666;">Не задан</h4>
@@ -247,14 +247,15 @@ EDIT_UNIT_TEMPLATE = """
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Редактировать юнит - Админ-панель</title>
+    <title>Редактировать Юнит расы - Админ-панель</title>
     <meta charset="utf-8">
     """ + BASE_STYLE + """
     <style>
         .form-group { margin-bottom: 15px; }
         .form-group label { display: block; margin-bottom: 5px; color: #ffd700; }
         .form-group input, .form-group select { width: 100%; padding: 10px; border: 1px solid #444; background: #2a2a2a; color: white; border-radius: 5px; }
-        .form-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px; }
+        .form-row { display: grid; grid-template-columns: repeat(2, 1fr); gap: 15px; }
+        .form-row-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px; }
         .checkbox-group { display: flex; align-items: center; gap: 10px; margin-bottom: 15px; }
         .checkbox-group input[type="checkbox"] { width: 20px; height: 20px; }
         .btn { padding: 10px 20px; border: none; border-radius: 5px; cursor: pointer; text-decoration: none; display: inline-block; margin-right: 10px; }
@@ -265,7 +266,7 @@ EDIT_UNIT_TEMPLATE = """
 <body>
     """ + HEADER_TEMPLATE + """
     <div class="content">
-        <h1>✏️ Редактировать юнит уровня {{ unit.level }}: {{ race.name }}</h1>
+        <h1>✏️ Редактировать Юнит расы уровня {{ unit.level }}: {{ race.name }}</h1>
 
         <form method="POST">
             <div class="form-row">
@@ -277,9 +278,16 @@ EDIT_UNIT_TEMPLATE = """
                     <label>Иконка</label>
                     <input type="text" name="icon" value="{{ unit.icon }}" maxlength="10">
                 </div>
+            </div>
+
+            <div class="form-row">
                 <div class="form-group">
-                    <label>Путь к изображению</label>
-                    <input type="text" name="image_path" value="{{ unit.image_path or '' }}">
+                    <label>Минимальный престиж</label>
+                    <input type="number" name="prestige_min" value="{{ unit.prestige_min or 0 }}" min="0">
+                </div>
+                <div class="form-group">
+                    <label>Максимальный престиж</label>
+                    <input type="number" name="prestige_max" value="{{ unit.prestige_max or 100 }}" min="0">
                 </div>
             </div>
 
@@ -306,7 +314,7 @@ UNIT_SKINS_TEMPLATE = """
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Скины юнита - Админ-панель</title>
+    <title>Скины уровня расы - Админ-панель</title>
     <meta charset="utf-8">
     """ + BASE_STYLE + """
     <style>
@@ -324,20 +332,18 @@ UNIT_SKINS_TEMPLATE = """
 <body>
     """ + HEADER_TEMPLATE + """
     <div class="content">
-        <h1>🎨 Скины для юнита: {{ unit.icon }} {{ unit.name }} (ур. {{ unit.level }})</h1>
+        <h1>🎨 Скины уровня расы: {{ unit.icon }} {{ unit.name }} (ур. {{ unit.level }})</h1>
         <p style="color: #aaa;">Раса: {{ race.name }}</p>
 
-        <a href="{{ url_for('races.add_unit_skin', race_id=race.id, unit_id=unit.id) }}" class="btn btn-success">➕ Добавить скин</a>
+        <a href="{{ url_for('races.add_unit_skin', race_id=race.id, unit_id=unit.id) }}" class="btn btn-success">➕ Добавить скин уровня расы</a>
         <a href="{{ url_for('races.edit_race', race_id=race.id) }}" class="btn btn-secondary">← Назад к расе</a>
 
         <div class="skins-grid">
             {% for skin in skins %}
             <div class="skin-card">
-                <h4>{{ skin.icon }} {{ skin.name }}</h4>
+                <h4>{{ skin.name }}</h4>
                 {% if skin.image_data %}
                 <img src="{{ url_for('races.skin_image', skin_id=skin.id) }}" alt="Скин">
-                {% elif skin.image_path %}
-                <img src="{{ skin.image_path }}" alt="Скин">
                 {% else %}
                 <div class="no-image">Нет изображения</div>
                 {% endif %}
@@ -348,7 +354,7 @@ UNIT_SKINS_TEMPLATE = """
                 </div>
             </div>
             {% else %}
-            <p style="color: #aaa;">Нет скинов. Добавьте первый скин!</p>
+            <p style="color: #aaa;">Нет скинов уровня расы. Добавьте первый!</p>
             {% endfor %}
         </div>
     </div>
@@ -486,9 +492,10 @@ def edit_race_unit(race_id, unit_id):
         if request.method == 'POST':
             unit.name = request.form.get('name')
             unit.icon = request.form.get('icon', '🎮')
-            unit.image_path = request.form.get('image_path') or None
             unit.is_flying = request.form.get('is_flying') == 'on'
             unit.is_kamikaze = request.form.get('is_kamikaze') == 'on'
+            unit.prestige_min = int(request.form.get('prestige_min', 0) or 0)
+            unit.prestige_max = int(request.form.get('prestige_max', 100) or 100)
             session_db.commit()
             return redirect(url_for('races.edit_race', race_id=race_id))
 
@@ -515,7 +522,7 @@ ADD_SKIN_TEMPLATE = """
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Добавить скин - Админ-панель</title>
+    <title>Добавить скин уровня расы - Админ-панель</title>
     <meta charset="utf-8">
     """ + BASE_STYLE + """
     <style>
@@ -533,18 +540,13 @@ ADD_SKIN_TEMPLATE = """
 <body>
     """ + HEADER_TEMPLATE + """
     <div class="content">
-        <h1>➕ Добавить скин для: {{ unit.icon }} {{ unit.name }}</h1>
+        <h1>➕ Добавить скин уровня расы для: {{ unit.icon }} {{ unit.name }}</h1>
         <p style="color: #aaa;">Раса: {{ race.name }} | Уровень: {{ unit.level }}</p>
 
         <form method="POST" enctype="multipart/form-data">
             <div class="form-group">
                 <label>Название скина</label>
                 <input type="text" name="name" required placeholder="Базовый скин">
-            </div>
-
-            <div class="form-group">
-                <label>Иконка</label>
-                <input type="text" name="icon" value="🎮" maxlength="10">
             </div>
 
             <div class="form-group">
@@ -612,7 +614,6 @@ def add_unit_skin(race_id, unit_id):
             skin = RaceUnitSkin(
                 race_unit_id=unit_id,
                 name=request.form.get('name'),
-                icon=request.form.get('icon', '🎮'),
                 image_data=image_data,
                 image_mime_type=image_mime_type,
                 description=request.form.get('description') or None
@@ -628,7 +629,7 @@ EDIT_SKIN_TEMPLATE = """
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Редактировать скин - Админ-панель</title>
+    <title>Редактировать скин уровня расы - Админ-панель</title>
     <meta charset="utf-8">
     """ + BASE_STYLE + """
     <style>
@@ -648,18 +649,13 @@ EDIT_SKIN_TEMPLATE = """
 <body>
     """ + HEADER_TEMPLATE + """
     <div class="content">
-        <h1>✏️ Редактировать скин: {{ skin.name }}</h1>
+        <h1>✏️ Редактировать скин уровня расы: {{ skin.name }}</h1>
         <p style="color: #aaa;">Юнит: {{ unit.icon }} {{ unit.name }} | Раса: {{ race.name }}</p>
 
         <form method="POST" enctype="multipart/form-data">
             <div class="form-group">
                 <label>Название скина</label>
                 <input type="text" name="name" required value="{{ skin.name }}">
-            </div>
-
-            <div class="form-group">
-                <label>Иконка</label>
-                <input type="text" name="icon" value="{{ skin.icon }}" maxlength="10">
             </div>
 
             <div class="form-group">
@@ -725,7 +721,6 @@ def edit_unit_skin(race_id, unit_id, skin_id):
 
         if request.method == 'POST':
             skin.name = request.form.get('name')
-            skin.icon = request.form.get('icon', '🎮')
             skin.description = request.form.get('description') or None
 
             # Удаление изображения
