@@ -174,10 +174,11 @@ def api_version():
 def api_health():
     """Проверка работоспособности веб-интерфейса"""
     from flask import jsonify
+    from sqlalchemy import text
     try:
         # Проверяем подключение к БД
         with db.get_session() as session_db:
-            session_db.execute('SELECT 1')
+            session_db.execute(text('SELECT 1'))
         return jsonify({'status': 'healthy', 'database': 'connected'})
     except Exception as e:
         return jsonify({'status': 'unhealthy', 'error': str(e)}), 500

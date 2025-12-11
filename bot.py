@@ -41,8 +41,9 @@ class BotAPIHandler(BaseHTTPRequestHandler):
         elif self.path == '/api/health':
             try:
                 if self.bot_instance and self.bot_instance.db:
+                    from sqlalchemy import text
                     with self.bot_instance.db.get_session() as session:
-                        session.execute('SELECT 1')
+                        session.execute(text('SELECT 1'))
                 self._send_json({'status': 'healthy', 'database': 'connected'})
             except Exception as e:
                 self._send_json({'status': 'unhealthy', 'error': str(e)}, 500)
