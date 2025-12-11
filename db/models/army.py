@@ -104,12 +104,16 @@ class RaceUnit(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     race_id = Column(Integer, ForeignKey('game_races.id', ondelete='CASCADE'), nullable=False, index=True)
-    unit_level_id = Column(Integer, ForeignKey('unit_levels.id', ondelete='RESTRICT'), nullable=True, index=True)  # Ссылка на уровень юнита
+    unit_level_id = Column(Integer, ForeignKey('unit_levels.id', ondelete='RESTRICT'), nullable=False, index=True)  # Ссылка на уровень юнита (обязательно)
     name = Column(String(255), nullable=False)
-    icon = Column(String(10), nullable=False, default='🎮')
     is_flying = Column(Boolean, nullable=False, default=False)  # Летающий юнит
     is_kamikaze = Column(Boolean, nullable=False, default=False)  # Камикадзе
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    # Уникальность: один уровень на расу (не может быть двух юнитов одного уровня в расе)
+    __table_args__ = (
+        UniqueConstraint('race_id', 'unit_level_id', name='unique_race_unit_level'),
+    )
 
     # Связи
     race = relationship("GameRace", back_populates="race_units")
@@ -145,6 +149,7 @@ class UnitLevel(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     level = Column(Integer, nullable=False, unique=True)  # Уровень (1-7)
+    icon = Column(String(10), nullable=False, default='🎮')  # Иконка уровня
     prestige_min = Column(Integer, nullable=False, default=0)  # Минимальный престиж для найма
     prestige_max = Column(Integer, nullable=False, default=100)  # Максимальный престиж для найма
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
@@ -154,7 +159,7 @@ class UnitLevel(Base):
     )
 
     def __repr__(self):
-        return f"<UnitLevel(id={self.id}, level={self.level}, prestige_min={self.prestige_min}, prestige_max={self.prestige_max})>"
+        return f"<UnitLevel(id={self.id}, level={self.level}, icon={self.icon}, prestige_min={self.prestige_min}, prestige_max={self.prestige_max})>"
 
 
 class UserRace(Base):

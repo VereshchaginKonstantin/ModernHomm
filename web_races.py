@@ -220,7 +220,7 @@ EDIT_RACE_TEMPLATE = """
                 <div class="unit-card">
                     <span class="level">Уровень {{ level }}</span>
                     {% if unit %}
-                    <h4>{{ unit.icon }} {{ unit.name }}</h4>
+                    <h4>{{ unit.unit_level.icon if unit.unit_level else '🎮' }} {{ unit.name }}</h4>
                     <div class="stats">
                         {% if unit.is_flying %}🦅 Летающий{% endif %}
                         {% if unit.is_kamikaze %}💥 Камикадзе{% endif %}
@@ -260,6 +260,7 @@ EDIT_UNIT_TEMPLATE = """
         .btn { padding: 10px 20px; border: none; border-radius: 5px; cursor: pointer; text-decoration: none; display: inline-block; margin-right: 10px; }
         .btn-success { background: #2ecc71; color: white; }
         .btn-secondary { background: #666; color: white; }
+        .level-info { background: #444; padding: 10px; border-radius: 5px; color: #aaa; }
     </style>
 </head>
 <body>
@@ -268,27 +269,21 @@ EDIT_UNIT_TEMPLATE = """
         <h1>✏️ Редактировать Юнит расы: {{ race.name }}</h1>
 
         <form method="POST">
-            <div class="form-row">
-                <div class="form-group">
-                    <label>Название</label>
-                    <input type="text" name="name" required value="{{ unit.name }}">
-                </div>
-                <div class="form-group">
-                    <label>Иконка</label>
-                    <input type="text" name="icon" value="{{ unit.icon }}" maxlength="10">
-                </div>
+            <div class="form-group">
+                <label>Название</label>
+                <input type="text" name="name" required value="{{ unit.name }}">
             </div>
 
             <div class="form-group">
                 <label>Уровень юнита</label>
-                <select name="unit_level_id">
-                    <option value="">-- Не выбран --</option>
-                    {% for level in unit_levels %}
-                    <option value="{{ level.id }}" {% if unit.unit_level_id == level.id %}selected{% endif %}>
-                        Уровень {{ level.level }} (престиж {{ level.prestige_min }} - {{ level.prestige_max }})
-                    </option>
-                    {% endfor %}
-                </select>
+                <div class="level-info">
+                    {% if unit.unit_level %}
+                    {{ unit.unit_level.icon }} Уровень {{ unit.unit_level.level }} (престиж {{ unit.unit_level.prestige_min }} - {{ unit.unit_level.prestige_max }})
+                    {% else %}
+                    Не задан
+                    {% endif %}
+                </div>
+                <small style="color: #666;">Уровень юнита фиксируется при создании расы и не может быть изменён</small>
             </div>
 
             <div class="checkbox-group">
@@ -425,7 +420,6 @@ def create_race():
                     race_id=race.id,
                     unit_level_id=unit_level.id if unit_level else None,
                     name=default_unit_names[level - 1],
-                    icon='🎮',
                     is_flying=False,
                     is_kamikaze=False
                 )
@@ -476,7 +470,7 @@ def delete_race(race_id):
 @races_bp.route('/<int:race_id>/unit/<int:unit_id>/edit', methods=['GET', 'POST'])
 @admin_required
 def edit_race_unit(race_id, unit_id):
-    """Редактировать юнит расы"""
+    """Редактировать юнит расы (уровень не изменяется после создания)"""
     with db.get_session() as session_db:
         race = session_db.query(GameRace).filter_by(id=race_id).first()
         unit = session_db.query(RaceUnit).filter_by(id=unit_id, race_id=race_id).first()
@@ -486,16 +480,13 @@ def edit_race_unit(race_id, unit_id):
 
         if request.method == 'POST':
             unit.name = request.form.get('name')
-            unit.icon = request.form.get('icon', '🎮')
             unit.is_flying = request.form.get('is_flying') == 'on'
             unit.is_kamikaze = request.form.get('is_kamikaze') == 'on'
-            unit_level_id = request.form.get('unit_level_id')
-            unit.unit_level_id = int(unit_level_id) if unit_level_id else None
+            # unit_level_id не меняется после создания расы
             session_db.commit()
             return redirect(url_for('races.edit_race', race_id=race_id))
 
-        unit_levels = session_db.query(UnitLevel).order_by(UnitLevel.level).all()
-        return render_template_string(EDIT_UNIT_TEMPLATE, race=race, unit=unit, unit_levels=unit_levels)
+        return render_template_string(EDIT_UNIT_TEMPLATE, race=race, unit=unit)
 
 
 @races_bp.route('/<int:race_id>/unit/<int:unit_id>/skins')
@@ -805,6 +796,7 @@ UNIT_LEVELS_LIST_TEMPLATE = """
                 <tr>
                     <th>ID</th>
                     <th>Уровень</th>
+                    <th>Иконка</th>
                     <th>Мин. престиж</th>
                     <th>Макс. престиж</th>
                     <th>Действия</th>
@@ -815,6 +807,7 @@ UNIT_LEVELS_LIST_TEMPLATE = """
                 <tr>
                     <td>{{ level.id }}</td>
                     <td>{{ level.level }}</td>
+                    <td style="font-size: 24px;">{{ level.icon }}</td>
                     <td>{{ level.prestige_min }}</td>
                     <td>{{ level.prestige_max }}</td>
                     <td>
@@ -865,6 +858,12 @@ EDIT_UNIT_LEVEL_TEMPLATE = """
             </div>
 
             <div class="form-group">
+                <label>Иконка уровня</label>
+                <input type="text" name="icon" value="{{ level.icon }}" required maxlength="10" style="font-size: 24px; width: 100px;">
+                <small style="display: block; color: #aaa; margin-top: 5px;">Эмодзи для отображения юнитов этого уровня</small>
+            </div>
+
+            <div class="form-group">
                 <label>Минимальный престиж</label>
                 <input type="number" name="prestige_min" min="0" value="{{ level.prestige_min }}" required>
             </div>
@@ -903,6 +902,7 @@ def edit_unit_level(level_id):
             return redirect(url_for('races.unit_levels_list'))
 
         if request.method == 'POST':
+            level.icon = request.form.get('icon', '🎮')
             level.prestige_min = int(request.form.get('prestige_min', 0))
             level.prestige_max = int(request.form.get('prestige_max', 100))
             session_db.commit()
