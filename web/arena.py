@@ -16,8 +16,8 @@ from functools import wraps
 
 from db.models import Base, GameUser, Unit, UserUnit, Game, GameStatus, BattleUnit, Field, GameLog, Obstacle
 from db.repository import Database
-from game_engine import GameEngine
-from web_templates import HEADER_TEMPLATE, BASE_STYLE, FOOTER_TEMPLATE, get_web_version, get_bot_version
+from core.game_engine import GameEngine
+from web.templates import HEADER_TEMPLATE, BASE_STYLE, FOOTER_TEMPLATE, get_web_version, get_bot_version
 import hashlib
 
 

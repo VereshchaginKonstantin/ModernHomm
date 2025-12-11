@@ -7,7 +7,7 @@ import pytest
 from decimal import Decimal
 from db import Database
 from db.models import GameUser, Unit, UserUnit, Game, GameStatus, Field, BattleUnit
-from game_engine import GameEngine
+from core.game_engine import GameEngine
 import os
 import json
 

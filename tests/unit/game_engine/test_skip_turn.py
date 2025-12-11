@@ -8,7 +8,7 @@ import tempfile
 import os
 from decimal import Decimal
 from db.models import GameUser, Unit, UserUnit, BattleUnit, Game, GameStatus, Field
-from game_engine import GameEngine
+from core.game_engine import GameEngine
 
 
 class TestSkipTurn:

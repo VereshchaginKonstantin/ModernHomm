@@ -13,10 +13,10 @@ from telegram import Update, CallbackQuery, InlineKeyboardMarkup
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from bot import SimpleBot
+from bot.main import SimpleBot
 from db import Database
 from db.models import Base, GameUser, Unit, UserUnit, Game, GameStatus, BattleUnit, Field
-from game_engine import GameEngine
+from core.game_engine import GameEngine
 
 
 @pytest.fixture(scope="function")

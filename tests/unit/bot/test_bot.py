@@ -8,8 +8,8 @@ from decimal import Decimal
 from datetime import datetime, timedelta
 from db import Database
 from db.models import GameUser, Unit, UserUnit, Game, GameStatus, BattleUnit, Field
-from bot import SimpleBot
-from game_engine import GameEngine
+from bot.main import SimpleBot
+from core.game_engine import GameEngine
 
 
 class TestBotGameResults:

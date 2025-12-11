@@ -6,7 +6,7 @@
 import pytest
 from decimal import Decimal
 from db.models import GameUser, Unit, UserUnit, Game, GameStatus, BattleUnit, Field, Obstacle
-from game_engine import GameEngine
+from core.game_engine import GameEngine
 
 
 class TestObstacles:

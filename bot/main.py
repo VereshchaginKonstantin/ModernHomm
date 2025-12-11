@@ -16,8 +16,8 @@ from telegram.ext import Application, CommandHandler, MessageHandler, filters, C
 from db import Database
 from db.models import GameUser, Unit, UnitCustomIcon, BattleUnit, Game
 from decimal import Decimal
-from game_engine import GameEngine, coords_to_chess, chess_to_coords
-from field_renderer import FieldRenderer
+from core.game_engine import GameEngine, coords_to_chess, chess_to_coords
+from core.field_renderer import FieldRenderer
 import io
 
 

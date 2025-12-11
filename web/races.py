@@ -11,7 +11,7 @@ from functools import wraps
 
 from db.models import Base, GameUser, GameRace, RaceUnit, RaceUnitSkin, UnitLevel, UserRace, UserRaceUnit, Army, ArmyUnit
 from db.repository import Database
-from web_templates import HEADER_TEMPLATE, BASE_STYLE, FOOTER_TEMPLATE
+from web.templates import HEADER_TEMPLATE, BASE_STYLE, FOOTER_TEMPLATE
 
 logger = logging.getLogger(__name__)
 

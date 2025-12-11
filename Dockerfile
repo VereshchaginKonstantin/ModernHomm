@@ -14,30 +14,25 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Копирование приложения
-COPY bot.py .
-COPY game_engine.py .
-COPY field_renderer.py .
-COPY web_interface.py .
-COPY web_arena.py .
-COPY web_templates.py .
-COPY web_races.py .
-COPY web_army.py .
 COPY config.json .
 COPY VERSION .
 COPY WEB_VERSION .
 
-# Копирование Python модуля db (модели и репозиторий)
+# Копирование Python модулей
 COPY db/ ./db/
+COPY bot/ ./bot/
+COPY core/ ./core/
+COPY web/ ./web/
 
 # Копирование .git для получения информации о коммитах
 COPY .git/ ./.git/
 
 # Создание директории для статических файлов (картинки юнитов)
-RUN mkdir -p static/unit_images
+RUN mkdir -p web/static/unit_images
 
 # Создание непривилегированного пользователя
 RUN useradd -m -u 1000 appuser && chown -R appuser:appuser /app
 USER appuser
 
 # Запуск приложения
-CMD ["python", "bot.py"]
+CMD ["python", "-m", "bot.main"]

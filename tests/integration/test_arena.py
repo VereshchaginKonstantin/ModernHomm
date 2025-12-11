@@ -19,7 +19,7 @@ from db.models import (
     Game, GameUser, Field, GameLog, Unit, UserUnit,
     GameStatus, BattleUnit, Obstacle
 )
-from game_engine import GameEngine
+from core.game_engine import GameEngine
 
 
 class TestArenaAPI:
@@ -402,7 +402,7 @@ class TestTelegramNotifications:
 
     def test_notify_opponent_function_exists(self):
         """Тест: функция notify_opponent существует"""
-        from web_arena import notify_opponent, send_telegram_notification
+        from web.arena import notify_opponent, send_telegram_notification
         assert callable(notify_opponent)
         assert callable(send_telegram_notification)
 
@@ -413,7 +413,7 @@ class TestTelegramNotifications:
         mock_response.status_code = 200
         mock_post.return_value = mock_response
 
-        from web_arena import send_telegram_notification
+        from web.arena import send_telegram_notification
 
         # Мокаем получение токена
         with patch('web_arena.get_telegram_bot_token', return_value='test_token'):
@@ -470,7 +470,7 @@ class TestTelegramNotifications:
         original_db = web_arena.db
         web_arena.db = self.db
         try:
-            from web_arena import get_game_full_data
+            from web.arena import get_game_full_data
             game_data = get_game_full_data(game_id)
 
             assert game_data is not None
@@ -793,7 +793,7 @@ class TestCacheBusting:
 
     def test_get_static_version_returns_hash(self):
         """Тест: get_static_version возвращает хеш версии"""
-        from web_arena import get_static_version
+        from web.arena import get_static_version
 
         version = get_static_version()
 
@@ -809,21 +809,21 @@ class TestCacheBusting:
     def test_static_version_changes_with_web_version(self):
         """Тест: static_version меняется при изменении web_version"""
         import hashlib
-        from web_templates import get_web_version
+        from web.templates import get_web_version
 
         web_ver = get_web_version()
 
         # Вычисляем ожидаемую версию
         expected_hash = hashlib.md5(web_ver.encode()).hexdigest()[:8]
 
-        from web_arena import get_static_version
+        from web.arena import get_static_version
         actual_version = get_static_version()
 
         assert actual_version == expected_hash
 
     def test_versioned_filter_in_web_interface(self):
         """Тест: фильтр versioned добавляет версию к URL"""
-        from web_interface import versioned_filter
+        from web.app import versioned_filter
 
         url = "/static/arena/css/arena.css"
         versioned_url = versioned_filter(url)
@@ -835,7 +835,7 @@ class TestCacheBusting:
 
     def test_versioned_filter_handles_existing_query_params(self):
         """Тест: фильтр versioned корректно работает с существующими query params"""
-        from web_interface import versioned_filter
+        from web.app import versioned_filter
 
         url = "/static/file.js?existing=param"
         versioned_url = versioned_filter(url)
@@ -847,7 +847,7 @@ class TestCacheBusting:
 
     def test_versioned_static_function(self):
         """Тест: функция versioned_static генерирует правильный URL"""
-        from web_interface import inject_static_version
+        from web.app import inject_static_version
 
         context = inject_static_version()
         versioned_static = context['versioned_static']
@@ -1599,7 +1599,7 @@ class TestVersionDisplay:
 
     def test_get_web_version_returns_string(self):
         """Тест: get_web_version возвращает строку"""
-        from web_templates import get_web_version
+        from web.templates import get_web_version
 
         version = get_web_version()
         assert isinstance(version, str)
@@ -1608,7 +1608,7 @@ class TestVersionDisplay:
 
     def test_web_version_is_not_shell_command(self):
         """Тест: WEB_VERSION не содержит невыполненную shell команду"""
-        from web_templates import get_web_version
+        from web.templates import get_web_version
 
         version = get_web_version()
         # Версия не должна содержать $( - признак невыполненной команды
@@ -1619,7 +1619,7 @@ class TestVersionDisplay:
 
     def test_get_bot_version_returns_string(self):
         """Тест: get_bot_version возвращает строку"""
-        from web_templates import get_bot_version
+        from web.templates import get_bot_version
 
         version = get_bot_version()
         assert isinstance(version, str)
@@ -1628,7 +1628,7 @@ class TestVersionDisplay:
 
     def test_footer_template_contains_version_placeholders(self):
         """Тест: FOOTER_TEMPLATE содержит плейсхолдеры для версий"""
-        from web_templates import FOOTER_TEMPLATE
+        from web.templates import FOOTER_TEMPLATE
 
         assert '{{ web_version }}' in FOOTER_TEMPLATE
         assert '{{ bot_version }}' in FOOTER_TEMPLATE

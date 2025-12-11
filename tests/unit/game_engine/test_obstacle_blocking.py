@@ -8,8 +8,8 @@ import tempfile
 import os
 from decimal import Decimal
 from db.models import Game, BattleUnit, UserUnit, Unit, Field, Obstacle, GameUser
-from game_engine import GameEngine
-from field_renderer import FieldRenderer
+from core.game_engine import GameEngine
+from core.field_renderer import FieldRenderer
 
 
 class TestObstacleBlockingAndDisplay:

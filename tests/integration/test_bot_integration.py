@@ -8,7 +8,7 @@ import json
 import tempfile
 import os
 from unittest.mock import AsyncMock, MagicMock, patch
-from bot import SimpleBot
+from bot.main import SimpleBot
 from db import Database
 
 

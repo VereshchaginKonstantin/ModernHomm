@@ -11,7 +11,7 @@ from decimal import Decimal
 import tempfile
 import os
 from db.models import GameUser, Unit, UserUnit, Game, GameStatus, BattleUnit, Field, GameLog
-from game_engine import GameEngine
+from core.game_engine import GameEngine
 
 
 def unique_name(base_name):

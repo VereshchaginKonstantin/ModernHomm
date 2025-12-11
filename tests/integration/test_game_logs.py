@@ -429,7 +429,7 @@ class TestTurnSwitchLogging:
 
     def test_turn_switch_creates_log_entry(self):
         """Тест: смена хода создает запись в логе с типом turn_switch"""
-        from game_engine import GameEngine
+        from core.game_engine import GameEngine
 
         with self.db.get_session() as session:
             field = session.query(Field).first()
@@ -489,7 +489,7 @@ class TestTurnSwitchLogging:
 
     def test_turn_switch_log_contains_player_name(self):
         """Тест: лог смены хода содержит имя игрока, к которому переходит ход"""
-        from game_engine import GameEngine
+        from core.game_engine import GameEngine
 
         with self.db.get_session() as session:
             field = session.query(Field).first()

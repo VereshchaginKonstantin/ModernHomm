@@ -8,7 +8,7 @@ from decimal import Decimal
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from db.models import Base, GameUser, Unit, UserUnit, Game, GameStatus, BattleUnit
-from game_engine import GameEngine
+from core.game_engine import GameEngine
 
 
 @pytest.fixture(scope="function")

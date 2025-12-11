@@ -8,7 +8,7 @@ import json
 from decimal import Decimal
 from db.models import Unit
 from db import Database
-from web_interface import calculate_unit_price
+from web.app import calculate_unit_price
 
 
 def main():

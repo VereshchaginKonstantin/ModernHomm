@@ -7,7 +7,7 @@ import os
 os.environ['DATABASE_URL'] = 'postgresql://postgres:postgres@localhost:5433/telegram_bot_test'
 
 from db import Database
-from game_engine import GameEngine
+from core.game_engine import GameEngine
 from db.models import GameStatus
 
 def test_movement_cells():

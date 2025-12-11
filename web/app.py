@@ -15,15 +15,15 @@ from werkzeug.utils import secure_filename
 from db import Database
 from db.models import Unit, GameUser
 from decimal import Decimal
-from web_arena import arena_bp
-from web_races import races_bp
-from web_army import army_bp
-from web_templates import get_web_version, get_bot_version, HEADER_TEMPLATE, BASE_STYLE, FOOTER_TEMPLATE
+from web.arena import arena_bp
+from web.races import races_bp
+from web.army import army_bp
+from web.templates import get_web_version, get_bot_version, HEADER_TEMPLATE, BASE_STYLE, FOOTER_TEMPLATE
 
 # Создать Flask приложение
-app = Flask(__name__)
+app = Flask(__name__, static_folder='static', static_url_path='/static')
 app.secret_key = 'your-secret-key-change-in-production'
-app.config['UPLOAD_FOLDER'] = 'static/unit_images'
+app.config['UPLOAD_FOLDER'] = 'web/static/unit_images'
 app.config['MAX_CONTENT_LENGTH'] = 5 * 1024 * 1024  # 5 MB max file size
 
 # Регистрация Blueprint для арены
@@ -1526,9 +1526,14 @@ def import_page():
     return render_template_string(IMPORT_TEMPLATE, active_page='units')
 
 
-if __name__ == '__main__':
-    # Получить порт из переменной окружения или использовать 80 по умолчанию
-    port = int(os.getenv('PORT', 80))
+def main():
+    """Запуск веб-приложения"""
+    # Получить порт из переменной окружения или использовать 5000 по умолчанию
+    port = int(os.getenv('PORT', 5000))
     print(f"Запуск веб-интерфейса на http://0.0.0.0:{port}")
     print("Используйте Ctrl+C для остановки")
     app.run(host='0.0.0.0', port=port, debug=False)
+
+
+if __name__ == '__main__':
+    main()

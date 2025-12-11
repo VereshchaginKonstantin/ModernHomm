@@ -9,7 +9,7 @@ import json
 import tempfile
 import zipfile
 from decimal import Decimal
-from web_interface import app, db
+from web.app import app, db
 from db.models import Unit
 
 
