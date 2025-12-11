@@ -9,6 +9,8 @@ import logging
 import os
 import html
 import re
+import threading
+from http.server import HTTPServer, BaseHTTPRequestHandler
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, CallbackQueryHandler
 from db import Database
@@ -17,6 +19,63 @@ from decimal import Decimal
 from game_engine import GameEngine, coords_to_chess, chess_to_coords
 from field_renderer import FieldRenderer
 import io
+
+
+# HTTP API сервер для health check и получения версии
+class BotAPIHandler(BaseHTTPRequestHandler):
+    """HTTP обработчик для API бота"""
+    bot_instance = None  # Будет установлен при запуске
+
+    def log_message(self, format, *args):
+        """Логирование запросов"""
+        logger.debug(f"API: {args[0]}")
+
+    def do_GET(self):
+        """Обработка GET запросов"""
+        if self.path == '/api/version':
+            self._send_json({
+                'bot_version': self._get_version('VERSION'),
+                'web_version': self._get_version('WEB_VERSION'),
+                'status': 'ok'
+            })
+        elif self.path == '/api/health':
+            try:
+                if self.bot_instance and self.bot_instance.db:
+                    with self.bot_instance.db.get_session() as session:
+                        session.execute('SELECT 1')
+                self._send_json({'status': 'healthy', 'database': 'connected'})
+            except Exception as e:
+                self._send_json({'status': 'unhealthy', 'error': str(e)}, 500)
+        else:
+            self._send_json({'error': 'Not found'}, 404)
+
+    def _get_version(self, filename):
+        """Получить версию из файла"""
+        try:
+            with open(filename, 'r') as f:
+                return f.read().strip()
+        except FileNotFoundError:
+            return 'unknown'
+
+    def _send_json(self, data, status=200):
+        """Отправить JSON ответ"""
+        import json
+        response = json.dumps(data).encode('utf-8')
+        self.send_response(status)
+        self.send_header('Content-Type', 'application/json')
+        self.send_header('Content-Length', len(response))
+        self.end_headers()
+        self.wfile.write(response)
+
+
+def start_api_server(bot_instance, port=8080):
+    """Запустить HTTP API сервер в отдельном потоке"""
+    BotAPIHandler.bot_instance = bot_instance
+    server = HTTPServer(('0.0.0.0', port), BotAPIHandler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    logger.info(f"API сервер запущен на порту {port}")
+    return server
 
 
 # Настройка логирования
@@ -4145,6 +4204,9 @@ def main():
     """Главная функция"""
     try:
         bot = SimpleBot()
+        # Запускаем API сервер для health check и версии
+        api_port = int(os.getenv('BOT_API_PORT', 8080))
+        start_api_server(bot, port=api_port)
         bot.run()
     except Exception as e:
         logger.error(f"Критическая ошибка: {e}")

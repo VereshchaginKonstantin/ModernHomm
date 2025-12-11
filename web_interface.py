@@ -156,6 +156,33 @@ except FileNotFoundError:
 db_url = os.getenv('DATABASE_URL', config.get('database', {}).get('url'))
 db = Database(db_url)
 
+
+# API endpoint для получения версии (используется в smoke-тестах)
+@app.route('/api/version')
+def api_version():
+    """Возвращает версии веб-интерфейса и бота в формате JSON"""
+    from flask import jsonify
+    return jsonify({
+        'web_version': get_web_version(),
+        'bot_version': get_bot_version(),
+        'status': 'ok'
+    })
+
+
+# API endpoint для health check
+@app.route('/api/health')
+def api_health():
+    """Проверка работоспособности веб-интерфейса"""
+    from flask import jsonify
+    try:
+        # Проверяем подключение к БД
+        with db.get_session() as session_db:
+            session_db.execute('SELECT 1')
+        return jsonify({'status': 'healthy', 'database': 'connected'})
+    except Exception as e:
+        return jsonify({'status': 'unhealthy', 'error': str(e)}), 500
+
+
 # Decorator для проверки аутентификации
 def login_required(f):
     @wraps(f)

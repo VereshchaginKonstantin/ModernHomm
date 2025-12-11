@@ -4,7 +4,7 @@
 """
 
 from datetime import datetime
-from sqlalchemy import Column, Integer, String, Text, DateTime, ForeignKey, Numeric, CheckConstraint, Boolean, UniqueConstraint
+from sqlalchemy import Column, Integer, String, Text, DateTime, ForeignKey, Numeric, CheckConstraint, Boolean, UniqueConstraint, LargeBinary
 from sqlalchemy.orm import relationship
 
 from .base import Base
@@ -133,7 +133,9 @@ class RaceUnitSkin(Base):
     race_unit_id = Column(Integer, ForeignKey('race_units.id', ondelete='CASCADE'), nullable=False, index=True)
     name = Column(String(255), nullable=False)  # Название скина
     icon = Column(String(10), nullable=False, default='🎮')  # Иконка скина
-    image_path = Column(String(512), nullable=True)  # Путь к изображению скина
+    image_path = Column(String(512), nullable=True)  # Путь к изображению скина (устаревшее)
+    image_data = Column(LargeBinary, nullable=True)  # Бинарные данные изображения
+    image_mime_type = Column(String(50), nullable=True)  # MIME тип изображения (image/png, image/jpeg)
     description = Column(Text, nullable=True)  # Описание скина
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 

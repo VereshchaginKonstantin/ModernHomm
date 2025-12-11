@@ -6,7 +6,7 @@
 import os
 import logging
 from datetime import datetime
-from flask import Blueprint, render_template_string, request, jsonify, session, redirect, url_for
+from flask import Blueprint, render_template_string, request, jsonify, session, redirect, url_for, Response
 from functools import wraps
 
 from db.models import Base, GameUser, GameRace, RaceUnit, RaceUnitSkin, UnitLevel, UserRace, UserRaceUnit, Army, ArmyUnit
@@ -334,7 +334,9 @@ UNIT_SKINS_TEMPLATE = """
             {% for skin in skins %}
             <div class="skin-card">
                 <h4>{{ skin.icon }} {{ skin.name }}</h4>
-                {% if skin.image_path %}
+                {% if skin.image_data %}
+                <img src="{{ url_for('races.skin_image', skin_id=skin.id) }}" alt="Скин">
+                {% elif skin.image_path %}
                 <img src="{{ skin.image_path }}" alt="Скин">
                 {% else %}
                 <div class="no-image">Нет изображения</div>
@@ -520,10 +522,12 @@ ADD_SKIN_TEMPLATE = """
         .form-group { margin-bottom: 15px; }
         .form-group label { display: block; margin-bottom: 5px; color: #ffd700; }
         .form-group input, .form-group textarea { width: 100%; padding: 10px; border: 1px solid #444; background: #2a2a2a; color: white; border-radius: 5px; }
+        .form-group input[type="file"] { padding: 8px; }
         .form-group textarea { min-height: 80px; }
         .btn { padding: 10px 20px; border: none; border-radius: 5px; cursor: pointer; text-decoration: none; display: inline-block; margin-right: 10px; }
         .btn-success { background: #2ecc71; color: white; }
         .btn-secondary { background: #666; color: white; }
+        .image-preview { max-width: 200px; max-height: 200px; margin-top: 10px; border: 2px solid #444; border-radius: 5px; }
     </style>
 </head>
 <body>
@@ -532,7 +536,7 @@ ADD_SKIN_TEMPLATE = """
         <h1>➕ Добавить скин для: {{ unit.icon }} {{ unit.name }}</h1>
         <p style="color: #aaa;">Раса: {{ race.name }} | Уровень: {{ unit.level }}</p>
 
-        <form method="POST">
+        <form method="POST" enctype="multipart/form-data">
             <div class="form-group">
                 <label>Название скина</label>
                 <input type="text" name="name" required placeholder="Базовый скин">
@@ -544,8 +548,9 @@ ADD_SKIN_TEMPLATE = """
             </div>
 
             <div class="form-group">
-                <label>Путь к изображению</label>
-                <input type="text" name="image_path" placeholder="/static/skins/unit1_skin1.png">
+                <label>Изображение скина (PNG, JPG до 5MB)</label>
+                <input type="file" name="image" accept="image/png,image/jpeg,image/gif,image/webp" onchange="previewImage(this)">
+                <img id="imagePreview" class="image-preview" style="display: none;">
             </div>
 
             <div class="form-group">
@@ -557,6 +562,19 @@ ADD_SKIN_TEMPLATE = """
             <a href="{{ url_for('races.unit_skins', race_id=race.id, unit_id=unit.id) }}" class="btn btn-secondary">Отмена</a>
         </form>
     </div>
+    <script>
+    function previewImage(input) {
+        if (input.files && input.files[0]) {
+            var reader = new FileReader();
+            reader.onload = function(e) {
+                var preview = document.getElementById('imagePreview');
+                preview.src = e.target.result;
+                preview.style.display = 'block';
+            }
+            reader.readAsDataURL(input.files[0]);
+        }
+    }
+    </script>
     """ + FOOTER_TEMPLATE + """
 </body>
 </html>
@@ -575,11 +593,28 @@ def add_unit_skin(race_id, unit_id):
             return redirect(url_for('races.races_list'))
 
         if request.method == 'POST':
+            # Обработка загруженного изображения
+            image_data = None
+            image_mime_type = None
+
+            if 'image' in request.files:
+                file = request.files['image']
+                if file and file.filename:
+                    # Проверка размера (максимум 5MB)
+                    file.seek(0, 2)  # Перейти в конец файла
+                    size = file.tell()
+                    file.seek(0)  # Вернуться в начало
+
+                    if size <= 5 * 1024 * 1024:  # 5MB
+                        image_data = file.read()
+                        image_mime_type = file.content_type or 'image/png'
+
             skin = RaceUnitSkin(
                 race_unit_id=unit_id,
                 name=request.form.get('name'),
                 icon=request.form.get('icon', '🎮'),
-                image_path=request.form.get('image_path') or None,
+                image_data=image_data,
+                image_mime_type=image_mime_type,
                 description=request.form.get('description') or None
             )
             session_db.add(skin)
@@ -600,10 +635,14 @@ EDIT_SKIN_TEMPLATE = """
         .form-group { margin-bottom: 15px; }
         .form-group label { display: block; margin-bottom: 5px; color: #ffd700; }
         .form-group input, .form-group textarea { width: 100%; padding: 10px; border: 1px solid #444; background: #2a2a2a; color: white; border-radius: 5px; }
+        .form-group input[type="file"] { padding: 8px; }
         .form-group textarea { min-height: 80px; }
         .btn { padding: 10px 20px; border: none; border-radius: 5px; cursor: pointer; text-decoration: none; display: inline-block; margin-right: 10px; }
         .btn-success { background: #2ecc71; color: white; }
         .btn-secondary { background: #666; color: white; }
+        .btn-danger { background: #e74c3c; color: white; }
+        .current-image { max-width: 200px; max-height: 200px; margin: 10px 0; border: 2px solid #444; border-radius: 5px; }
+        .image-preview { max-width: 200px; max-height: 200px; margin-top: 10px; border: 2px solid #444; border-radius: 5px; }
     </style>
 </head>
 <body>
@@ -612,7 +651,7 @@ EDIT_SKIN_TEMPLATE = """
         <h1>✏️ Редактировать скин: {{ skin.name }}</h1>
         <p style="color: #aaa;">Юнит: {{ unit.icon }} {{ unit.name }} | Раса: {{ race.name }}</p>
 
-        <form method="POST">
+        <form method="POST" enctype="multipart/form-data">
             <div class="form-group">
                 <label>Название скина</label>
                 <input type="text" name="name" required value="{{ skin.name }}">
@@ -624,8 +663,24 @@ EDIT_SKIN_TEMPLATE = """
             </div>
 
             <div class="form-group">
-                <label>Путь к изображению</label>
-                <input type="text" name="image_path" value="{{ skin.image_path or '' }}">
+                <label>Текущее изображение</label>
+                {% if skin.image_data %}
+                <div>
+                    <img src="{{ url_for('races.skin_image', skin_id=skin.id) }}" class="current-image" alt="Текущий скин">
+                    <br>
+                    <label style="color: #aaa;">
+                        <input type="checkbox" name="delete_image"> Удалить текущее изображение
+                    </label>
+                </div>
+                {% else %}
+                <p style="color: #666;">Изображение не загружено</p>
+                {% endif %}
+            </div>
+
+            <div class="form-group">
+                <label>Загрузить новое изображение (PNG, JPG до 5MB)</label>
+                <input type="file" name="image" accept="image/png,image/jpeg,image/gif,image/webp" onchange="previewImage(this)">
+                <img id="imagePreview" class="image-preview" style="display: none;">
             </div>
 
             <div class="form-group">
@@ -637,6 +692,19 @@ EDIT_SKIN_TEMPLATE = """
             <a href="{{ url_for('races.unit_skins', race_id=race.id, unit_id=unit.id) }}" class="btn btn-secondary">Отмена</a>
         </form>
     </div>
+    <script>
+    function previewImage(input) {
+        if (input.files && input.files[0]) {
+            var reader = new FileReader();
+            reader.onload = function(e) {
+                var preview = document.getElementById('imagePreview');
+                preview.src = e.target.result;
+                preview.style.display = 'block';
+            }
+            reader.readAsDataURL(input.files[0]);
+        }
+    }
+    </script>
     """ + FOOTER_TEMPLATE + """
 </body>
 </html>
@@ -658,8 +726,26 @@ def edit_unit_skin(race_id, unit_id, skin_id):
         if request.method == 'POST':
             skin.name = request.form.get('name')
             skin.icon = request.form.get('icon', '🎮')
-            skin.image_path = request.form.get('image_path') or None
             skin.description = request.form.get('description') or None
+
+            # Удаление изображения
+            if request.form.get('delete_image') == 'on':
+                skin.image_data = None
+                skin.image_mime_type = None
+
+            # Загрузка нового изображения
+            if 'image' in request.files:
+                file = request.files['image']
+                if file and file.filename:
+                    # Проверка размера (максимум 5MB)
+                    file.seek(0, 2)
+                    size = file.tell()
+                    file.seek(0)
+
+                    if size <= 5 * 1024 * 1024:  # 5MB
+                        skin.image_data = file.read()
+                        skin.image_mime_type = file.content_type or 'image/png'
+
             session_db.commit()
             return redirect(url_for('races.unit_skins', race_id=race_id, unit_id=unit_id))
 
@@ -677,3 +763,19 @@ def delete_skin(skin_id):
             session_db.commit()
             return jsonify({'success': True})
         return jsonify({'success': False, 'message': 'Скин не найден'})
+
+
+@races_bp.route('/skin/<int:skin_id>/image')
+def skin_image(skin_id):
+    """Отдача изображения скина из БД"""
+    with db.get_session() as session_db:
+        skin = session_db.query(RaceUnitSkin).filter_by(id=skin_id).first()
+        if skin and skin.image_data:
+            return Response(
+                skin.image_data,
+                mimetype=skin.image_mime_type or 'image/png',
+                headers={'Cache-Control': 'public, max-age=3600'}
+            )
+        # Возвращаем пустую картинку 1x1 PNG если изображение не найдено
+        empty_png = b'\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\x06\x00\x00\x00\x1f\x15\xc4\x89\x00\x00\x00\nIDATx\x9cc\x00\x01\x00\x00\x05\x00\x01\r\n-\xb4\x00\x00\x00\x00IEND\xaeB`\x82'
+        return Response(empty_png, mimetype='image/png', status=404)
