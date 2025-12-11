@@ -73,8 +73,8 @@ services:
 
   unity-arena:
     build:
-      context: ./unity-arena-server
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: unity-arena-server/Dockerfile
     container_name: modernhomm_unity_arena
     restart: unless-stopped
     networks:
