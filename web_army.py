@@ -33,33 +33,6 @@ def login_required(f):
     return decorated_function
 
 
-def get_user_balance(username):
-    """Получить баланс пользователя"""
-    try:
-        with db.get_session() as session_db:
-            game_user = session_db.query(GameUser).filter(GameUser.username == username).first()
-            if game_user:
-                return {
-                    'coins': int(game_user.coins) if game_user.coins else 0,
-                    'glory': int(game_user.glory) if game_user.glory else 0,
-                    'crystals': int(game_user.crystals) if game_user.crystals else 0
-                }
-    except Exception as e:
-        logger.error(f"Error getting user balance: {e}")
-    return None
-
-
-def render_footer():
-    """Рендерит footer с версиями"""
-    from flask import render_template_string
-    return render_template_string(
-        FOOTER_TEMPLATE,
-        web_version=get_web_version(),
-        bot_version=get_bot_version(),
-        user_balance=get_user_balance(session.get('username'))
-    )
-
-
 # Шаблон списка пользовательских рас
 USER_RACES_LIST_TEMPLATE = '''
 <!DOCTYPE html>
@@ -119,7 +92,7 @@ USER_RACES_LIST_TEMPLATE = '''
         </div>
         {% endif %}
     </div>
-    {{ footer_html|safe }}
+    """ + FOOTER_TEMPLATE + """
 </body>
 </html>
 '''
@@ -233,7 +206,7 @@ SELECT_RACE_TEMPLATE = '''
             {% endfor %}
         </div>
     </div>
-    {{ footer_html|safe }}
+    """ + FOOTER_TEMPLATE + """
 </body>
 </html>
 '''
@@ -431,7 +404,7 @@ EDIT_USER_RACE_TEMPLATE = '''
             {% endfor %}
         </div>
     </div>
-    {{ footer_html|safe }}
+    """ + FOOTER_TEMPLATE + """
 </body>
 </html>
 '''
@@ -594,7 +567,7 @@ EDIT_USER_RACE_UNIT_TEMPLATE = '''
         </div>
         {% endif %}
     </div>
-    {{ footer_html|safe }}
+    """ + FOOTER_TEMPLATE + """
 </body>
 </html>
 '''
@@ -625,7 +598,7 @@ def user_races_list():
             USER_RACES_LIST_TEMPLATE,
             active_page='user_race',
             user_races=user_races_data,
-            footer_html=render_footer()
+            
         )
 
 
@@ -661,7 +634,7 @@ def select_race():
             SELECT_RACE_TEMPLATE,
             active_page='user_race',
             races=races,
-            footer_html=render_footer()
+            
         )
 
 
@@ -749,7 +722,7 @@ def edit_user_race(user_race_id):
             user_race=user_race,
             units=units_data,
             configured_count=configured_count,
-            footer_html=render_footer()
+            
         )
 
 
@@ -851,7 +824,7 @@ def edit_user_race_unit(user_race_id, race_unit_id):
             skins=skins,
             user_unit=user_unit,
             current_skin_id=current_skin_id,
-            footer_html=render_footer()
+            
         )
 
 
@@ -918,7 +891,7 @@ def army_settings():
             <p><em>Функционал в разработке...</em></p>
         </div>
     </div>
-    {{ footer_html|safe }}
+    """ + FOOTER_TEMPLATE + """
 </body>
 </html>
     '''
@@ -926,5 +899,5 @@ def army_settings():
     return render_template_string(
         template,
         active_page='army_settings',
-        footer_html=render_footer()
+        
     )

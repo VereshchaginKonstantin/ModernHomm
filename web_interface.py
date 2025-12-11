@@ -58,19 +58,10 @@ def inject_versions():
         except Exception:
             pass  # Если не удалось получить баланс, просто не показываем его
 
-    # Рендерим footer с переменными
-    footer_html = render_template_string(
-        FOOTER_TEMPLATE,
-        web_version=web_version,
-        bot_version=bot_version,
-        user_balance=user_balance
-    )
-
     return {
         'web_version': web_version,
         'bot_version': bot_version,
-        'user_balance': user_balance,
-        'footer_html': footer_html
+        'user_balance': user_balance
     }
 
 
