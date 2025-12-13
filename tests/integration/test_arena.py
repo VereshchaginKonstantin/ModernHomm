@@ -406,7 +406,7 @@ class TestTelegramNotifications:
         assert callable(notify_opponent)
         assert callable(send_telegram_notification)
 
-    @patch('web_arena.requests.post')
+    @patch('web.arena.requests.post')
     def test_send_telegram_notification_structure(self, mock_post):
         """Тест: структура Telegram уведомления корректна"""
         mock_response = MagicMock()
@@ -416,7 +416,7 @@ class TestTelegramNotifications:
         from web.arena import send_telegram_notification
 
         # Мокаем получение токена
-        with patch('web_arena.get_telegram_bot_token', return_value='test_token'):
+        with patch('web.arena.get_telegram_bot_token', return_value='test_token'):
             result = send_telegram_notification(
                 chat_id=12345,
                 message="Test message",
@@ -465,10 +465,10 @@ class TestTelegramNotifications:
             engine.accept_game(game.id, player2.id)
             game_id = game.id
 
-        # Мокаем db в web_arena чтобы использовать тестовую БД
-        import web_arena
-        original_db = web_arena.db
-        web_arena.db = self.db
+        # Мокаем db в web.arena чтобы использовать тестовую БД
+        import web.arena as web_arena_module
+        original_db = web_arena_module.db
+        web_arena_module.db = self.db
         try:
             from web.arena import get_game_full_data
             game_data = get_game_full_data(game_id)
@@ -482,7 +482,7 @@ class TestTelegramNotifications:
             assert 'field' in game_data
         finally:
             # Восстанавливаем оригинальное соединение
-            web_arena.db = original_db
+            web_arena_module.db = original_db
 
 
 class TestArenaAPIEndpoints:
@@ -1282,10 +1282,10 @@ class TestGameStateAPI:
 
             game_id = game.id
 
-        # Мокаем db в web_arena чтобы использовать тестовую БД
-        import web_arena
-        original_db = web_arena.db
-        web_arena.db = self.db
+        # Мокаем db в web.arena чтобы использовать тестовую БД
+        import web.arena as web_arena_module
+        original_db = web_arena_module.db
+        web_arena_module.db = self.db
 
         try:
             # Проверяем структуру данных, которую возвращает API
@@ -1303,7 +1303,7 @@ class TestGameStateAPI:
                 assert player1_name == f"{self.test_prefix}_player1"
                 assert player2_name == f"{self.test_prefix}_player2"
         finally:
-            web_arena.db = original_db
+            web_arena_module.db = original_db
 
     def test_turn_indicator_logic(self):
         """Тест: логика определения чей ход (для индикатора в UI)"""

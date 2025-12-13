@@ -218,11 +218,6 @@ ARENA_INDEX_TEMPLATE = """
                 {% endif %}
             </div>
 
-            <div class="arena-mode-card">
-                <h2>🎮 Unity схватка</h2>
-                <p>Играть через Unity WebGL интерфейс</p>
-                <a href="/unityArena/" class="btn btn-primary">Открыть Unity</a>
-            </div>
         </div>
 
         <div class="arena-stats">

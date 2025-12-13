@@ -60,22 +60,12 @@ services:
     container_name: modernhomm_nginx
     depends_on:
       - web
-      - unity-arena
     ports:
       - "80:80"
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
       - ./static:/app/static:ro
     command: sh -c "rm -f /etc/nginx/conf.d/default.conf && nginx -g 'daemon off;'"
-    restart: unless-stopped
-    networks:
-      - modernhomm_network
-
-  unity-arena:
-    build:
-      context: .
-      dockerfile: unity-arena-server/Dockerfile
-    container_name: modernhomm_unity_arena
     restart: unless-stopped
     networks:
       - modernhomm_network
