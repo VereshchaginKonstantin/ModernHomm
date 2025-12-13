@@ -142,6 +142,49 @@ class TestGodotArenaScripts:
         assert '_highlight_attacks' in content, "Должен быть метод _highlight_attacks"
 
 
+class TestGodotArenaCORS:
+    """Тесты CORS заголовков для Godot WebGL"""
+
+    def test_nginx_cors_headers_for_godot_arena(self):
+        """Проверка CORS заголовков для /godot-arena/ в nginx.conf"""
+        import os
+        nginx_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'nginx', 'nginx.conf')
+        with open(nginx_path, 'r') as f:
+            content = f.read()
+
+        # Проверяем заголовки для SharedArrayBuffer
+        assert 'Cross-Origin-Opener-Policy' in content, "Должен быть заголовок Cross-Origin-Opener-Policy"
+        assert 'Cross-Origin-Embedder-Policy' in content, "Должен быть заголовок Cross-Origin-Embedder-Policy"
+        assert 'same-origin' in content, "Cross-Origin-Opener-Policy должен быть same-origin"
+        assert 'require-corp' in content, "Cross-Origin-Embedder-Policy должен быть require-corp"
+
+    def test_nginx_cors_resource_policy_for_api(self):
+        """Проверка Cross-Origin-Resource-Policy для API запросов из Godot"""
+        import os
+        nginx_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'nginx', 'nginx.conf')
+        with open(nginx_path, 'r') as f:
+            content = f.read()
+
+        # Проверяем Cross-Origin-Resource-Policy для API (нужен для require-corp)
+        assert 'Cross-Origin-Resource-Policy' in content, \
+            "Должен быть заголовок Cross-Origin-Resource-Policy для API запросов из Godot WebGL"
+        assert 'cross-origin' in content, \
+            "Cross-Origin-Resource-Policy должен быть cross-origin для доступа из Godot арены"
+
+    def test_godot_api_client_uses_correct_api_path(self):
+        """Проверка корректного пути API в api_client.gd"""
+        import os
+        api_client_path = os.path.join(os.path.dirname(os.path.dirname(__file__)),
+                                       'godot-arena', 'scripts', 'autoload', 'api_client.gd')
+        with open(api_client_path, 'r') as f:
+            content = f.read()
+
+        # Проверяем что используется правильный путь API
+        assert '/arena/api' in content, "API путь должен быть /arena/api"
+        # Проверяем что в веб-версии получаем origin из JavaScript
+        assert 'window.location.origin' in content, "В веб-версии должен использоваться origin браузера"
+
+
 class TestGodotArenaIntegration:
     """Интеграционные тесты для Godot Arena"""
 
