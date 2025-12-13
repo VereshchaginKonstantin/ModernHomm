@@ -1,5 +1,21 @@
 # Unity Arena - Руководство по настройке
 
+## Быстрый старт (автоматическая настройка)
+
+1. Откройте проект в Unity 2022.3 LTS
+2. Импортируйте TMP Essentials: **Window → TextMeshPro → Import TMP Essential Resources**
+3. Запустите мастер: **ModernHomm → Setup All (Scenes + Prefabs)**
+4. Откройте каждую сцену и привяжите ссылки: **ModernHomm → Link Scene References (Current Scene)**
+5. Откройте сцену Bootstrap и нажмите Play!
+
+## Меню ModernHomm
+
+- **Setup All** - создать все сцены, префабы и материалы
+- **Create Scenes Only** - создать только сцены
+- **Create Prefabs Only** - создать только префабы
+- **Link Prefab References** - привязать ссылки в префабах
+- **Link Scene References** - привязать ссылки в текущей сцене (запускайте для каждой сцены)
+
 ## Требования
 
 - Unity 2022.3 LTS
