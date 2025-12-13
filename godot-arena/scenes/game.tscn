@@ -1,0 +1,208 @@
+[gd_scene load_steps=2 format=3 uid="uid://dq8x4mbp5q2t"]
+
+[ext_resource type="Script" path="res://scripts/game.gd" id="1_game"]
+
+[node name="Game" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_game")
+
+[node name="Background" type="ColorRect" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+color = Color(0.101961, 0.101961, 0.180392, 1)
+
+[node name="HBoxContainer" type="HBoxContainer" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="BoardContainer" type="CenterContainer" parent="HBoxContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="Board" type="Control" parent="HBoxContainer/BoardContainer"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(560, 560)
+layout_mode = 2
+
+[node name="SidePanel" type="PanelContainer" parent="HBoxContainer"]
+custom_minimum_size = Vector2(300, 0)
+layout_mode = 2
+
+[node name="VBox" type="VBoxContainer" parent="HBoxContainer/SidePanel"]
+layout_mode = 2
+theme_override_constants/separation = 15
+
+[node name="TurnIndicator" type="Label" parent="HBoxContainer/SidePanel/VBox"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_font_sizes/font_size = 24
+text = "Загрузка..."
+horizontal_alignment = 1
+
+[node name="HintLabel" type="Label" parent="HBoxContainer/SidePanel/VBox"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_colors/font_color = Color(0.952941, 0.611765, 0.0705882, 1)
+theme_override_font_sizes/font_size = 14
+text = "Выберите юнита для действия"
+horizontal_alignment = 1
+autowrap_mode = 2
+
+[node name="HSeparator" type="HSeparator" parent="HBoxContainer/SidePanel/VBox"]
+layout_mode = 2
+
+[node name="Player1Panel" type="PanelContainer" parent="HBoxContainer/SidePanel/VBox"]
+unique_name_in_owner = true
+layout_mode = 2
+
+[node name="VBox" type="VBoxContainer" parent="HBoxContainer/SidePanel/VBox/Player1Panel"]
+layout_mode = 2
+
+[node name="Name" type="Label" parent="HBoxContainer/SidePanel/VBox/Player1Panel/VBox"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_colors/font_color = Color(0.905882, 0.298039, 0.235294, 1)
+theme_override_font_sizes/font_size = 18
+text = "Игрок 1"
+
+[node name="Stats" type="Label" parent="HBoxContainer/SidePanel/VBox/Player1Panel/VBox"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_colors/font_color = Color(0.6, 0.6, 0.6, 1)
+theme_override_font_sizes/font_size = 12
+text = "-"
+
+[node name="Player2Panel" type="PanelContainer" parent="HBoxContainer/SidePanel/VBox"]
+unique_name_in_owner = true
+layout_mode = 2
+
+[node name="VBox" type="VBoxContainer" parent="HBoxContainer/SidePanel/VBox/Player2Panel"]
+layout_mode = 2
+
+[node name="Name" type="Label" parent="HBoxContainer/SidePanel/VBox/Player2Panel/VBox"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_colors/font_color = Color(0.180392, 0.8, 0.443137, 1)
+theme_override_font_sizes/font_size = 18
+text = "Игрок 2"
+
+[node name="Stats" type="Label" parent="HBoxContainer/SidePanel/VBox/Player2Panel/VBox"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_colors/font_color = Color(0.6, 0.6, 0.6, 1)
+theme_override_font_sizes/font_size = 12
+text = "-"
+
+[node name="HSeparator2" type="HSeparator" parent="HBoxContainer/SidePanel/VBox"]
+layout_mode = 2
+
+[node name="ActionButtons" type="GridContainer" parent="HBoxContainer/SidePanel/VBox"]
+layout_mode = 2
+columns = 2
+
+[node name="MoveButton" type="Button" parent="HBoxContainer/SidePanel/VBox/ActionButtons"]
+unique_name_in_owner = true
+layout_mode = 2
+custom_minimum_size = Vector2(130, 40)
+disabled = true
+text = "Двигаться"
+
+[node name="AttackButton" type="Button" parent="HBoxContainer/SidePanel/VBox/ActionButtons"]
+unique_name_in_owner = true
+layout_mode = 2
+custom_minimum_size = Vector2(130, 40)
+disabled = true
+text = "Атаковать"
+
+[node name="SkipButton" type="Button" parent="HBoxContainer/SidePanel/VBox/ActionButtons"]
+unique_name_in_owner = true
+layout_mode = 2
+custom_minimum_size = Vector2(130, 40)
+disabled = true
+text = "Пропустить"
+
+[node name="DeferButton" type="Button" parent="HBoxContainer/SidePanel/VBox/ActionButtons"]
+unique_name_in_owner = true
+layout_mode = 2
+custom_minimum_size = Vector2(130, 40)
+disabled = true
+text = "Отложить"
+
+[node name="SurrenderButton" type="Button" parent="HBoxContainer/SidePanel/VBox"]
+unique_name_in_owner = true
+layout_mode = 2
+custom_minimum_size = Vector2(0, 40)
+text = "Сдаться"
+
+[node name="HSeparator3" type="HSeparator" parent="HBoxContainer/SidePanel/VBox"]
+layout_mode = 2
+
+[node name="LogLabel" type="Label" parent="HBoxContainer/SidePanel/VBox"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 16
+text = "Лог боя"
+
+[node name="LogScroll" type="ScrollContainer" parent="HBoxContainer/SidePanel/VBox"]
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="LogList" type="VBoxContainer" parent="HBoxContainer/SidePanel/VBox/LogScroll"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="GameOverOverlay" type="ColorRect" parent="."]
+unique_name_in_owner = true
+visible = false
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+color = Color(0, 0, 0, 0.9)
+
+[node name="VBox" type="VBoxContainer" parent="GameOverOverlay"]
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -200.0
+offset_top = -100.0
+offset_right = 200.0
+offset_bottom = 100.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/separation = 20
+
+[node name="Title" type="Label" parent="GameOverOverlay/VBox"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_font_sizes/font_size = 48
+text = "ПОБЕДА!"
+horizontal_alignment = 1
+
+[node name="Message" type="Label" parent="GameOverOverlay/VBox"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_font_sizes/font_size = 18
+text = "Вы победили!"
+horizontal_alignment = 1
+
+[node name="BackButton" type="Button" parent="GameOverOverlay/VBox"]
+layout_mode = 2
+custom_minimum_size = Vector2(0, 50)
+text = "Вернуться в меню"

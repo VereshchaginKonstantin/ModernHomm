@@ -1,0 +1,9 @@
+# Godot 4+ specific ignores
+.godot/
+
+# Export templates (large files, download separately)
+*.tpz
+
+# OS generated files
+.DS_Store
+Thumbs.db

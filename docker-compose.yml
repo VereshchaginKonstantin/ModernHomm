@@ -55,11 +55,21 @@ services:
     networks:
       - modernhomm_network
 
+  godot-arena:
+    build:
+      context: ./godot-arena
+      dockerfile: Dockerfile
+    container_name: modernhomm_godot_arena
+    restart: unless-stopped
+    networks:
+      - modernhomm_network
+
   nginx:
     image: nginx:alpine
     container_name: modernhomm_nginx
     depends_on:
       - web
+      - godot-arena
     ports:
       - "80:80"
     volumes:

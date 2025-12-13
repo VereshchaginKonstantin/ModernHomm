@@ -1,0 +1,180 @@
+[gd_scene load_steps=2 format=3 uid="uid://c8qvpybcbewqp"]
+
+[ext_resource type="Script" path="res://scripts/main.gd" id="1_main"]
+
+[node name="Main" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_main")
+
+[node name="Background" type="ColorRect" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+color = Color(0.101961, 0.101961, 0.180392, 1)
+
+[node name="VBoxContainer" type="VBoxContainer" parent="."]
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -300.0
+offset_top = -250.0
+offset_right = 300.0
+offset_bottom = 250.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/separation = 20
+
+[node name="Title" type="Label" parent="VBoxContainer"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 48
+text = "⚔️ ModernHomm Arena"
+horizontal_alignment = 1
+
+[node name="Subtitle" type="Label" parent="VBoxContainer"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.6, 0.6, 0.6, 1)
+theme_override_font_sizes/font_size = 18
+text = "Тактическая арена на Godot"
+horizontal_alignment = 1
+
+[node name="HSeparator" type="HSeparator" parent="VBoxContainer"]
+layout_mode = 2
+
+[node name="PlayerSection" type="VBoxContainer" parent="VBoxContainer"]
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="PlayerLabel" type="Label" parent="VBoxContainer/PlayerSection"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 16
+text = "Выберите себя:"
+
+[node name="PlayerSelect" type="OptionButton" parent="VBoxContainer/PlayerSection"]
+unique_name_in_owner = true
+layout_mode = 2
+custom_minimum_size = Vector2(400, 40)
+
+[node name="PlayerStats" type="Label" parent="VBoxContainer/PlayerSection"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_colors/font_color = Color(0.6, 0.6, 0.6, 1)
+theme_override_font_sizes/font_size = 14
+text = ""
+horizontal_alignment = 1
+
+[node name="OpponentSection" type="VBoxContainer" parent="VBoxContainer"]
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="OpponentLabel" type="Label" parent="VBoxContainer/OpponentSection"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 16
+text = "Выберите противника:"
+
+[node name="OpponentSelect" type="OptionButton" parent="VBoxContainer/OpponentSection"]
+unique_name_in_owner = true
+layout_mode = 2
+custom_minimum_size = Vector2(400, 40)
+
+[node name="OpponentStats" type="Label" parent="VBoxContainer/OpponentSection"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_colors/font_color = Color(0.6, 0.6, 0.6, 1)
+theme_override_font_sizes/font_size = 14
+text = ""
+horizontal_alignment = 1
+
+[node name="FieldSection" type="VBoxContainer" parent="VBoxContainer"]
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="FieldLabel" type="Label" parent="VBoxContainer/FieldSection"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 16
+text = "Размер поля:"
+
+[node name="FieldButtons" type="HBoxContainer" parent="VBoxContainer/FieldSection"]
+layout_mode = 2
+alignment = 1
+theme_override_constants/separation = 20
+
+[node name="Field5x5" type="Button" parent="VBoxContainer/FieldSection/FieldButtons"]
+unique_name_in_owner = true
+layout_mode = 2
+custom_minimum_size = Vector2(100, 40)
+toggle_mode = true
+button_pressed = true
+text = "5x5"
+
+[node name="Field7x7" type="Button" parent="VBoxContainer/FieldSection/FieldButtons"]
+unique_name_in_owner = true
+layout_mode = 2
+custom_minimum_size = Vector2(100, 40)
+toggle_mode = true
+text = "7x7"
+
+[node name="Field10x10" type="Button" parent="VBoxContainer/FieldSection/FieldButtons"]
+unique_name_in_owner = true
+layout_mode = 2
+custom_minimum_size = Vector2(100, 40)
+toggle_mode = true
+text = "10x10"
+
+[node name="HSeparator2" type="HSeparator" parent="VBoxContainer"]
+layout_mode = 2
+
+[node name="StartButton" type="Button" parent="VBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+custom_minimum_size = Vector2(0, 50)
+disabled = true
+text = "⚔️ Вызвать на бой!"
+
+[node name="StatusLabel" type="Label" parent="VBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_colors/font_color = Color(0.952941, 0.611765, 0.0705882, 1)
+theme_override_font_sizes/font_size = 14
+text = ""
+horizontal_alignment = 1
+
+[node name="BackButton" type="Button" parent="VBoxContainer"]
+layout_mode = 2
+custom_minimum_size = Vector2(0, 40)
+text = "← Вернуться к веб-арене"
+
+[node name="PendingGamesPanel" type="PanelContainer" parent="."]
+unique_name_in_owner = true
+visible = false
+layout_mode = 1
+anchors_preset = 5
+anchor_left = 0.5
+anchor_right = 0.5
+offset_left = -200.0
+offset_top = 20.0
+offset_right = 200.0
+offset_bottom = 150.0
+grow_horizontal = 2
+
+[node name="VBox" type="VBoxContainer" parent="PendingGamesPanel"]
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="Title" type="Label" parent="PendingGamesPanel/VBox"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 18
+text = "⚔️ Вызовы на бой"
+horizontal_alignment = 1
+
+[node name="PendingList" type="VBoxContainer" parent="PendingGamesPanel/VBox"]
+unique_name_in_owner = true
+layout_mode = 2

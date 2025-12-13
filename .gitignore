@@ -5,6 +5,7 @@ __pycache__/
 *.so
 .Python
 build/
+!godot-arena/build/
 develop-eggs/
 dist/
 downloads/

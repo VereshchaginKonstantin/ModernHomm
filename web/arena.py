@@ -218,6 +218,12 @@ ARENA_INDEX_TEMPLATE = """
                 {% endif %}
             </div>
 
+            <div class="arena-mode-card">
+                <h2>🎮 Godot Арена</h2>
+                <p>Новая арена на движке Godot (WebGL)</p>
+                <a href="/godot-arena/" class="btn btn-primary" target="_blank">Открыть Godot</a>
+            </div>
+
         </div>
 
         <div class="arena-stats">
