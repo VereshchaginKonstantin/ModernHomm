@@ -745,6 +745,7 @@ def play():
     """Страница для игры - открывает активную игру или показывает форму создания"""
     current_username = session.get('username')
 
+    waiting_game_data = None
     with db.get_session() as session_db:
         # Проверяем есть ли активная игра (IN_PROGRESS)
         active_game = session_db.query(Game).filter(
@@ -761,6 +762,10 @@ def play():
             Game.status == GameStatus.WAITING
         ).first()
 
+        # Извлекаем данные внутри сессии чтобы избежать DetachedInstanceError
+        if waiting_game:
+            waiting_game_data = {'id': waiting_game.id}
+
     # Получаем текущего игрока и список противников с близкой стоимостью армии
     current_player, opponents = db.get_available_opponents_by_username(current_username, limit=10, variance=0.5)
 
@@ -771,7 +776,7 @@ def play():
             active_page='arena',
             current_player=None,
             opponents=[],
-            waiting_game=waiting_game,
+            waiting_game=waiting_game_data,
             web_version=get_web_version(),
             bot_version=get_bot_version(),
             static_version=get_static_version(),
@@ -783,7 +788,7 @@ def play():
         active_page='arena',
         current_player=current_player,
         opponents=opponents,
-        waiting_game=waiting_game,
+        waiting_game=waiting_game_data,
         web_version=get_web_version(),
         bot_version=get_bot_version(),
         static_version=get_static_version()
@@ -872,7 +877,7 @@ def api_players():
             result.append({
                 'id': p.id,
                 'telegram_id': p.telegram_id,
-                'name': p.name,
+                'name': p.username,
                 'balance': float(p.balance),
                 'wins': p.wins,
                 'losses': p.losses,
@@ -1500,7 +1505,7 @@ def api_public_players():
             result.append({
                 'id': p.id,
                 'telegram_id': p.telegram_id,
-                'name': p.name,
+                'name': p.username,
                 'balance': float(p.balance),
                 'wins': p.wins,
                 'losses': p.losses,
