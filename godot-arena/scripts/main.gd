@@ -1,7 +1,7 @@
 extends Control
 ## Главное меню арены
 
-@onready var player_select: OptionButton = %PlayerSelect
+@onready var player_name_label: Label = %PlayerNameLabel
 @onready var player_stats: Label = %PlayerStats
 @onready var opponent_select: OptionButton = %OpponentSelect
 @onready var opponent_stats: Label = %OpponentStats
@@ -14,18 +14,18 @@ extends Control
 @onready var pending_list: VBoxContainer = %PendingList
 
 var players: Array = []
-var selected_player: Dictionary = {}
+var current_player: Dictionary = {}  # Текущий залогиненный игрок
 var selected_opponent: Dictionary = {}
 var selected_field_size: String = "5x5"
 
 func _ready() -> void:
 	# Подключаем сигналы
 	GameManager.players_loaded.connect(_on_players_loaded)
+	GameManager.current_player_loaded.connect(_on_current_player_loaded)
 	GameManager.game_state_updated.connect(_on_game_started)
 	GameManager.error_occurred.connect(_on_error)
 
 	# Подключаем UI
-	player_select.item_selected.connect(_on_player_selected)
 	opponent_select.item_selected.connect(_on_opponent_selected)
 	field_5x5.pressed.connect(_on_field_5x5_pressed)
 	field_7x7.pressed.connect(_on_field_7x7_pressed)
@@ -33,74 +33,53 @@ func _ready() -> void:
 	start_button.pressed.connect(_on_start_pressed)
 	$VBoxContainer/BackButton.pressed.connect(_on_back_pressed)
 
-	# Загружаем игроков
-	status_label.text = "Загрузка игроков..."
+	# Сначала загружаем текущего пользователя
+	status_label.text = "Загрузка..."
+	GameManager.load_current_player()
+
+func _on_current_player_loaded(player: Dictionary) -> void:
+	if player.is_empty():
+		# Пользователь не залогинен - показываем сообщение
+		# Кнопка "Назад" переведёт на веб-арену где можно залогиниться
+		status_label.text = "Необходимо войти через веб-арену"
+		player_name_label.text = "Не авторизован"
+		start_button.disabled = true
+		return
+
+	current_player = player
+
+	# Показываем имя текущего игрока
+	player_name_label.text = current_player.get("name", "???")
+
+	# Обновляем статистику игрока
+	var win_rate = 0
+	var total = current_player.get("wins", 0) + current_player.get("losses", 0)
+	if total > 0:
+		win_rate = int(float(current_player.get("wins", 0)) / total * 100)
+	player_stats.text = "Армия: %.0f | Побед: %d | Поражений: %d (%d%%)" % [
+		current_player.get("army_cost", 0),
+		current_player.get("wins", 0),
+		current_player.get("losses", 0),
+		win_rate
+	]
+
+	# Теперь загружаем список противников
+	status_label.text = "Загрузка противников..."
 	GameManager.load_players()
 
 func _on_players_loaded(loaded_players: Array) -> void:
 	players = loaded_players
 	status_label.text = ""
 
-	# Заполняем список игроков
-	player_select.clear()
-	player_select.add_item("Выберите себя", 0)
+	# Заполняем список противников
+	_populate_opponents()
 
-	for i in range(players.size()):
-		var p = players[i]
-		if p.get("units", []).size() > 0:  # Только игроки с юнитами
-			var text = "%s (стоимость: %.0f)" % [p.get("name", "???"), p.get("army_cost", 0)]
-			player_select.add_item(text, p.get("id", 0))
-
-	# Проверяем сохранённый player_id
-	var saved_id = _get_saved_player_id()
-	if saved_id > 0:
-		for i in range(player_select.item_count):
-			if player_select.get_item_id(i) == saved_id:
-				player_select.select(i)
-				_on_player_selected(i)
-				break
-
-func _get_saved_player_id() -> int:
-	if OS.has_feature("web"):
-		var result = JavaScriptBridge.eval("localStorage.getItem('player_id');")
-		if result:
-			return int(result)
-	return 0
-
-func _on_player_selected(index: int) -> void:
-	var player_id = player_select.get_item_id(index)
-	if player_id == 0:
-		selected_player = {}
-		player_stats.text = ""
-		opponent_select.clear()
-		opponent_select.add_item("Сначала выберите себя", 0)
-		opponent_stats.text = ""
-		_update_start_button()
+func _populate_opponents() -> void:
+	if current_player.is_empty():
 		return
 
-	# Находим игрока
-	for p in players:
-		if p.get("id") == player_id:
-			selected_player = p
-			break
-
-	# Обновляем статистику игрока
-	var win_rate = 0
-	var total = selected_player.get("wins", 0) + selected_player.get("losses", 0)
-	if total > 0:
-		win_rate = int(float(selected_player.get("wins", 0)) / total * 100)
-	player_stats.text = "Побед: %d | Поражений: %d (%d%%)" % [
-		selected_player.get("wins", 0),
-		selected_player.get("losses", 0),
-		win_rate
-	]
-
-	# Сохраняем player_id
-	if OS.has_feature("web"):
-		JavaScriptBridge.eval("localStorage.setItem('player_id', '%d');" % player_id)
-
-	# Фильтруем противников (±50% стоимости армии)
-	var my_cost = selected_player.get("army_cost", 0)
+	var my_id = current_player.get("id", 0)
+	var my_cost = current_player.get("army_cost", 0)
 	var min_cost = my_cost * 0.5
 	var max_cost = my_cost * 1.5
 
@@ -108,7 +87,7 @@ func _on_player_selected(index: int) -> void:
 	opponent_select.add_item("Выберите противника", 0)
 
 	for p in players:
-		if p.get("id") == player_id:
+		if p.get("id") == my_id:
 			continue  # Себя пропускаем
 		if p.get("units", []).size() == 0:
 			continue  # Без юнитов пропускаем
@@ -130,7 +109,7 @@ func _on_player_selected(index: int) -> void:
 	_check_pending_games()
 
 func _check_pending_games() -> void:
-	if selected_player.is_empty():
+	if current_player.is_empty():
 		pending_panel.visible = false
 		return
 
@@ -183,17 +162,17 @@ func _on_field_10x10_pressed() -> void:
 	field_10x10.button_pressed = true
 
 func _update_start_button() -> void:
-	start_button.disabled = selected_player.is_empty() or selected_opponent.is_empty()
+	start_button.disabled = current_player.is_empty() or selected_opponent.is_empty()
 
 func _on_start_pressed() -> void:
-	if selected_player.is_empty() or selected_opponent.is_empty():
+	if current_player.is_empty() or selected_opponent.is_empty():
 		return
 
 	start_button.disabled = true
 	status_label.text = "Создание игры..."
 
 	GameManager.create_game(
-		selected_player.get("id"),
+		current_player.get("id"),
 		selected_opponent.get("name", ""),
 		selected_field_size
 	)

@@ -8,6 +8,7 @@ signal game_over(winner_id: int, winner_name: String)
 signal turn_changed(current_player_id: int)
 signal error_occurred(message: String)
 signal players_loaded(players: Array)
+signal current_player_loaded(player: Dictionary)
 
 # Текущее состояние
 var current_game_id: int = 0
@@ -69,6 +70,10 @@ func _load_player_id() -> int:
 		if result:
 			return int(result)
 	return 0
+
+## Загрузить текущего залогиненного пользователя
+func load_current_player() -> void:
+	ApiClient.get_current_player()
 
 ## Загрузить список игроков
 func load_players() -> void:
@@ -209,7 +214,14 @@ func _on_polling_timeout() -> void:
 ## Обработка ответа API
 func _on_api_response(data: Dictionary) -> void:
 	# Определяем тип ответа по содержимому
-	if data.has("players"):
+	if data.has("current_player"):
+		# Это ответ на запрос текущего пользователя
+		var player = data.get("current_player", {})
+		if not player.is_empty():
+			current_player_id = player.get("id", 0)
+		current_player_loaded.emit(player)
+
+	elif data.has("players"):
 		players = data.players
 		players_loaded.emit(players)
 

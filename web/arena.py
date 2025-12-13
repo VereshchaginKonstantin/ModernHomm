@@ -221,7 +221,7 @@ ARENA_INDEX_TEMPLATE = """
             <div class="arena-mode-card">
                 <h2>🎮 Godot Арена</h2>
                 <p>Новая арена на движке Godot (WebGL)</p>
-                <a href="/godot-arena/" class="btn btn-primary" target="_blank">Открыть Godot</a>
+                <a href="/godot-arena/?player_id={{ current_player.id if current_player else '' }}" class="btn btn-primary" target="_blank">Открыть Godot</a>
             </div>
 
         </div>
@@ -648,6 +648,9 @@ PLAY_GAME_TEMPLATE = """
 @login_required
 def index():
     """Главная страница арены"""
+    current_username = session.get('username')
+    current_player = None
+
     with db.get_session() as session_db:
         total_games = session_db.query(Game).count()
         completed_games = session_db.query(Game).filter(Game.status == GameStatus.COMPLETED).count()
@@ -656,6 +659,10 @@ def index():
         # Проверяем есть ли активная игра для кнопки
         has_active_game = active_games > 0
 
+        # Получаем текущего игрока для ссылки на Godot арену
+        if current_username:
+            current_player = session_db.query(GameUser).filter_by(name=current_username).first()
+
     return render_template_string(
         ARENA_INDEX_TEMPLATE,
         active_page='arena',
@@ -663,6 +670,7 @@ def index():
         completed_games=completed_games,
         active_games=active_games,
         has_active_game=has_active_game,
+        current_player=current_player,
         web_version=get_web_version(),
         bot_version=get_bot_version(),
         static_version=get_static_version(),
@@ -1500,6 +1508,46 @@ def api_public_players():
 
     # Возвращаем в формате {"players": [...]} для совместимости с Godot
     return jsonify({"players": result})
+
+
+@arena_bp.route('/api/public/me')
+def api_public_me():
+    """Публичный эндпоинт - получить информацию о текущем игроке по player_id из параметров"""
+    player_id = request.args.get('player_id', type=int)
+    if not player_id:
+        return jsonify({"current_player": {}})
+
+    with db.get_session() as session_db:
+        player = session_db.query(GameUser).filter_by(id=player_id).first()
+        if not player:
+            return jsonify({"current_player": {}})
+
+        user_units = session_db.query(UserUnit).filter_by(game_user_id=player.id).all()
+        units = []
+        army_cost = 0
+        for uu in user_units:
+            unit = session_db.query(Unit).filter_by(id=uu.unit_type_id).first()
+            if unit and uu.count > 0:
+                units.append({
+                    'unit_id': unit.id,
+                    'name': unit.name,
+                    'icon': unit.icon,
+                    'count': uu.count
+                })
+                army_cost += float(unit.price) * uu.count
+
+        return jsonify({
+            "current_player": {
+                'id': player.id,
+                'telegram_id': player.telegram_id,
+                'name': player.name,
+                'balance': float(player.balance),
+                'wins': player.wins,
+                'losses': player.losses,
+                'units': units,
+                'army_cost': army_cost
+            }
+        })
 
 
 @arena_bp.route('/api/public/games/<int:game_id>/state')

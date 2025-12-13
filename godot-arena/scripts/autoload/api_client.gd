@@ -34,6 +34,24 @@ func _init_web_api_base() -> void:
 	if result:
 		api_base = result
 
+## Получить текущего залогиненного пользователя
+func get_current_player() -> void:
+	# Получаем player_id из URL параметров
+	var player_id = 0
+	if OS.has_feature("web"):
+		var js_code = """
+			(function() {
+				var params = new URLSearchParams(window.location.search);
+				return params.get('player_id') || '';
+			})()
+		"""
+		var result = JavaScriptBridge.eval(js_code)
+		if result:
+			player_id = int(result)
+
+	var url = api_base + "/me?player_id=" + str(player_id)
+	_make_request(url, HTTPClient.METHOD_GET)
+
 ## Получить список игроков
 func get_players() -> void:
 	var url = api_base + "/players"
