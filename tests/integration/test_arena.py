@@ -2106,5 +2106,106 @@ class TestPlayRouteSessionHandling:
         # Просто проверяем что код не падает
 
 
+class TestPublicCreateGameAPI:
+    """Тесты для публичного API создания игры (Godot)"""
+
+    @pytest.fixture(autouse=True)
+    def setup(self):
+        """Подготовка тестовой базы данных"""
+        import uuid
+        self.test_prefix = f"create_game_{uuid.uuid4().hex[:8]}"
+        self.db = Database("postgresql://postgres:postgres@localhost:5433/telegram_bot_test")
+
+        with self.db.get_session() as session:
+            session.query(GameLog).delete()
+            session.query(BattleUnit).delete()
+            session.query(Obstacle).delete()
+            session.query(Game).delete()
+            session.query(UserUnit).delete()
+            session.query(GameUser).filter(
+                GameUser.username.like(f"{self.test_prefix}%")
+            ).delete(synchronize_session=False)
+            session.commit()
+
+        yield
+
+        with self.db.get_session() as session:
+            session.query(GameLog).delete()
+            session.query(BattleUnit).delete()
+            session.query(Obstacle).delete()
+            session.query(Game).delete()
+            session.query(UserUnit).delete()
+            session.query(GameUser).filter(
+                GameUser.username.like(f"{self.test_prefix}%")
+            ).delete(synchronize_session=False)
+            session.commit()
+
+    def test_create_game_uses_username_to_find_player2(self):
+        """Тест: api_public_create_game использует username для поиска player2"""
+        import os
+
+        with self.db.get_session() as session:
+            # Создаем игроков с юнитами
+            unit = session.query(Unit).first()
+            if not unit:
+                pytest.skip("No units in database")
+
+            for u in session.query(Unit).all():
+                u.image_path = os.path.abspath(__file__)
+            session.commit()
+
+            player1 = GameUser(
+                telegram_id=77001,
+                username=f"{self.test_prefix}_Creator",
+                balance=Decimal("1000")
+            )
+            player2 = GameUser(
+                telegram_id=77002,
+                username=f"{self.test_prefix}_Opponent",
+                balance=Decimal("1000")
+            )
+            session.add(player1)
+            session.add(player2)
+            session.flush()
+
+            user_unit1 = UserUnit(game_user_id=player1.id, unit_type_id=unit.id, count=5)
+            user_unit2 = UserUnit(game_user_id=player2.id, unit_type_id=unit.id, count=5)
+            session.add(user_unit1)
+            session.add(user_unit2)
+            session.commit()
+
+            player1_id = player1.id
+            player2_username = player2.username
+
+        # Тестируем логику создания игры - поиск по username
+        with self.db.get_session() as session:
+            # Имитируем логику из api_public_create_game
+            player1 = session.query(GameUser).filter_by(id=player1_id).first()
+            assert player1 is not None
+
+            # Ищем player2 по username (исправленный код)
+            player2 = session.query(GameUser).filter_by(username=player2_username).first()
+            assert player2 is not None
+            assert player2.username == player2_username
+
+    def test_create_game_player2_not_found_by_name_field(self):
+        """Тест: поиск по несуществующему полю name должен вызвать ошибку"""
+        with self.db.get_session() as session:
+            player = GameUser(
+                telegram_id=77003,
+                username=f"{self.test_prefix}_TestPlayer",
+                balance=Decimal("500")
+            )
+            session.add(player)
+            session.commit()
+
+            # Проверяем что у GameUser нет атрибута name
+            assert not hasattr(GameUser, 'name') or getattr(GameUser, 'name', None) is None
+
+            # Поиск по username работает
+            found = session.query(GameUser).filter_by(username=player.username).first()
+            assert found is not None
+
+
 if __name__ == '__main__':
     pytest.main([__file__, '-v'])

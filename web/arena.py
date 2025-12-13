@@ -1612,7 +1612,7 @@ def api_public_create_game():
         if not player1:
             return jsonify({'error': 'Player 1 not found'}), 404
 
-        player2 = session_db.query(GameUser).filter_by(name=player2_name).first()
+        player2 = session_db.query(GameUser).filter_by(username=player2_name).first()
         if not player2:
             return jsonify({'error': 'Player 2 not found'}), 404
 
