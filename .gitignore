@@ -52,3 +52,6 @@ postgres_data/
 
 # Version tracking
 .last_version
+
+# SSL certificates
+certbot/
