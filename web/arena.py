@@ -49,6 +49,84 @@ def after_request(response):
 db_url = os.getenv('DATABASE_URL', 'postgresql://postgres:postgres@localhost:5434/telegram_bot')
 db = Database(db_url)
 
+
+class GameState:
+    """Класс для представления состояния игры для Godot API"""
+
+    def __init__(self, game, units, obstacles, logs, session):
+        self.game = game
+        self.units = units
+        self.obstacles = obstacles
+        self.logs = logs
+        self.session = session
+
+    @classmethod
+    def from_game(cls, game: Game, session) -> 'GameState':
+        """Создать GameState из объекта Game"""
+        units = []
+        for bu in game.battle_units:
+            if bu.total_count > 0:
+                unit_type = bu.user_unit.unit
+                units.append({
+                    'id': bu.id,
+                    'player_id': bu.player_id,
+                    'x': bu.position_x,
+                    'y': bu.position_y,
+                    'count': bu.total_count,
+                    'has_moved': 1 if bu.has_moved else 0,
+                    'unit_type': {
+                        'id': unit_type.id,
+                        'name': unit_type.name,
+                        'icon': unit_type.icon,
+                        'attack': unit_type.attack,
+                        'defense': unit_type.defense,
+                        'hp': unit_type.hp,
+                        'speed': unit_type.speed,
+                        'attack_range': unit_type.attack_range
+                    }
+                })
+
+        obstacles = []
+        for obs in session.query(Obstacle).filter_by(game_id=game.id).all():
+            obstacles.append({
+                'x': obs.position_x,
+                'y': obs.position_y
+            })
+
+        logs = []
+        for log in session.query(GameLog).filter_by(game_id=game.id).order_by(GameLog.created_at).all():
+            logs.append({
+                'event_type': log.event_type,
+                'message': log.message,
+                'timestamp': log.created_at.isoformat() if log.created_at else None
+            })
+
+        return cls(game, units, obstacles, logs, session)
+
+    def to_dict(self) -> dict:
+        """Преобразовать в словарь для JSON"""
+        game = self.game
+        return {
+            'game_id': game.id,
+            'status': game.status.value,
+            'field': {
+                'name': game.field.name if game.field else '5x5',
+                'width': game.field.width if game.field else 5,
+                'height': game.field.height if game.field else 5
+            },
+            'player1_id': game.player1_id,
+            'player1_name': game.player1.username if game.player1 else 'Игрок 1',
+            'player2_id': game.player2_id,
+            'player2_name': game.player2.username if game.player2 else 'Игрок 2',
+            'current_player_id': game.current_player_id,
+            'is_game_over': game.status == GameStatus.COMPLETED,
+            'winner_id': game.winner_id,
+            'units': self.units,
+            'obstacles': self.obstacles,
+            'logs': self.logs
+        }
+
+
 # Загружаем конфигурацию для Telegram бота
 def get_telegram_bot_token():
     """Получить токен Telegram бота из config.json"""
@@ -1588,7 +1666,7 @@ def api_public_unit_actions(game_id, unit_id):
         if not unit:
             return jsonify({'error': 'Unit not found'}), 404
 
-        engine = GameEngine(game_state)
+        engine = GameEngine(session_db)
         moves = engine.get_valid_moves(unit_id)
         attacks = engine.get_valid_attacks(unit_id)
 
@@ -1686,30 +1764,34 @@ def api_public_move(game_id):
         if game.current_player_id != player_id:
             return jsonify({'error': 'Not your turn'}), 403
 
-        game_state = GameState.from_game(game, session_db)
-        engine = GameEngine(game_state)
+        engine = GameEngine(session_db)
 
-        result = None
+        success = False
+        message = ""
+        turn_changed = False
+
         if action == 'move':
-            result = engine.move_unit(unit_id, target_x, target_y)
+            success, message, turn_changed = engine.move_unit(game_id, player_id, unit_id, target_x, target_y)
         elif action == 'attack':
-            result = engine.attack_unit(unit_id, target_id)
+            success, message, turn_changed = engine.attack_unit(game_id, player_id, unit_id, target_id)
         elif action == 'skip':
-            result = engine.skip_unit(unit_id)
+            success, message, turn_changed = engine.skip_unit(game_id, player_id, unit_id)
         elif action == 'defer':
-            result = engine.defer_unit(unit_id)
+            success, message, turn_changed = engine.defer_unit(game_id, player_id, unit_id)
         else:
             return jsonify({'error': 'Invalid action'}), 400
 
-        if not result.get('success'):
-            return jsonify({'error': result.get('error', 'Action failed')}), 400
+        if not success:
+            return jsonify({'error': message}), 400
 
-        engine.save_to_game(game, session_db)
         session_db.commit()
 
+        # Refresh game to get updated state
+        session_db.refresh(game)
         new_state = GameState.from_game(game, session_db)
         return jsonify({
             'success': True,
-            'result': result,
+            'message': message,
+            'turn_changed': turn_changed,
             'game_state': new_state.to_dict()
         })

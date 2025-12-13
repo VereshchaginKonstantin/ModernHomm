@@ -17,13 +17,18 @@ var players: Array = []
 var current_player: Dictionary = {}  # Текущий залогиненный игрок
 var selected_opponent: Dictionary = {}
 var selected_field_size: String = "5x5"
+var waiting_game_id: int = 0  # ID игры в ожидании
+var waiting_timer: Timer  # Таймер для polling статуса игры
 
 func _ready() -> void:
 	# Подключаем сигналы
 	GameManager.players_loaded.connect(_on_players_loaded)
 	GameManager.current_player_loaded.connect(_on_current_player_loaded)
-	GameManager.game_state_updated.connect(_on_game_started)
+	GameManager.game_state_updated.connect(_on_game_state_updated)
 	GameManager.error_occurred.connect(_on_error)
+
+	# Подключаем сигнал API для обработки создания игры
+	ApiClient.request_completed.connect(_on_api_response)
 
 	# Подключаем UI
 	opponent_select.item_selected.connect(_on_opponent_selected)
@@ -32,6 +37,12 @@ func _ready() -> void:
 	field_10x10.pressed.connect(_on_field_10x10_pressed)
 	start_button.pressed.connect(_on_start_pressed)
 	$VBoxContainer/BackButton.pressed.connect(_on_back_pressed)
+
+	# Создаём таймер для polling статуса игры
+	waiting_timer = Timer.new()
+	waiting_timer.wait_time = 2.0
+	waiting_timer.timeout.connect(_on_waiting_timeout)
+	add_child(waiting_timer)
 
 	# Сначала загружаем текущего пользователя
 	status_label.text = "Загрузка..."
@@ -177,14 +188,55 @@ func _on_start_pressed() -> void:
 		selected_field_size
 	)
 
-func _on_game_started(state: Dictionary) -> void:
-	# Переходим на сцену игры
-	get_tree().change_scene_to_file("res://scenes/game.tscn")
+func _on_api_response(data: Dictionary) -> void:
+	# Обрабатываем ответ на создание игры
+	if data.has("game_id") and data.has("status"):
+		if data.get("status") == "waiting":
+			# Игра создана, ждём принятия
+			waiting_game_id = data.get("game_id")
+			status_label.text = "Ожидание принятия игры противником..."
+			waiting_timer.start()
+		elif data.get("status") == "in_progress":
+			# Игра уже активна, переходим
+			GameManager.current_game_id = data.get("game_id")
+			get_tree().change_scene_to_file("res://scenes/game.tscn")
+
+func _on_waiting_timeout() -> void:
+	# Проверяем статус игры
+	if waiting_game_id > 0:
+		ApiClient.get_game_state(waiting_game_id)
+
+func _on_game_state_updated(state: Dictionary) -> void:
+	var status = state.get("status", "")
+
+	# Если игра в статусе waiting - продолжаем ждать
+	if status == "waiting":
+		status_label.text = "Ожидание принятия игры противником..."
+		return
+
+	# Если игра стала активной - переходим
+	if status == "in_progress":
+		waiting_timer.stop()
+		waiting_game_id = 0
+		GameManager.current_game_id = state.get("game_id", 0)
+		get_tree().change_scene_to_file("res://scenes/game.tscn")
+		return
+
+	# Если игра отменена или завершена
+	if status == "completed" or status == "cancelled":
+		waiting_timer.stop()
+		waiting_game_id = 0
+		status_label.text = "Игра завершена"
+		start_button.disabled = false
 
 func _on_error(message: String) -> void:
 	status_label.text = "Ошибка: " + message
 	start_button.disabled = false
+	waiting_timer.stop()
+	waiting_game_id = 0
 
 func _on_back_pressed() -> void:
+	waiting_timer.stop()
+	waiting_game_id = 0
 	if OS.has_feature("web"):
 		JavaScriptBridge.eval("window.location.href = '/arena/';")
