@@ -661,7 +661,7 @@ def index():
 
         # Получаем текущего игрока для ссылки на Godot арену
         if current_username:
-            current_player = session_db.query(GameUser).filter_by(name=current_username).first()
+            current_player = session_db.query(GameUser).filter_by(username=current_username).first()
 
     return render_template_string(
         ARENA_INDEX_TEMPLATE,
