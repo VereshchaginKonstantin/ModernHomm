@@ -17,8 +17,8 @@ class TestMoraleSystem:
     def test_initial_morale_is_neutral(self, db_session):
         """Тест, что изначальный кураж равен 100 (нейтральный, коэффициент 1.0)"""
         # Создать тестовых пользователей
-        player1 = GameUser(telegram_id=111, name="Player1", balance=Decimal("1000"))
-        player2 = GameUser(telegram_id=222, name="Player2", balance=Decimal("1000"))
+        player1 = GameUser(telegram_id=111, username="Player1", balance=Decimal("1000"))
+        player2 = GameUser(telegram_id=222, username="Player2", balance=Decimal("1000"))
         db_session.add_all([player1, player2])
         db_session.flush()
 
@@ -70,8 +70,8 @@ class TestMoraleSystem:
     def test_morale_increases_when_killing_units(self, db_session):
         """Тест, что кураж повышается до 110 при убийстве юнита"""
         # Создать тестовых пользователей
-        player1 = GameUser(telegram_id=111, name="Player1", balance=Decimal("1000"))
-        player2 = GameUser(telegram_id=222, name="Player2", balance=Decimal("1000"))
+        player1 = GameUser(telegram_id=111, username="Player1", balance=Decimal("1000"))
+        player2 = GameUser(telegram_id=222, username="Player2", balance=Decimal("1000"))
         db_session.add_all([player1, player2])
         db_session.flush()
 
@@ -166,8 +166,8 @@ class TestMoraleSystem:
     def test_morale_decreases_when_losing_units(self, db_session):
         """Тест, что кураж понижается до 90 при потере юнита"""
         # Создать тестовых пользователей
-        player1 = GameUser(telegram_id=111, name="Player1", balance=Decimal("1000"))
-        player2 = GameUser(telegram_id=222, name="Player2", balance=Decimal("1000"))
+        player1 = GameUser(telegram_id=111, username="Player1", balance=Decimal("1000"))
+        player2 = GameUser(telegram_id=222, username="Player2", balance=Decimal("1000"))
         db_session.add_all([player1, player2])
         db_session.flush()
 

@@ -25,8 +25,8 @@ class TestAttackKilledUnitsLogging:
     def test_killed_units_in_attack_log(self, db_session):
         """Тест: количество убитых юнитов записывается в лог атаки"""
         # Создать тестовых пользователей
-        player1 = GameUser(telegram_id=111, name="Player1", balance=Decimal("1000"))
-        player2 = GameUser(telegram_id=222, name="Player2", balance=Decimal("1000"))
+        player1 = GameUser(telegram_id=111, username="Player1", balance=Decimal("1000"))
+        player2 = GameUser(telegram_id=222, username="Player2", balance=Decimal("1000"))
         db_session.add_all([player1, player2])
         db_session.flush()
 
@@ -132,8 +132,8 @@ class TestAttackKilledUnitsLogging:
     def test_killed_units_message_format(self, db_session):
         """Тест: формат сообщения об убитых юнитах соответствует regex на фронтенде"""
         # Создать тестовых пользователей
-        player1 = GameUser(telegram_id=111, name="Player1", balance=Decimal("1000"))
-        player2 = GameUser(telegram_id=222, name="Player2", balance=Decimal("1000"))
+        player1 = GameUser(telegram_id=111, username="Player1", balance=Decimal("1000"))
+        player2 = GameUser(telegram_id=222, username="Player2", balance=Decimal("1000"))
         db_session.add_all([player1, player2])
         db_session.flush()
 
@@ -230,8 +230,8 @@ class TestAttackKilledUnitsLogging:
         """Тест: мертвые юниты удаляются из game_state в логе"""
         import json
 
-        player1 = GameUser(telegram_id=111, name="Player1", balance=Decimal("1000"))
-        player2 = GameUser(telegram_id=222, name="Player2", balance=Decimal("1000"))
+        player1 = GameUser(telegram_id=111, username="Player1", balance=Decimal("1000"))
+        player2 = GameUser(telegram_id=222, username="Player2", balance=Decimal("1000"))
         db_session.add_all([player1, player2])
         db_session.flush()
 
@@ -339,8 +339,8 @@ class TestAttackKilledUnitsLogging:
         """Тест: количество юнитов обновляется в game_state после частичного убийства"""
         import json
 
-        player1 = GameUser(telegram_id=111, name="Player1", balance=Decimal("1000"))
-        player2 = GameUser(telegram_id=222, name="Player2", balance=Decimal("1000"))
+        player1 = GameUser(telegram_id=111, username="Player1", balance=Decimal("1000"))
+        player2 = GameUser(telegram_id=222, username="Player2", balance=Decimal("1000"))
         db_session.add_all([player1, player2])
         db_session.flush()
 
@@ -462,8 +462,8 @@ class TestAttackKilledUnitsLogging:
 
     def test_counterattack_killed_units_in_message(self, db_session):
         """Тест: убитые юниты от контратаки отображаются в сообщении"""
-        player1 = GameUser(telegram_id=111, name="Player1", balance=Decimal("1000"))
-        player2 = GameUser(telegram_id=222, name="Player2", balance=Decimal("1000"))
+        player1 = GameUser(telegram_id=111, username="Player1", balance=Decimal("1000"))
+        player2 = GameUser(telegram_id=222, username="Player2", balance=Decimal("1000"))
         db_session.add_all([player1, player2])
         db_session.flush()
 
@@ -583,8 +583,8 @@ class TestGameStateUnitUpdates:
 
     def test_battle_unit_deleted_when_all_killed(self, db_session):
         """Тест: BattleUnit удаляется из БД когда все юниты убиты"""
-        player1 = GameUser(telegram_id=111, name="Player1", balance=Decimal("1000"))
-        player2 = GameUser(telegram_id=222, name="Player2", balance=Decimal("1000"))
+        player1 = GameUser(telegram_id=111, username="Player1", balance=Decimal("1000"))
+        player2 = GameUser(telegram_id=222, username="Player2", balance=Decimal("1000"))
         db_session.add_all([player1, player2])
         db_session.flush()
 
@@ -677,8 +677,8 @@ class TestGameStateUnitUpdates:
 
     def test_zero_killed_units_shows_zero(self, db_session):
         """Тест: при 0 убитых юнитов (dodge) показывается 'Убито юнитов: 0'"""
-        player1 = GameUser(telegram_id=111, name="Player1", balance=Decimal("1000"))
-        player2 = GameUser(telegram_id=222, name="Player2", balance=Decimal("1000"))
+        player1 = GameUser(telegram_id=111, username="Player1", balance=Decimal("1000"))
+        player2 = GameUser(telegram_id=222, username="Player2", balance=Decimal("1000"))
         db_session.add_all([player1, player2])
         db_session.flush()
 

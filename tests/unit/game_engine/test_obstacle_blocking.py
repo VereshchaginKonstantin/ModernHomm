@@ -18,8 +18,8 @@ class TestObstacleBlockingAndDisplay:
     def test_obstacle_blocks_target(self, db_session):
         """Тест, что препятствие блокирует цель"""
         # Создать тестовых пользователей
-        player1 = GameUser(telegram_id=111, name="Player1", balance=Decimal("1000"))
-        player2 = GameUser(telegram_id=222, name="Player2", balance=Decimal("1000"))
+        player1 = GameUser(telegram_id=111, username="Player1", balance=Decimal("1000"))
+        player2 = GameUser(telegram_id=222, username="Player2", balance=Decimal("1000"))
         db_session.add_all([player1, player2])
         db_session.flush()
 
@@ -100,8 +100,8 @@ class TestObstacleBlockingAndDisplay:
     def test_no_obstacle_allows_target(self, db_session):
         """Тест, что без препятствия цель доступна"""
         # Создать тестовых пользователей
-        player1 = GameUser(telegram_id=333, name="Player3", balance=Decimal("1000"))
-        player2 = GameUser(telegram_id=444, name="Player4", balance=Decimal("1000"))
+        player1 = GameUser(telegram_id=333, username="Player3", balance=Decimal("1000"))
+        player2 = GameUser(telegram_id=444, username="Player4", balance=Decimal("1000"))
         db_session.add_all([player1, player2])
         db_session.flush()
 
@@ -183,8 +183,8 @@ class TestObstacleBlockingAndDisplay:
     def test_obstacle_rendered_on_field(self, db_session):
         """Тест, что препятствие отображается на поле"""
         # Создать тестовых пользователей
-        player1 = GameUser(telegram_id=555, name="Player5", balance=Decimal("1000"))
-        player2 = GameUser(telegram_id=666, name="Player6", balance=Decimal("1000"))
+        player1 = GameUser(telegram_id=555, username="Player5", balance=Decimal("1000"))
+        player2 = GameUser(telegram_id=666, username="Player6", balance=Decimal("1000"))
         db_session.add_all([player1, player2])
         db_session.flush()
 
@@ -242,8 +242,8 @@ class TestObstacleBlockingAndDisplay:
     def test_diagonal_obstacle_blocks_target(self, db_session):
         """Тест, что препятствие блокирует диагональную атаку"""
         # Создать тестовых пользователей
-        player1 = GameUser(telegram_id=777, name="Player7", balance=Decimal("1000"))
-        player2 = GameUser(telegram_id=888, name="Player8", balance=Decimal("1000"))
+        player1 = GameUser(telegram_id=777, username="Player7", balance=Decimal("1000"))
+        player2 = GameUser(telegram_id=888, username="Player8", balance=Decimal("1000"))
         db_session.add_all([player1, player2])
         db_session.flush()
 

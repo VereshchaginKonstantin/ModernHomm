@@ -28,7 +28,7 @@ class TestArmyCostValidation:
     def test_calculate_army_cost_empty(self, db_session):
         """Тест расчета стоимости армии без юнитов"""
         # Создаем игрока без юнитов
-        player = GameUser(telegram_id=5001, name="Бедняк", balance=Decimal("1000"))
+        player = GameUser(telegram_id=5001, username="Бедняк", balance=Decimal("1000"))
         db_session.add(player)
         db_session.flush()
 
@@ -46,7 +46,7 @@ class TestArmyCostValidation:
 
         try:
             # Создаем игрока
-            player = GameUser(telegram_id=5002, name="Воин", balance=Decimal("5000"))
+            player = GameUser(telegram_id=5002, username="Воин", balance=Decimal("5000"))
             db_session.add(player)
             db_session.flush()
 
@@ -112,8 +112,8 @@ class TestArmyCostValidation:
 
         try:
             # Создаем игроков
-            player1 = GameUser(telegram_id=5003, name="Игрок1", balance=Decimal("5000"))
-            player2 = GameUser(telegram_id=5004, name="Игрок2", balance=Decimal("5000"))
+            player1 = GameUser(telegram_id=5003, username="Игрок1", balance=Decimal("5000"))
+            player2 = GameUser(telegram_id=5004, username="Игрок2", balance=Decimal("5000"))
             db_session.add_all([player1, player2])
             db_session.flush()
 
@@ -173,8 +173,8 @@ class TestArmyCostValidation:
 
         try:
             # Создаем игроков
-            player1 = GameUser(telegram_id=5005, name="Игрок3", balance=Decimal("5000"))
-            player2 = GameUser(telegram_id=5006, name="Игрок4", balance=Decimal("5000"))
+            player1 = GameUser(telegram_id=5005, username="Игрок3", balance=Decimal("5000"))
+            player2 = GameUser(telegram_id=5006, username="Игрок4", balance=Decimal("5000"))
             db_session.add_all([player1, player2])
             db_session.flush()
 
@@ -235,8 +235,8 @@ class TestArmyCostValidation:
 
         try:
             # Создаем игроков
-            player1 = GameUser(telegram_id=5007, name="Игрок5", balance=Decimal("5000"))
-            player2 = GameUser(telegram_id=5008, name="Игрок6", balance=Decimal("1000"))
+            player1 = GameUser(telegram_id=5007, username="Игрок5", balance=Decimal("5000"))
+            player2 = GameUser(telegram_id=5008, username="Игрок6", balance=Decimal("1000"))
             db_session.add_all([player1, player2])
             db_session.flush()
 

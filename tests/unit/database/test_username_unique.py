@@ -58,19 +58,16 @@ class TestUsernameUniqueness:
         """Тест: создание пользователя с username"""
         telegram_id = 333333333
         username = "unique_user"
-        name = "Test User"
 
         # Создаем пользователя с username
         game_user, created = db.get_or_create_game_user(
             telegram_id=telegram_id,
-            name=name,
             username=username,
             initial_balance=1500
         )
 
         assert created is True
         assert game_user.username == username
-        assert game_user.name == name
         assert game_user.telegram_id == telegram_id
         assert game_user.balance == 1500
 
@@ -78,12 +75,10 @@ class TestUsernameUniqueness:
         """Тест: получение существующего пользователя по telegram_id"""
         telegram_id = 444444444
         username = "existing_user"
-        name = "Existing User"
 
         # Создаем пользователя
         game_user1, created1 = db.get_or_create_game_user(
             telegram_id=telegram_id,
-            name=name,
             username=username
         )
         assert created1 is True
@@ -91,14 +86,12 @@ class TestUsernameUniqueness:
         # Получаем того же пользователя
         game_user2, created2 = db.get_or_create_game_user(
             telegram_id=telegram_id,
-            name="Different Name",  # Другое имя
             username="different_username"  # Другой username (не будет использован)
         )
 
         assert created2 is False
         assert game_user2.telegram_id == telegram_id
         assert game_user2.username == username  # Username остался прежним
-        assert game_user2.name == name  # Имя тоже
 
     def test_username_with_special_characters(self, db):
         """Тест: username может содержать специальные символы"""
@@ -112,7 +105,6 @@ class TestUsernameUniqueness:
         for idx, username in enumerate(valid_usernames):
             game_user, created = db.get_or_create_game_user(
                 telegram_id=500000000 + idx,
-                name=f"User{idx}",
                 username=username
             )
             assert created is True
@@ -121,17 +113,16 @@ class TestUsernameUniqueness:
     def test_different_users_different_usernames(self, db):
         """Тест: разные пользователи имеют разные username"""
         users_data = [
-            (600000001, "Alice", "alice"),
-            (600000002, "Bob", "bob"),
-            (600000003, "Charlie", "charlie"),
+            (600000001, "alice"),
+            (600000002, "bob"),
+            (600000003, "charlie"),
         ]
 
         # Создаем пользователей
         created_users = []
-        for telegram_id, name, username in users_data:
+        for telegram_id, username in users_data:
             game_user, created = db.get_or_create_game_user(
                 telegram_id=telegram_id,
-                name=name,
                 username=username
             )
             assert created is True

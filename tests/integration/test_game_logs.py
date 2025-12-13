@@ -45,8 +45,8 @@ class TestGameLogs:
                 pytest.skip("No fields in database")
 
             # Создаем игроков
-            player1 = GameUser(telegram_id=111, name="Player1", balance=1000)
-            player2 = GameUser(telegram_id=222, name="Player2", balance=1000)
+            player1 = GameUser(telegram_id=111, username="Player1", balance=1000)
+            player2 = GameUser(telegram_id=222, username="Player2", balance=1000)
             session.add(player1)
             session.add(player2)
             session.flush()
@@ -88,8 +88,8 @@ class TestGameLogs:
             if not field:
                 pytest.skip("No fields in database")
 
-            player1 = GameUser(telegram_id=333, name="LogPlayer1", balance=1000)
-            player2 = GameUser(telegram_id=444, name="LogPlayer2", balance=1000)
+            player1 = GameUser(telegram_id=333, username="LogPlayer1", balance=1000)
+            player2 = GameUser(telegram_id=444, username="LogPlayer2", balance=1000)
             session.add(player1)
             session.add(player2)
             session.flush()
@@ -138,8 +138,8 @@ class TestGameLogs:
             if not field:
                 pytest.skip("No fields in database")
 
-            player1 = GameUser(telegram_id=555, name="EventPlayer1", balance=1000)
-            player2 = GameUser(telegram_id=666, name="EventPlayer2", balance=1000)
+            player1 = GameUser(telegram_id=555, username="EventPlayer1", balance=1000)
+            player2 = GameUser(telegram_id=666, username="EventPlayer2", balance=1000)
             session.add(player1)
             session.add(player2)
             session.flush()
@@ -181,8 +181,8 @@ class TestGameLogs:
             if not field:
                 pytest.skip("No fields in database")
 
-            player1 = GameUser(telegram_id=777, name="TimePlayer1", balance=1000)
-            player2 = GameUser(telegram_id=888, name="TimePlayer2", balance=1000)
+            player1 = GameUser(telegram_id=777, username="TimePlayer1", balance=1000)
+            player2 = GameUser(telegram_id=888, username="TimePlayer2", balance=1000)
             session.add(player1)
             session.add(player2)
             session.flush()
@@ -218,8 +218,8 @@ class TestGameLogs:
             if not field:
                 pytest.skip("No fields in database")
 
-            player1 = GameUser(telegram_id=999, name="MultiLogPlayer1", balance=1000)
-            player2 = GameUser(telegram_id=1000, name="MultiLogPlayer2", balance=1000)
+            player1 = GameUser(telegram_id=999, username="MultiLogPlayer1", balance=1000)
+            player2 = GameUser(telegram_id=1000, username="MultiLogPlayer2", balance=1000)
             session.add(player1)
             session.add(player2)
             session.flush()
@@ -256,8 +256,8 @@ class TestGameLogs:
             if not field:
                 pytest.skip("No fields in database")
 
-            player1 = GameUser(telegram_id=1001, name="OrderPlayer1", balance=1000)
-            player2 = GameUser(telegram_id=1002, name="OrderPlayer2", balance=1000)
+            player1 = GameUser(telegram_id=1001, username="OrderPlayer1", balance=1000)
+            player2 = GameUser(telegram_id=1002, username="OrderPlayer2", balance=1000)
             session.add(player1)
             session.add(player2)
             session.flush()
@@ -303,8 +303,8 @@ class TestGameLogs:
             if not field:
                 pytest.skip("No fields in database")
 
-            player1 = GameUser(telegram_id=1003, name="RelPlayer1", balance=1000)
-            player2 = GameUser(telegram_id=1004, name="RelPlayer2", balance=1000)
+            player1 = GameUser(telegram_id=1003, username="RelPlayer1", balance=1000)
+            player2 = GameUser(telegram_id=1004, username="RelPlayer2", balance=1000)
             session.add(player1)
             session.add(player2)
             session.flush()
@@ -331,8 +331,8 @@ class TestGameLogs:
         with self.db.get_session() as session:
             log = session.query(GameLog).filter_by(id=log_id).first()
             assert log.game is not None
-            assert log.game.player1.name == "RelPlayer1"
-            assert log.game.player2.name == "RelPlayer2"
+            assert log.game.player1.username == "RelPlayer1"
+            assert log.game.player2.username == "RelPlayer2"
 
     def test_delete_game_cascades_to_logs(self):
         """Тест: удаление игры каскадно удаляет логи"""
@@ -341,8 +341,8 @@ class TestGameLogs:
             if not field:
                 pytest.skip("No fields in database")
 
-            player1 = GameUser(telegram_id=1005, name="CascadePlayer1", balance=1000)
-            player2 = GameUser(telegram_id=1006, name="CascadePlayer2", balance=1000)
+            player1 = GameUser(telegram_id=1005, username="CascadePlayer1", balance=1000)
+            player2 = GameUser(telegram_id=1006, username="CascadePlayer2", balance=1000)
             session.add(player1)
             session.add(player2)
             session.flush()
@@ -441,8 +441,8 @@ class TestTurnSwitchLogging:
                 pytest.skip("No units in database")
 
             # Создаем игроков
-            player1 = GameUser(telegram_id=2001, name="TurnPlayer1", username="turnplayer1", balance=1000)
-            player2 = GameUser(telegram_id=2002, name="TurnPlayer2", username="turnplayer2", balance=1000)
+            player1 = GameUser(telegram_id=2001, username="turnplayer1", balance=1000)
+            player2 = GameUser(telegram_id=2002, username="turnplayer2", balance=1000)
             session.add(player1)
             session.add(player2)
             session.flush()
@@ -501,8 +501,8 @@ class TestTurnSwitchLogging:
                 pytest.skip("No units in database")
 
             # Создаем игроков с уникальными именами
-            player1 = GameUser(telegram_id=2003, name="Альфа", username="alpha_user", balance=1000)
-            player2 = GameUser(telegram_id=2004, name="Бета", username="beta_user", balance=1000)
+            player1 = GameUser(telegram_id=2003, username="alpha_user", balance=1000)
+            player2 = GameUser(telegram_id=2004, username="beta_user", balance=1000)
             session.add(player1)
             session.add(player2)
             session.flush()
@@ -551,8 +551,8 @@ class TestTurnSwitchLogging:
                 pytest.skip("No fields in database")
 
             # Создаем тестовую запись лога напрямую
-            player1 = GameUser(telegram_id=2005, name="TestP1", balance=1000)
-            player2 = GameUser(telegram_id=2006, name="TestP2", balance=1000)
+            player1 = GameUser(telegram_id=2005, username="TestP1", balance=1000)
+            player2 = GameUser(telegram_id=2006, username="TestP2", balance=1000)
             session.add(player1)
             session.add(player2)
             session.flush()

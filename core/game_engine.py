@@ -216,7 +216,7 @@ class GameEngine:
         self._generate_obstacles(game)
 
         # Логировать создание игры
-        self._log_event(game.id, "game_created", f"⚔️ Игра создана! {player1.name} вызвал на бой {player2.name}")
+        self._log_event(game.id, "game_created", f"⚔️ Игра создана! {player1.username} вызвал на бой {player2.username}")
 
         self.db.commit()
         return game, f"Игра создана! Ожидание принятия игроком {player2_username}"
@@ -251,7 +251,7 @@ class GameEngine:
         # Логировать начало игры
         player1 = self.db.query(GameUser).filter_by(id=game.player1_id).first()
         player2 = self.db.query(GameUser).filter_by(id=game.player2_id).first()
-        self._log_event(game.id, "game_started", f"🎮 Игра началась! Первый ход: {player1.name}")
+        self._log_event(game.id, "game_started", f"🎮 Игра началась! Первый ход: {player1.username}")
 
         self.db.commit()
         return True, "Игра начата! Ходит первый игрок"
@@ -337,7 +337,7 @@ class GameEngine:
         # Логируем перемещение
         player = self.db.query(GameUser).filter_by(id=player_id).first()
         unit_name = unit.name if unit else "Юнит"
-        self._log_event(game.id, "move", f"🚶 {player.name}: {unit_name} {old_pos} → ({target_x}, {target_y})")
+        self._log_event(game.id, "move", f"🚶 {player.username}: {unit_name} {old_pos} → ({target_x}, {target_y})")
 
         self.db.commit()
 
@@ -567,7 +567,7 @@ class GameEngine:
 
         # Логировать атаку ПЕРЕД завершением игры, чтобы game_ended был последним
         attacker_player = self.db.query(GameUser).filter_by(id=player_id).first()
-        self._log_event(game.id, "attack", f"⚔️ {attacker_player.name}: {combat_log}")
+        self._log_event(game.id, "attack", f"⚔️ {attacker_player.username}: {combat_log}")
 
         # Проверить, все ли юниты игрока мертвы
         turn_switched = False
@@ -731,11 +731,11 @@ class GameEngine:
                 grid[y][x] = f"[{icon}{alive_count}]"
 
         # Собрать поле в строку
-        result = f"Игра #{game.id} - {game.player1.name} vs {game.player2.name}\n"
+        result = f"Игра #{game.id} - {game.player1.username} vs {game.player2.username}\n"
         result += f"Статус: {game.status.value}\n"
 
         if game.status == GameStatus.IN_PROGRESS:
-            current_player = game.player1.name if game.current_player_id == game.player1_id else game.player2.name
+            current_player = game.player1.username if game.current_player_id == game.player1_id else game.player2.username
             result += f"Ход игрока: {current_player}\n"
 
         result += "\n"
@@ -1266,7 +1266,7 @@ class GameEngine:
 
         # Добавить запись в лог о смене хода
         current_player = self.db.query(GameUser).filter_by(id=game.current_player_id).first()
-        player_name = current_player.username or current_player.name if current_player else "Игрок"
+        player_name = current_player.username if current_player else "Игрок"
         self._log_event(game.id, "turn_switch", f"🔄 Ход переходит к {player_name}")
 
     def _check_game_over(self, game: Game) -> Optional[int]:
@@ -1338,7 +1338,7 @@ class GameEngine:
 
         # Получить имя сдавшегося игрока
         loser = self.db.query(GameUser).filter_by(id=loser_id).first()
-        loser_name = loser.name if loser else "Unknown"
+        loser_name = loser.username if loser else "Unknown"
 
         # Если игра еще не началась (WAITING) - просто отменяем без наград и статистики
         if game.status == GameStatus.WAITING:
@@ -1360,7 +1360,7 @@ class GameEngine:
 
         self.db.commit()
 
-        message = f"Вы сдались в игре #{game_id}. Урон юнитов зафиксирован. {winner.name} получил {format_coins(reward)} награды."
+        message = f"Вы сдались в игре #{game_id}. Урон юнитов зафиксирован. {winner.username} получил {format_coins(reward)} награды."
         return True, message, opponent_telegram_id
 
     def _save_battle_units_damage(self, game: Game):
@@ -1416,7 +1416,7 @@ class GameEngine:
         loser_id = game.player1_id if winner_id == game.player2_id else game.player2_id
         loser = self.db.query(GameUser).filter_by(id=loser_id).first()
 
-        logger.info(f"Победитель: {winner.name} (ID: {winner_id}), Проигравший: {loser.name} (ID: {loser_id})")
+        logger.info(f"Победитель: {winner.username} (ID: {winner_id}), Проигравший: {loser.username} (ID: {loser_id})")
 
         # Обновляем статистику
         old_winner_wins = winner.wins
@@ -1464,22 +1464,22 @@ class GameEngine:
         self._save_battle_units_damage(game)
 
         logger.info(f"📊 Статистика обновлена:")
-        logger.info(f"  • {winner.name}: Побед {old_winner_wins} → {winner.wins}, Баланс {old_winner_balance:.2f} → {float(winner.balance):.2f} монет (+{float(reward):.2f})")
-        logger.info(f"  • {loser.name}: Поражений {old_loser_losses} → {loser.losses}")
+        logger.info(f"  • {winner.username}: Побед {old_winner_wins} → {winner.wins}, Баланс {old_winner_balance:.2f} → {float(winner.balance):.2f} монет (+{float(reward):.2f})")
+        logger.info(f"  • {loser.username}: Поражений {old_loser_losses} → {loser.losses}")
         logger.info(f"\n💰 Финансовая статистика:")
         if killed_enemy_details:
-            logger.info(f"  • Убито юнитов противника ({loser.name}): {', '.join(killed_enemy_details)}")
+            logger.info(f"  • Убито юнитов противника ({loser.username}): {', '.join(killed_enemy_details)}")
             logger.info(f"    Общая стоимость: {float(killed_enemy_value):.2f} монет")
         if lost_own_details:
-            logger.info(f"  • Потеряно своих юнитов ({winner.name}): {', '.join(lost_own_details)}")
+            logger.info(f"  • Потеряно своих юнитов ({winner.username}): {', '.join(lost_own_details)}")
             logger.info(f"    Общая стоимость: {float(lost_own_value):.2f} монет")
         logger.info(f"  • Награда (70% от убитых + 100% своих потерь): {float(reward):.2f} монет")
         logger.info(f"  • Чистая прибыль (70% от убитых): {float(net_profit):.2f} монет")
 
         # Логировать завершение игры с полной статистикой
-        game_end_log = f"🏆 Игра завершена! Победитель: {winner.name}\n\n"
+        game_end_log = f"🏆 Игра завершена! Победитель: {winner.username}\n\n"
         game_end_log += f"💰 Финансовая статистика:\n"
-        game_end_log += f"   📦 Убито юнитов {loser.name}: {format_coins(killed_enemy_value)}\n"
+        game_end_log += f"   📦 Убито юнитов {loser.username}: {format_coins(killed_enemy_value)}\n"
         if lost_own_value > 0:
             game_end_log += f"   ⚰️ Потеряно своих юнитов: {format_coins(lost_own_value)}\n"
         game_end_log += f"   💵 Награда (70% + потери): +{format_coins(reward)}"

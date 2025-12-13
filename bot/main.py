@@ -320,8 +320,7 @@ class SimpleBot:
             # Получаем или создаем игрового пользователя
             game_user, created = self.db.get_or_create_game_user(
                 telegram_id=user.id,
-                name=user.username or f"User_{user.id}",
-                username=user.username,
+                username=user.username or f"User_{user.id}",
                 initial_balance=self.get_initial_balance()
             )
 
@@ -1362,8 +1361,8 @@ class SimpleBot:
                     if opponent.wins + opponent.losses > 0:
                         win_rate = (opponent.wins / (opponent.wins + opponent.losses)) * 100
 
-                    # Экранируем HTML-символы в имени
-                    safe_name = html.escape(opponent.name)
+                    # Экранируем HTML-символы в username
+                    safe_name = html.escape(opponent.username)
 
                     response += (
                         f"{i}. {safe_name}\n"
@@ -1374,7 +1373,7 @@ class SimpleBot:
 
                     keyboard.append([
                         InlineKeyboardButton(
-                            f"⚔️ Вызвать {opponent.name}",
+                            f"⚔️ Вызвать {opponent.username}",
                             callback_data=f"challenge_user:{opponent.telegram_id}"
                         )
                     ])
@@ -1633,7 +1632,7 @@ class SimpleBot:
             for game in games[:10]:  # Показываем последние 10
                 opponent_id = game.player2_id if game.player1_id == game_user.id else game.player1_id
                 opponent = self.db.get_game_user_by_id(opponent_id) if opponent_id else None
-                opponent_name = opponent.name if opponent else "Unknown"
+                opponent_name = opponent.username if opponent else "Unknown"
 
                 status_emoji = {"waiting": "⏳", "in_progress": "⚔️", "completed": "✅"}
                 status_text = status_emoji.get(game.status.value, "❓")
@@ -1676,7 +1675,7 @@ class SimpleBot:
         # Получить информацию о противнике
         opponent_id = game.player2_id if game.player1_id == player_id else game.player1_id
         opponent = self.db.get_game_user_by_id(opponent_id)
-        opponent_name = opponent.name if opponent else "Unknown"
+        opponent_name = opponent.username if opponent else "Unknown"
 
         # Получить статус хода
         with self.db.get_session() as session:
@@ -1784,7 +1783,7 @@ class SimpleBot:
                                 parse_mode='HTML'
                             )
                         except Exception as e:
-                            logger.error(f"Ошибка при отправке лога игроку {player.name}: {e}")
+                            logger.error(f"Ошибка при отправке лога игроку {player.username}: {e}")
         except Exception as e:
             logger.error(f"Ошибка при отправке лога обоим игрокам: {e}")
 
@@ -1853,17 +1852,17 @@ class SimpleBot:
         result += "=" * 30 + "\n\n"
 
         # Информация о победителе и проигравшем
-        result += f"👑 <b>Победитель:</b> {html.escape(winner.name)}\n"
-        result += f"💔 <b>Проигравший:</b> {html.escape(loser.name)}\n\n"
+        result += f"👑 <b>Победитель:</b> {html.escape(winner.username)}\n"
+        result += f"💔 <b>Проигравший:</b> {html.escape(loser.username)}\n\n"
 
         # Статистика победителя
-        result += f"📊 <b>Статистика {html.escape(winner.name)}:</b>\n"
+        result += f"📊 <b>Статистика {html.escape(winner.username)}:</b>\n"
         result += f"   💰 Баланс: {format_coins(winner.balance)}\n"
         result += f"   🏆 Побед: {winner.wins}\n"
         result += f"   💔 Поражений: {winner.losses}\n\n"
 
         # Статистика проигравшего
-        result += f"📊 <b>Статистика {html.escape(loser.name)}:</b>\n"
+        result += f"📊 <b>Статистика {html.escape(loser.username)}:</b>\n"
         result += f"   💰 Баланс: {format_coins(loser.balance)}\n"
         result += f"   🏆 Побед: {loser.wins}\n"
         result += f"   💔 Поражений: {loser.losses}\n\n"
@@ -2593,7 +2592,7 @@ class SimpleBot:
                     difference_percent = ((max_cost - min_cost) / min_cost) * 100
 
                 if difference_percent > 50:
-                    safe_opponent_name = html.escape(opponent.name)
+                    safe_opponent_name = html.escape(opponent.username)
                     await query.edit_message_text(
                         f"❌ <b>Невозможно начать бой с {safe_opponent_name}!</b>\n\n"
                         f"Разница в стоимости армий слишком большая ({difference_percent:.0f}%).\n\n"
@@ -2608,7 +2607,7 @@ class SimpleBot:
             # Создание игры через игровой движок (по имени)
             with self.db.get_session() as session:
                 engine = GameEngine(session)
-                game, message = engine.create_game(game_user.id, opponent.name)
+                game, message = engine.create_game(game_user.id, opponent.username)
 
                 # Сохраняем ID игры внутри сессии
                 game_id = game.id if game else None
@@ -2694,7 +2693,7 @@ class SimpleBot:
             from db.models import GameStatus
             if game.status == GameStatus.COMPLETED:
                 winner = self.db.get_game_user_by_id(game.winner_id)
-                winner_name = winner.name if winner else "Unknown"
+                winner_name = winner.username if winner else "Unknown"
                 result_text = f"🏆 Игра #{game_id} завершена!\n\nПобедитель: {winner_name}"
                 await self._edit_message_universal(
                     query,
@@ -2707,7 +2706,7 @@ class SimpleBot:
             # Получить информацию об игре
             opponent_id = game.player2_id if game.player1_id == game_user.id else game.player1_id
             opponent = self.db.get_game_user_by_id(opponent_id)
-            opponent_name = opponent.name if opponent else "Unknown"
+            opponent_name = opponent.username if opponent else "Unknown"
 
             # Получить действия
             with self.db.get_session() as session:
@@ -2947,7 +2946,7 @@ class SimpleBot:
             for game in active_games:
                 opponent_id = game.player2_id if game.player1_id == game_user.id else game.player1_id
                 opponent = self.db.get_game_user_by_id(opponent_id) if opponent_id else None
-                opponent_name = opponent.name if opponent else "Unknown"
+                opponent_name = opponent.username if opponent else "Unknown"
 
                 status_emoji = {"waiting": "⏳", "in_progress": "⚔️"}
                 status_text = status_emoji.get(game.status.value, "❓")
@@ -3034,7 +3033,7 @@ class SimpleBot:
                 if opponent and opponent.telegram_id:
                     try:
                         # Получаем имя принявшего игру
-                        accepter_name = game_user.username or game_user.name or "Противник"
+                        accepter_name = game_user.username or "Противник"
 
                         # Отправляем текстовое уведомление создателю игры
                         notification_keyboard = InlineKeyboardMarkup([
@@ -3096,9 +3095,9 @@ class SimpleBot:
             opponent_units = self.db.get_user_units_by_game_user_id(opponent_id)
 
             if not opponent_units or len(opponent_units) == 0:
-                details_text = f"📊 <b>Армия {html.escape(opponent.name)}</b>\n\nУ противника нет юнитов!"
+                details_text = f"📊 <b>Армия {html.escape(opponent.username)}</b>\n\nУ противника нет юнитов!"
             else:
-                details_text = f"📊 <b>Армия {html.escape(opponent.name)}</b>\n\n"
+                details_text = f"📊 <b>Армия {html.escape(opponent.username)}</b>\n\n"
                 total_cost = Decimal('0')
 
                 for user_unit in opponent_units:
@@ -3237,7 +3236,7 @@ class SimpleBot:
                 if opponent and opponent.telegram_id:
                     try:
                         # Получаем имя принявшего игру
-                        accepter_name = game_user.username or game_user.name or "Противник"
+                        accepter_name = game_user.username or "Противник"
 
                         # Отправляем текстовое уведомление создателю игры
                         notification_keyboard = InlineKeyboardMarkup([
@@ -3562,8 +3561,7 @@ class SimpleBot:
                 # Автоматически создаем игровой профиль при первом сообщении
                 game_user, created = self.db.get_or_create_game_user(
                     telegram_id=user.id,
-                    name=user.username or f"User_{user.id}",
-                    username=user.username,
+                    username=user.username or f"User_{user.id}",
                     initial_balance=self.get_initial_balance()
                 )
                 logger.info(f"Создан игровой профиль для пользователя {user.id}")
@@ -3641,7 +3639,7 @@ class SimpleBot:
                     from db.models import GameUser
 
                     # Получить всех пользователей
-                    all_users = session.query(GameUser).order_by(GameUser.name).all()
+                    all_users = session.query(GameUser).order_by(GameUser.username).all()
 
                     if not all_users:
                         await update.message.reply_text(
@@ -3656,7 +3654,7 @@ class SimpleBot:
                     # Создаем кнопки для каждого пользователя
                     keyboard = []
                     for i, player in enumerate(all_users, 1):
-                        safe_name = html.escape(player.name)
+                        safe_name = html.escape(player.username)
 
                         response += (
                             f"{i}. {safe_name}\n"
@@ -3666,7 +3664,7 @@ class SimpleBot:
 
                         keyboard.append([
                             InlineKeyboardButton(
-                                f"💰 {player.name} ({format_coins(player.balance)})",
+                                f"💰 {player.username} ({format_coins(player.balance)})",
                                 callback_data=f"addmoney_user:{player.telegram_id}"
                             )
                         ])
@@ -3718,7 +3716,7 @@ class SimpleBot:
             from db.models import GameUser
             from decimal import Decimal
 
-            target_user = session.query(GameUser).filter(GameUser.name == target_name).first()
+            target_user = session.query(GameUser).filter(GameUser.username == target_name).first()
 
             if not target_user:
                 await update.message.reply_text(
@@ -3771,7 +3769,7 @@ class SimpleBot:
                 return
 
             # Экранируем имя
-            safe_name = html.escape(target_user.name)
+            safe_name = html.escape(target_user.username)
 
             # Формируем кнопки с суммами
             keyboard = [
@@ -3839,7 +3837,7 @@ class SimpleBot:
             session.commit()
 
             # Экранируем имя
-            safe_name = html.escape(target_user.name)
+            safe_name = html.escape(target_user.username)
 
             # Отправить подтверждение
             await query.edit_message_text(
@@ -3850,7 +3848,7 @@ class SimpleBot:
                 parse_mode=self.parse_mode
             )
 
-            logger.info(f"Администратор {username} добавил {amount} монет игроку {target_user.name} (ID: {target_telegram_id})")
+            logger.info(f"Администратор {username} добавил {amount} монет игроку {target_user.username} (ID: {target_telegram_id})")
 
     async def addmoney_back_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Обработчик кнопки 'Назад' в addmoney"""
@@ -3866,7 +3864,7 @@ class SimpleBot:
         with self.db.get_session() as session:
             from db.models import GameUser
 
-            all_users = session.query(GameUser).order_by(GameUser.name).all()
+            all_users = session.query(GameUser).order_by(GameUser.username).all()
 
             if not all_users:
                 await query.edit_message_text("❌ В базе данных нет игроков.")
@@ -3876,7 +3874,7 @@ class SimpleBot:
 
             keyboard = []
             for i, player in enumerate(all_users, 1):
-                safe_name = html.escape(player.name)
+                safe_name = html.escape(player.username)
 
                 response += (
                     f"{i}. {safe_name}\n"
@@ -3886,7 +3884,7 @@ class SimpleBot:
 
                 keyboard.append([
                     InlineKeyboardButton(
-                        f"💰 {player.name} ({format_coins(player.balance)})",
+                        f"💰 {player.username} ({format_coins(player.balance)})",
                         callback_data=f"addmoney_user:{player.telegram_id}"
                     )
                 ])

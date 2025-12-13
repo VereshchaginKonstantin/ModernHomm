@@ -17,8 +17,8 @@ class TestDodgeSystem:
     def test_unit_with_zero_dodge_never_dodges(self, db_session):
         """Тест, что юнит с dodge_chance=0 никогда не уклоняется"""
         # Создать тестовых пользователей
-        player1 = GameUser(telegram_id=111, name="Player1", balance=Decimal("1000"))
-        player2 = GameUser(telegram_id=222, name="Player2", balance=Decimal("1000"))
+        player1 = GameUser(telegram_id=111, username="Player1", balance=Decimal("1000"))
+        player2 = GameUser(telegram_id=222, username="Player2", balance=Decimal("1000"))
         db_session.add_all([player1, player2])
         db_session.flush()
 
@@ -111,8 +111,8 @@ class TestDodgeSystem:
     def test_unit_with_perfect_dodge_always_dodges(self, db_session):
         """Тест, что юнит с dodge_chance=1 всегда уклоняется"""
         # Создать тестовых пользователей
-        player1 = GameUser(telegram_id=111, name="Player1", balance=Decimal("1000"))
-        player2 = GameUser(telegram_id=222, name="Player2", balance=Decimal("1000"))
+        player1 = GameUser(telegram_id=111, username="Player1", balance=Decimal("1000"))
+        player2 = GameUser(telegram_id=222, username="Player2", balance=Decimal("1000"))
         db_session.add_all([player1, player2])
         db_session.flush()
 
@@ -222,8 +222,8 @@ class TestDodgeSystem:
     def test_dodged_attack_deals_zero_damage(self, db_session):
         """Тест, что при уклонении урон равен 0"""
         # Создать тестовых пользователей
-        player1 = GameUser(telegram_id=111, name="Player1", balance=Decimal("1000"))
-        player2 = GameUser(telegram_id=222, name="Player2", balance=Decimal("1000"))
+        player1 = GameUser(telegram_id=111, username="Player1", balance=Decimal("1000"))
+        player2 = GameUser(telegram_id=222, username="Player2", balance=Decimal("1000"))
         db_session.add_all([player1, player2])
         db_session.flush()
 
@@ -334,8 +334,8 @@ class TestDodgeSystem:
     def test_dodge_log_message(self, db_session):
         """Тест, что лог содержит информацию об уклонении"""
         # Создать тестовых пользователей
-        player1 = GameUser(telegram_id=111, name="Player1", balance=Decimal("1000"))
-        player2 = GameUser(telegram_id=222, name="Player2", balance=Decimal("1000"))
+        player1 = GameUser(telegram_id=111, username="Player1", balance=Decimal("1000"))
+        player2 = GameUser(telegram_id=222, username="Player2", balance=Decimal("1000"))
         db_session.add_all([player1, player2])
         db_session.flush()
 

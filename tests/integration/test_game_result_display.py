@@ -149,14 +149,14 @@ def setup_test_database(db_session):
     # Создать двух игроков
     player1 = GameUser(
         telegram_id=111,
-        name="Player1",
+        username="Player1",
         balance=Decimal('1000.00'),
         wins=0,
         losses=0
     )
     player2 = GameUser(
         telegram_id=222,
-        name="Player2",
+        username="Player2",
         balance=Decimal('1000.00'),
         wins=0,
         losses=0
@@ -227,7 +227,7 @@ async def test_game_completion_sends_results_to_both_players(test_config, db_ses
     # Создать игру через GameEngine
     with test_db.get_session() as session:
         engine = GameEngine(session)
-        game, msg = engine.create_game(player1.id, player2.name, "5x5")
+        game, msg = engine.create_game(player1.id, player2.username, "5x5")
         assert game is not None, f"Ошибка создания игры: {msg}"
         game_id = game.id
 
@@ -358,7 +358,7 @@ async def test_game_completion_updates_statistics(test_config, db_session, setup
     # Создать игру
     with test_db.get_session() as session:
         engine = GameEngine(session)
-        game, msg = engine.create_game(player1.id, player2.name, "5x5")
+        game, msg = engine.create_game(player1.id, player2.username, "5x5")
         assert game is not None, f"Ошибка создания игры: {msg}"
         game_id = game.id
         engine.accept_game(game_id, player2.id)
@@ -424,7 +424,7 @@ async def test_game_completion_clears_game_field_buttons(test_config, db_session
     # Создать и завершить игру
     with test_db.get_session() as session:
         engine = GameEngine(session)
-        game, msg = engine.create_game(player1.id, player2.name, "5x5")
+        game, msg = engine.create_game(player1.id, player2.username, "5x5")
         assert game is not None, f"Ошибка создания игры: {msg}"
         game_id = game.id
         engine.accept_game(game_id, player2.id)

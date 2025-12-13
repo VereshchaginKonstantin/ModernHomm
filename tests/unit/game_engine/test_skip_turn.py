@@ -17,8 +17,8 @@ class TestSkipTurn:
     def test_skip_unit_turn(self, db_session):
         """Тест, что можно пропустить ход юнита"""
         # Создать тестовых пользователей
-        player1 = GameUser(telegram_id=111, name="Player1", balance=Decimal("1000"))
-        player2 = GameUser(telegram_id=222, name="Player2", balance=Decimal("1000"))
+        player1 = GameUser(telegram_id=111, username="Player1", balance=Decimal("1000"))
+        player2 = GameUser(telegram_id=222, username="Player2", balance=Decimal("1000"))
         db_session.add_all([player1, player2])
         db_session.flush()
 
@@ -128,8 +128,8 @@ class TestSkipTurn:
     def test_skip_already_moved_unit(self, db_session):
         """Тест, что нельзя пропустить ход юнита, который уже ходил"""
         # Создать тестовых пользователей
-        player1 = GameUser(telegram_id=333, name="Player3", balance=Decimal("1000"))
-        player2 = GameUser(telegram_id=444, name="Player4", balance=Decimal("1000"))
+        player1 = GameUser(telegram_id=333, username="Player3", balance=Decimal("1000"))
+        player2 = GameUser(telegram_id=444, username="Player4", balance=Decimal("1000"))
         db_session.add_all([player1, player2])
         db_session.flush()
 
@@ -215,8 +215,8 @@ class TestSkipTurn:
     def test_skip_wrong_player_unit(self, db_session):
         """Тест, что нельзя пропустить ход чужого юнита"""
         # Создать тестовых пользователей
-        player1 = GameUser(telegram_id=555, name="Player5", balance=Decimal("1000"))
-        player2 = GameUser(telegram_id=666, name="Player6", balance=Decimal("1000"))
+        player1 = GameUser(telegram_id=555, username="Player5", balance=Decimal("1000"))
+        player2 = GameUser(telegram_id=666, username="Player6", balance=Decimal("1000"))
         db_session.add_all([player1, player2])
         db_session.flush()
 

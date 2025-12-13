@@ -585,7 +585,7 @@ def leaderboard():
         players_data = []
         for player in players:
             _ = player.id
-            _ = player.name
+            _ = player.username
             _ = player.wins
             _ = player.losses
             _ = player.balance
@@ -604,7 +604,7 @@ def leaderboard():
 
             players_data.append({
                 'rank': offset + len(players_data) + 1,
-                'name': player.name,
+                'name': player.username,
                 'wins': player.wins,
                 'losses': player.losses,
                 'win_rate': win_rate,

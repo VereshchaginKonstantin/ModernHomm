@@ -71,8 +71,8 @@ class TestArenaAPI:
             session.commit()
 
         # Создаем игроков
-        player1 = GameUser(telegram_id=1001, name="ArenaPlayer1", balance=Decimal("1000"))
-        player2 = GameUser(telegram_id=1002, name="ArenaPlayer2", balance=Decimal("1000"))
+        player1 = GameUser(telegram_id=1001, username="ArenaPlayer1", balance=Decimal("1000"))
+        player2 = GameUser(telegram_id=1002, username="ArenaPlayer2", balance=Decimal("1000"))
         session.add(player1)
         session.add(player2)
         session.flush()
@@ -92,7 +92,7 @@ class TestArenaAPI:
             player1, player2 = self._create_test_players_with_units(session)
 
             engine = GameEngine(session)
-            game, message = engine.create_game(player1.id, player2.name, "5x5")
+            game, message = engine.create_game(player1.id, player2.username, "5x5")
 
             assert game is not None
             assert game.player1_id == player1.id
@@ -105,7 +105,7 @@ class TestArenaAPI:
             player1, player2 = self._create_test_players_with_units(session)
 
             engine = GameEngine(session)
-            game, _ = engine.create_game(player1.id, player2.name, "5x5")
+            game, _ = engine.create_game(player1.id, player2.username, "5x5")
 
             success, message = engine.accept_game(game.id, player2.id)
 
@@ -119,7 +119,7 @@ class TestArenaAPI:
             player1, player2 = self._create_test_players_with_units(session)
 
             engine = GameEngine(session)
-            game, _ = engine.create_game(player1.id, player2.name, "5x5")
+            game, _ = engine.create_game(player1.id, player2.username, "5x5")
             engine.accept_game(game.id, player2.id)
 
             # Проверяем что юниты созданы на поле
@@ -137,7 +137,7 @@ class TestArenaAPI:
             player1, player2 = self._create_test_players_with_units(session)
 
             engine = GameEngine(session)
-            game, _ = engine.create_game(player1.id, player2.name, "5x5")
+            game, _ = engine.create_game(player1.id, player2.username, "5x5")
             engine.accept_game(game.id, player2.id)
 
             # Находим юнит текущего игрока
@@ -176,7 +176,7 @@ class TestArenaAPI:
             player1, player2 = self._create_test_players_with_units(session)
 
             engine = GameEngine(session)
-            game, _ = engine.create_game(player1.id, player2.name, "5x5")
+            game, _ = engine.create_game(player1.id, player2.username, "5x5")
             engine.accept_game(game.id, player2.id)
 
             current_player_id = game.current_player_id
@@ -235,7 +235,7 @@ class TestArenaAPI:
             player1, player2 = self._create_test_players_with_units(session)
 
             engine = GameEngine(session)
-            game, _ = engine.create_game(player1.id, player2.name, "5x5")
+            game, _ = engine.create_game(player1.id, player2.username, "5x5")
             engine.accept_game(game.id, player2.id)
 
             # Проверяем что логи созданы
@@ -288,8 +288,8 @@ class TestArenaTelegramSync:
             u.image_path = os.path.abspath(__file__)
         session.commit()
 
-        player1 = GameUser(telegram_id=2001, name="SyncPlayer1", balance=Decimal("1000"))
-        player2 = GameUser(telegram_id=2002, name="SyncPlayer2", balance=Decimal("1000"))
+        player1 = GameUser(telegram_id=2001, username="SyncPlayer1", balance=Decimal("1000"))
+        player2 = GameUser(telegram_id=2002, username="SyncPlayer2", balance=Decimal("1000"))
         session.add(player1)
         session.add(player2)
         session.flush()
@@ -309,7 +309,7 @@ class TestArenaTelegramSync:
 
             # Симулируем Web: создаем игру
             web_engine = GameEngine(session)
-            game, _ = web_engine.create_game(player1.id, player2.name, "5x5")
+            game, _ = web_engine.create_game(player1.id, player2.username, "5x5")
             web_engine.accept_game(game.id, player2.id)
 
             game_id = game.id
@@ -353,7 +353,7 @@ class TestArenaTelegramSync:
             player1, player2 = self._create_test_players_with_units(session)
 
             engine = GameEngine(session)
-            game, _ = engine.create_game(player1.id, player2.name, "5x5")
+            game, _ = engine.create_game(player1.id, player2.username, "5x5")
             engine.accept_game(game.id, player2.id)
 
             game_id = game.id
@@ -448,8 +448,8 @@ class TestTelegramNotifications:
                 u.image_path = os.path.abspath(__file__)
             session.commit()
 
-            player1 = GameUser(telegram_id=3001, name="DataPlayer1", balance=Decimal("1000"))
-            player2 = GameUser(telegram_id=3002, name="DataPlayer2", balance=Decimal("1000"))
+            player1 = GameUser(telegram_id=3001, username="DataPlayer1", balance=Decimal("1000"))
+            player2 = GameUser(telegram_id=3002, username="DataPlayer2", balance=Decimal("1000"))
             session.add(player1)
             session.add(player2)
             session.flush()
@@ -461,7 +461,7 @@ class TestTelegramNotifications:
             session.commit()
 
             engine = GameEngine(session)
-            game, _ = engine.create_game(player1.id, player2.name, "5x5")
+            game, _ = engine.create_game(player1.id, player2.username, "5x5")
             engine.accept_game(game.id, player2.id)
             game_id = game.id
 
@@ -527,8 +527,8 @@ class TestArenaAPIEndpoints:
                 u.image_path = os.path.abspath(__file__)
             session.commit()
 
-            player1 = GameUser(telegram_id=4001, name="ActionPlayer1", balance=Decimal("1000"))
-            player2 = GameUser(telegram_id=4002, name="ActionPlayer2", balance=Decimal("1000"))
+            player1 = GameUser(telegram_id=4001, username="ActionPlayer1", balance=Decimal("1000"))
+            player2 = GameUser(telegram_id=4002, username="ActionPlayer2", balance=Decimal("1000"))
             session.add(player1)
             session.add(player2)
             session.flush()
@@ -540,7 +540,7 @@ class TestArenaAPIEndpoints:
             session.commit()
 
             engine = GameEngine(session)
-            game, _ = engine.create_game(player1.id, player2.name, "5x5")
+            game, _ = engine.create_game(player1.id, player2.username, "5x5")
             engine.accept_game(game.id, player2.id)
 
             # Находим юнит текущего игрока
@@ -575,8 +575,8 @@ class TestArenaAPIEndpoints:
                 u.image_path = os.path.abspath(__file__)
             session.commit()
 
-            player1 = GameUser(telegram_id=5001, name="MovePlayer1", balance=Decimal("1000"))
-            player2 = GameUser(telegram_id=5002, name="MovePlayer2", balance=Decimal("1000"))
+            player1 = GameUser(telegram_id=5001, username="MovePlayer1", balance=Decimal("1000"))
+            player2 = GameUser(telegram_id=5002, username="MovePlayer2", balance=Decimal("1000"))
             session.add(player1)
             session.add(player2)
             session.flush()
@@ -588,7 +588,7 @@ class TestArenaAPIEndpoints:
             session.commit()
 
             engine = GameEngine(session)
-            game, _ = engine.create_game(player1.id, player2.name, "5x5")
+            game, _ = engine.create_game(player1.id, player2.username, "5x5")
             engine.accept_game(game.id, player2.id)
 
             current_player_id = game.current_player_id
@@ -663,8 +663,8 @@ class TestActiveGameButton:
             u.image_path = os.path.abspath(__file__)
         session.commit()
 
-        player1 = GameUser(telegram_id=6001, name="ActiveGamePlayer1", balance=Decimal("1000"))
-        player2 = GameUser(telegram_id=6002, name="ActiveGamePlayer2", balance=Decimal("1000"))
+        player1 = GameUser(telegram_id=6001, username="ActiveGamePlayer1", balance=Decimal("1000"))
+        player2 = GameUser(telegram_id=6002, username="ActiveGamePlayer2", balance=Decimal("1000"))
         session.add(player1)
         session.add(player2)
         session.flush()
@@ -691,7 +691,7 @@ class TestActiveGameButton:
             assert active_games_count == 0
 
             # Создаем игру
-            game, _ = engine.create_game(player1.id, player2.name, "5x5")
+            game, _ = engine.create_game(player1.id, player2.username, "5x5")
             assert game.status == GameStatus.WAITING
 
             # Принимаем игру - теперь она активна
@@ -716,7 +716,7 @@ class TestActiveGameButton:
             engine = GameEngine(session)
 
             # Создаем игру но не принимаем её
-            game, _ = engine.create_game(player1.id, player2.name, "5x5")
+            game, _ = engine.create_game(player1.id, player2.username, "5x5")
             assert game.status == GameStatus.WAITING
 
             # Проверяем что активных игр нет
@@ -734,7 +734,7 @@ class TestActiveGameButton:
             player1, player2 = self._create_test_players_with_units(session)
 
             engine = GameEngine(session)
-            game, _ = engine.create_game(player1.id, player2.name, "5x5")
+            game, _ = engine.create_game(player1.id, player2.username, "5x5")
             engine.accept_game(game.id, player2.id)
 
             game_id = game.id
@@ -765,7 +765,7 @@ class TestActiveGameButton:
             player1, player2 = self._create_test_players_with_units(session)
 
             engine = GameEngine(session)
-            game, _ = engine.create_game(player1.id, player2.name, "5x5")
+            game, _ = engine.create_game(player1.id, player2.username, "5x5")
             engine.accept_game(game.id, player2.id)
 
             game_id = game.id
@@ -880,7 +880,7 @@ class TestOpponentSelectionLogic:
             session.query(UserUnit).delete()
             # Удаляем тестовых игроков с нашим префиксом
             session.query(GameUser).filter(
-                GameUser.name.like(f"{self.test_prefix}%")
+                GameUser.username.like(f"{self.test_prefix}%")
             ).delete(synchronize_session=False)
             session.commit()
 
@@ -893,7 +893,7 @@ class TestOpponentSelectionLogic:
             session.query(Game).delete()
             session.query(UserUnit).delete()
             session.query(GameUser).filter(
-                GameUser.name.like(f"{self.test_prefix}%")
+                GameUser.username.like(f"{self.test_prefix}%")
             ).delete(synchronize_session=False)
             session.commit()
 
@@ -907,7 +907,6 @@ class TestOpponentSelectionLogic:
             # Создаем игрока с уникальным именем и username
             player = GameUser(
                 telegram_id=7001,
-                name=f"{self.test_prefix}_Player1",
                 username=f"{self.test_prefix}_user1",
                 balance=Decimal("1000")
             )
@@ -938,7 +937,6 @@ class TestOpponentSelectionLogic:
 
             player = GameUser(
                 telegram_id=7002,
-                name=f"{self.test_prefix}_Player2",
                 username=f"{self.test_prefix}_user2",
                 balance=Decimal("1500")
             )
@@ -970,13 +968,11 @@ class TestOpponentSelectionLogic:
             # Создаем двух игроков
             player1 = GameUser(
                 telegram_id=7003,
-                name=f"{self.test_prefix}_Player3",
                 username=f"{self.test_prefix}_user3",
                 balance=Decimal("1000")
             )
             player2 = GameUser(
                 telegram_id=7004,
-                name=f"{self.test_prefix}_Player4",
                 username=f"{self.test_prefix}_user4",
                 balance=Decimal("1000")
             )
@@ -1015,7 +1011,6 @@ class TestOpponentSelectionLogic:
 
             player1 = GameUser(
                 telegram_id=7005,
-                name=f"{self.test_prefix}_Player5",
                 username=f"{self.test_prefix}_user5",
                 balance=Decimal("1000"),
                 wins=5,
@@ -1023,7 +1018,6 @@ class TestOpponentSelectionLogic:
             )
             player2 = GameUser(
                 telegram_id=7006,
-                name=f"{self.test_prefix}_Player6",
                 username=f"{self.test_prefix}_user6",
                 balance=Decimal("1000"),
                 wins=2,
@@ -1066,7 +1060,7 @@ class TestPlayFormHiddenPlayerField:
             session.query(Game).delete()
             session.query(UserUnit).delete()
             session.query(GameUser).filter(
-                GameUser.name.like(f"{self.test_prefix}%")
+                GameUser.username.like(f"{self.test_prefix}%")
             ).delete(synchronize_session=False)
             session.commit()
 
@@ -1079,7 +1073,7 @@ class TestPlayFormHiddenPlayerField:
             session.query(Game).delete()
             session.query(UserUnit).delete()
             session.query(GameUser).filter(
-                GameUser.name.like(f"{self.test_prefix}%")
+                GameUser.username.like(f"{self.test_prefix}%")
             ).delete(synchronize_session=False)
             session.commit()
 
@@ -1092,7 +1086,6 @@ class TestPlayFormHiddenPlayerField:
 
             player = GameUser(
                 telegram_id=8001,
-                name=f"{self.test_prefix}_Player1",
                 username=f"{self.test_prefix}_user1",
                 balance=Decimal("2500"),
                 wins=10,
@@ -1130,7 +1123,6 @@ class TestPlayFormHiddenPlayerField:
 
             player = GameUser(
                 telegram_id=8002,
-                name=f"{self.test_prefix}_FirstName",
                 username=f"{self.test_prefix}_testusername",
                 balance=Decimal("1000")
             )
@@ -1164,7 +1156,7 @@ class TestGameStateAPI:
             session.query(Game).delete()
             session.query(UserUnit).delete()
             session.query(GameUser).filter(
-                GameUser.name.like(f"{self.test_prefix}%")
+                GameUser.username.like(f"{self.test_prefix}%")
             ).delete(synchronize_session=False)
             session.commit()
 
@@ -1177,7 +1169,7 @@ class TestGameStateAPI:
             session.query(Game).delete()
             session.query(UserUnit).delete()
             session.query(GameUser).filter(
-                GameUser.name.like(f"{self.test_prefix}%")
+                GameUser.username.like(f"{self.test_prefix}%")
             ).delete(synchronize_session=False)
             session.commit()
 
@@ -1196,13 +1188,11 @@ class TestGameStateAPI:
         # Создаем игроков с username
         player1 = GameUser(
             telegram_id=9001,
-            name=f"{self.test_prefix}_Player1Name",
             username=f"{self.test_prefix}_player1",
             balance=Decimal("1000")
         )
         player2 = GameUser(
             telegram_id=9002,
-            name=f"{self.test_prefix}_Player2Name",
             username=f"{self.test_prefix}_player2",
             balance=Decimal("1000")
         )
@@ -1224,7 +1214,7 @@ class TestGameStateAPI:
             player1, player2 = self._create_test_players_with_units(session)
 
             engine = GameEngine(session)
-            game, _ = engine.create_game(player1.id, player2.name, "5x5")
+            game, _ = engine.create_game(player1.id, player2.username, "5x5")
             engine.accept_game(game.id, player2.id)
 
             # Проверяем что player1_id и player2_id корректны
@@ -1238,7 +1228,7 @@ class TestGameStateAPI:
             player1, player2 = self._create_test_players_with_units(session)
 
             engine = GameEngine(session)
-            game, _ = engine.create_game(player1.id, player2.name, "5x5")
+            game, _ = engine.create_game(player1.id, player2.username, "5x5")
             engine.accept_game(game.id, player2.id)
 
             # Первый игрок ходит первым
@@ -1250,7 +1240,7 @@ class TestGameStateAPI:
             player1, player2 = self._create_test_players_with_units(session)
 
             engine = GameEngine(session)
-            game, _ = engine.create_game(player1.id, player2.name, "5x5")
+            game, _ = engine.create_game(player1.id, player2.username, "5x5")
             engine.accept_game(game.id, player2.id)
 
             initial_player = game.current_player_id
@@ -1277,7 +1267,7 @@ class TestGameStateAPI:
             player1, player2 = self._create_test_players_with_units(session)
 
             engine = GameEngine(session)
-            game, _ = engine.create_game(player1.id, player2.name, "5x5")
+            game, _ = engine.create_game(player1.id, player2.username, "5x5")
             engine.accept_game(game.id, player2.id)
 
             game_id = game.id
@@ -1296,8 +1286,8 @@ class TestGameStateAPI:
                 p1 = session.query(GameUser).filter_by(id=game.player1_id).first()
                 p2 = session.query(GameUser).filter_by(id=game.player2_id).first()
 
-                player1_name = (p1.username or p1.name) if p1 else 'Игрок 1'
-                player2_name = (p2.username or p2.name) if p2 else 'Игрок 2'
+                player1_name = p1.username if p1 else 'Игрок 1'
+                player2_name = p2.username if p2 else 'Игрок 2'
 
                 # Проверяем что username используется если есть
                 assert player1_name == f"{self.test_prefix}_player1"
@@ -1311,7 +1301,7 @@ class TestGameStateAPI:
             player1, player2 = self._create_test_players_with_units(session)
 
             engine = GameEngine(session)
-            game, _ = engine.create_game(player1.id, player2.name, "5x5")
+            game, _ = engine.create_game(player1.id, player2.username, "5x5")
             engine.accept_game(game.id, player2.id)
 
             # Логика из JavaScript: current_player_id === player1_id -> показать p1-turn
@@ -1330,7 +1320,7 @@ class TestGameStateAPI:
             player1, player2 = self._create_test_players_with_units(session)
 
             engine = GameEngine(session)
-            game, _ = engine.create_game(player1.id, player2.name, "5x5")
+            game, _ = engine.create_game(player1.id, player2.username, "5x5")
             engine.accept_game(game.id, player2.id)
 
             # Получаем юнитов как это делает API
@@ -1367,7 +1357,7 @@ class TestUnitActionsAPI:
             session.query(Game).delete()
             session.query(UserUnit).delete()
             session.query(GameUser).filter(
-                GameUser.name.like(f"{self.test_prefix}%")
+                GameUser.username.like(f"{self.test_prefix}%")
             ).delete(synchronize_session=False)
             session.commit()
 
@@ -1380,7 +1370,7 @@ class TestUnitActionsAPI:
             session.query(Game).delete()
             session.query(UserUnit).delete()
             session.query(GameUser).filter(
-                GameUser.name.like(f"{self.test_prefix}%")
+                GameUser.username.like(f"{self.test_prefix}%")
             ).delete(synchronize_session=False)
             session.commit()
 
@@ -1398,13 +1388,11 @@ class TestUnitActionsAPI:
 
         player1 = GameUser(
             telegram_id=10001,
-            name=f"{self.test_prefix}_Player1",
             username=f"{self.test_prefix}_player1",
             balance=Decimal("1000")
         )
         player2 = GameUser(
             telegram_id=10002,
-            name=f"{self.test_prefix}_Player2",
             username=f"{self.test_prefix}_player2",
             balance=Decimal("1000")
         )
@@ -1426,7 +1414,7 @@ class TestUnitActionsAPI:
             player1, player2 = self._create_test_players_with_units(session)
 
             engine = GameEngine(session)
-            game, _ = engine.create_game(player1.id, player2.name, "5x5")
+            game, _ = engine.create_game(player1.id, player2.username, "5x5")
             engine.accept_game(game.id, player2.id)
 
             # Получаем юнита
@@ -1454,7 +1442,7 @@ class TestUnitActionsAPI:
             player1, player2 = self._create_test_players_with_units(session)
 
             engine = GameEngine(session)
-            game, _ = engine.create_game(player1.id, player2.name, "5x5")
+            game, _ = engine.create_game(player1.id, player2.username, "5x5")
             engine.accept_game(game.id, player2.id)
 
             # Вызываем _has_line_of_sight с объектом Game (как исправлено)
@@ -1470,7 +1458,7 @@ class TestUnitActionsAPI:
             player1, player2 = self._create_test_players_with_units(session)
 
             engine = GameEngine(session)
-            game, _ = engine.create_game(player1.id, player2.name, "5x5")
+            game, _ = engine.create_game(player1.id, player2.username, "5x5")
             engine.accept_game(game.id, player2.id)
 
             # Вызываем _has_line_of_sight с game_id (int) вместо Game
@@ -1484,7 +1472,7 @@ class TestUnitActionsAPI:
             player1, player2 = self._create_test_players_with_units(session)
 
             engine = GameEngine(session)
-            game, _ = engine.create_game(player1.id, player2.name, "5x5")
+            game, _ = engine.create_game(player1.id, player2.username, "5x5")
             engine.accept_game(game.id, player2.id)
 
             # Получаем юнита
@@ -1544,7 +1532,7 @@ class TestUnitActionsAPI:
             player1, player2 = self._create_test_players_with_units(session)
 
             engine = GameEngine(session)
-            game, _ = engine.create_game(player1.id, player2.name, "5x5")
+            game, _ = engine.create_game(player1.id, player2.username, "5x5")
             engine.accept_game(game.id, player2.id)
 
             # Получаем юнита текущего игрока
@@ -1653,7 +1641,7 @@ class TestUnitImagePaths:
             session.query(Game).delete()
             session.query(UserUnit).delete()
             session.query(GameUser).filter(
-                GameUser.name.like(f"{self.test_prefix}%")
+                GameUser.username.like(f"{self.test_prefix}%")
             ).delete(synchronize_session=False)
             session.commit()
 
@@ -1666,7 +1654,7 @@ class TestUnitImagePaths:
             session.query(Game).delete()
             session.query(UserUnit).delete()
             session.query(GameUser).filter(
-                GameUser.name.like(f"{self.test_prefix}%")
+                GameUser.username.like(f"{self.test_prefix}%")
             ).delete(synchronize_session=False)
             session.commit()
 
@@ -1678,13 +1666,11 @@ class TestUnitImagePaths:
 
         player1 = GameUser(
             telegram_id=11001,
-            name=f"{self.test_prefix}_Player1",
             username=f"{self.test_prefix}_player1",
             balance=Decimal("1000")
         )
         player2 = GameUser(
             telegram_id=11002,
-            name=f"{self.test_prefix}_Player2",
             username=f"{self.test_prefix}_player2",
             balance=Decimal("1000")
         )
@@ -1719,7 +1705,7 @@ class TestUnitImagePaths:
             player1, player2 = self._create_test_players_with_units(session)
 
             engine = GameEngine(session)
-            game, _ = engine.create_game(player1.id, player2.name, "5x5")
+            game, _ = engine.create_game(player1.id, player2.username, "5x5")
             engine.accept_game(game.id, player2.id)
 
             # Получаем юнитов на поле

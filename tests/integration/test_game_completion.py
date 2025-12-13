@@ -138,8 +138,8 @@ def test_infantry_vs_sniper_battle(db_session, setup_units):
     engine = GameEngine(db_session)
 
     # Создать двух игроков
-    player1 = GameUser(telegram_id=111, name="Player1", balance=Decimal('1000.00'), wins=0, losses=0)
-    player2 = GameUser(telegram_id=222, name="Player2", balance=Decimal('1000.00'), wins=0, losses=0)
+    player1 = GameUser(telegram_id=111, username="Player1", balance=Decimal('1000.00'), wins=0, losses=0)
+    player2 = GameUser(telegram_id=222, username="Player2", balance=Decimal('1000.00'), wins=0, losses=0)
 
     db_session.add(player1)
     db_session.add(player2)
@@ -170,7 +170,7 @@ def test_infantry_vs_sniper_battle(db_session, setup_units):
     db_session.commit()
 
     # Создать игру
-    game, msg = engine.create_game(player1.id, player2.name, "5x5")
+    game, msg = engine.create_game(player1.id, player2.username, "5x5")
     assert game is not None, f"Ошибка создания игры: {msg}"
 
     # Принять игру
@@ -275,7 +275,7 @@ def test_infantry_vs_sniper_battle(db_session, setup_units):
 
     print(f"\n✅ Тест пройден!")
     print(f"   Игра завершена за {turn} ходов")
-    print(f"   Победитель: {player1.name} (ID: {player1.id})")
+    print(f"   Победитель: {player1.username} (ID: {player1.id})")
     print(f"   Баланс победителя: ${player1.balance}")
     print(f"   Оставшихся пехотинцев: {player1_infantry.count}/10")
 
@@ -292,8 +292,8 @@ def test_damage_distribution_to_multiple_units(db_session, setup_units):
     engine = GameEngine(db_session)
 
     # Создать тестовых игроков
-    player1 = GameUser(telegram_id=333, name="TestPlayer1", balance=Decimal('1000.00'), wins=0, losses=0)
-    player2 = GameUser(telegram_id=444, name="TestPlayer2", balance=Decimal('1000.00'), wins=0, losses=0)
+    player1 = GameUser(telegram_id=333, username="TestPlayer1", balance=Decimal('1000.00'), wins=0, losses=0)
+    player2 = GameUser(telegram_id=444, username="TestPlayer2", balance=Decimal('1000.00'), wins=0, losses=0)
 
     db_session.add(player1)
     db_session.add(player2)
@@ -387,8 +387,8 @@ def test_zero_units_not_displayed_on_field(db_session, setup_units):
     engine = GameEngine(db_session)
 
     # Создать игроков
-    player1 = GameUser(telegram_id=555, name="DisplayTest1", balance=Decimal('1000.00'), wins=0, losses=0)
-    player2 = GameUser(telegram_id=666, name="DisplayTest2", balance=Decimal('1000.00'), wins=0, losses=0)
+    player1 = GameUser(telegram_id=555, username="DisplayTest1", balance=Decimal('1000.00'), wins=0, losses=0)
+    player2 = GameUser(telegram_id=666, username="DisplayTest2", balance=Decimal('1000.00'), wins=0, losses=0)
 
     db_session.add(player1)
     db_session.add(player2)
@@ -406,7 +406,7 @@ def test_zero_units_not_displayed_on_field(db_session, setup_units):
     db_session.commit()
 
     # Создать игру
-    game, msg = engine.create_game(player1.id, player2.name, "5x5")
+    game, msg = engine.create_game(player1.id, player2.username, "5x5")
     assert game is not None
 
     # Принять игру

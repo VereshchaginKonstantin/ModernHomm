@@ -23,9 +23,9 @@ class TestTopCommand:
     def test_top_command_with_players(self, db_session):
         """Тест рейтинга с несколькими игроками"""
         # Создаем игроков с разным количеством побед
-        player1 = GameUser(telegram_id=1001, name="Топ игрок", balance=Decimal("1000"), wins=10, losses=2)
-        player2 = GameUser(telegram_id=1002, name="Средний игрок", balance=Decimal("1000"), wins=5, losses=5)
-        player3 = GameUser(telegram_id=1003, name="Новичок", balance=Decimal("1000"), wins=1, losses=9)
+        player1 = GameUser(telegram_id=1001, username="Топ игрок", balance=Decimal("1000"), wins=10, losses=2)
+        player2 = GameUser(telegram_id=1002, username="Средний игрок", balance=Decimal("1000"), wins=5, losses=5)
+        player3 = GameUser(telegram_id=1003, username="Новичок", balance=Decimal("1000"), wins=1, losses=9)
         db_session.add_all([player1, player2, player3])
         db_session.flush()
 
@@ -47,8 +47,8 @@ class TestTopCommand:
 
         try:
             # Создаем игроков
-            player1 = GameUser(telegram_id=2001, name="Богатый игрок", balance=Decimal("10000"), wins=5, losses=0)
-            player2 = GameUser(telegram_id=2002, name="Бедный игрок", balance=Decimal("500"), wins=5, losses=0)
+            player1 = GameUser(telegram_id=2001, username="Богатый игрок", balance=Decimal("10000"), wins=5, losses=0)
+            player2 = GameUser(telegram_id=2002, username="Бедный игрок", balance=Decimal("500"), wins=5, losses=0)
             db_session.add_all([player1, player2])
             db_session.flush()
 
@@ -118,7 +118,7 @@ class TestTopCommand:
                             army_cost += unit.price * user_unit.count
 
                 player_stats.append({
-                    'name': game_user.name,
+                    'name': game_user.username,
                     'wins': game_user.wins,
                     'losses': game_user.losses,
                     'army_cost': army_cost
@@ -140,9 +140,9 @@ class TestTopCommand:
     def test_top_command_sorting_by_wins(self, db_session):
         """Тест что сортировка по победам работает правильно"""
         # Создаем игроков с разным количеством побед
-        player1 = GameUser(telegram_id=3001, name="Победитель", balance=Decimal("1000"), wins=20, losses=5)
-        player2 = GameUser(telegram_id=3002, name="Середняк", balance=Decimal("1000"), wins=10, losses=10)
-        player3 = GameUser(telegram_id=3003, name="Лузер", balance=Decimal("1000"), wins=2, losses=18)
+        player1 = GameUser(telegram_id=3001, username="Победитель", balance=Decimal("1000"), wins=20, losses=5)
+        player2 = GameUser(telegram_id=3002, username="Середняк", balance=Decimal("1000"), wins=10, losses=10)
+        player3 = GameUser(telegram_id=3003, username="Лузер", balance=Decimal("1000"), wins=2, losses=18)
         db_session.add_all([player1, player2, player3])
         db_session.flush()
 
@@ -153,7 +153,7 @@ class TestTopCommand:
         player_stats = []
         for game_user in all_users:
             player_stats.append({
-                'name': game_user.name,
+                'name': game_user.username,
                 'wins': game_user.wins,
                 'losses': game_user.losses,
                 'army_cost': Decimal('0')

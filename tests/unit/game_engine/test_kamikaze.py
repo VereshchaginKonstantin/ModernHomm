@@ -17,8 +17,8 @@ class TestKamikazeSystem:
     def test_kamikaze_unit_uses_single_unit_damage(self, db_session):
         """Тест, что камикадзе юнит наносит урон как 1 юнит (без множителя)"""
         # Создать тестовых пользователей
-        player1 = GameUser(telegram_id=111, name="Player1", balance=Decimal("1000"))
-        player2 = GameUser(telegram_id=222, name="Player2", balance=Decimal("1000"))
+        player1 = GameUser(telegram_id=111, username="Player1", balance=Decimal("1000"))
+        player2 = GameUser(telegram_id=222, username="Player2", balance=Decimal("1000"))
         db_session.add_all([player1, player2])
         db_session.flush()
 
@@ -142,8 +142,8 @@ class TestKamikazeSystem:
     def test_kamikaze_unit_loses_one_after_attack(self, db_session):
         """Тест, что камикадзе юнит теряет 1 юнита после атаки"""
         # Создать тестовых пользователей
-        player1 = GameUser(telegram_id=111, name="Player1", balance=Decimal("1000"))
-        player2 = GameUser(telegram_id=222, name="Player2", balance=Decimal("1000"))
+        player1 = GameUser(telegram_id=111, username="Player1", balance=Decimal("1000"))
+        player2 = GameUser(telegram_id=222, username="Player2", balance=Decimal("1000"))
         db_session.add_all([player1, player2])
         db_session.flush()
 
@@ -263,8 +263,8 @@ class TestKamikazeSystem:
     def test_kamikaze_unit_dies_when_count_reaches_zero(self, db_session):
         """Тест, что камикадзе юнит удаляется с поля когда счетчик достигает 0"""
         # Создать тестовых пользователей
-        player1 = GameUser(telegram_id=111, name="Player1", balance=Decimal("1000"))
-        player2 = GameUser(telegram_id=222, name="Player2", balance=Decimal("1000"))
+        player1 = GameUser(telegram_id=111, username="Player1", balance=Decimal("1000"))
+        player2 = GameUser(telegram_id=222, username="Player2", balance=Decimal("1000"))
         db_session.add_all([player1, player2])
         db_session.flush()
 
@@ -383,8 +383,8 @@ class TestKamikazeSystem:
     def test_non_kamikaze_unit_keeps_full_multiplier(self, db_session):
         """Тест, что обычный (не камикадзе) юнит использует полный множитель"""
         # Создать тестовых пользователей
-        player1 = GameUser(telegram_id=111, name="Player1", balance=Decimal("1000"))
-        player2 = GameUser(telegram_id=222, name="Player2", balance=Decimal("1000"))
+        player1 = GameUser(telegram_id=111, username="Player1", balance=Decimal("1000"))
+        player2 = GameUser(telegram_id=222, username="Player2", balance=Decimal("1000"))
         db_session.add_all([player1, player2])
         db_session.flush()
 

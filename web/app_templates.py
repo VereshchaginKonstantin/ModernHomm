@@ -411,7 +411,7 @@ LEADERBOARD_TEMPLATE = """
                     <td class="{% if player.rank == 1 %}rank-gold{% elif player.rank == 2 %}rank-silver{% elif player.rank == 3 %}rank-bronze{% endif %}">
                         {{ player.rank }}
                     </td>
-                    <td>{{ player.name }}</td>
+                    <td>{{ player.username }}</td>
                     <td>{{ player.wins }}</td>
                     <td>{{ player.losses }}</td>
                     <td>{{ "%.1f"|format(player.win_rate) }}%</td>

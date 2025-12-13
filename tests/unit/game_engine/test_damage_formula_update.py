@@ -33,8 +33,8 @@ class TestDamageFormulaUpdate:
         """
         with db.get_session() as session:
             # Создать тестовых игроков
-            player1 = GameUser(telegram_id=100001, name="Player1", balance=1000, wins=0, losses=0)
-            player2 = GameUser(telegram_id=100002, name="Player2", balance=1000, wins=0, losses=0)
+            player1 = GameUser(telegram_id=100001, username="Player1", balance=1000, wins=0, losses=0)
+            player2 = GameUser(telegram_id=100002, username="Player2", balance=1000, wins=0, losses=0)
             session.add_all([player1, player2])
             session.flush()
 
@@ -155,8 +155,8 @@ class TestDamageFormulaUpdate:
         """
         with db.get_session() as session:
             # Создать тестовых игроков
-            player1 = GameUser(telegram_id=100003, name="Player3", balance=1000, wins=0, losses=0)
-            player2 = GameUser(telegram_id=100004, name="Player4", balance=1000, wins=0, losses=0)
+            player1 = GameUser(telegram_id=100003, username="Player3", balance=1000, wins=0, losses=0)
+            player2 = GameUser(telegram_id=100004, username="Player4", balance=1000, wins=0, losses=0)
             session.add_all([player1, player2])
             session.flush()
 

@@ -17,13 +17,13 @@ def test_game_user_crud():
     print("\n1. Создание игрового пользователя...")
     game_user = db.create_game_user(
         telegram_id=12345,
-        name="Тестовый игрок",
+        username="Тестовый_игрок",
         initial_balance=1500
     )
     print(f"   ✓ Создан: {game_user}")
     print(f"   - ID: {game_user.id}")
     print(f"   - Telegram ID: {game_user.telegram_id}")
-    print(f"   - Имя: {game_user.name}")
+    print(f"   - Username: {game_user.username}")
     print(f"   - Баланс: ${game_user.balance}")
     print(f"   - Побед: {game_user.wins}")
     print(f"   - Поражений: {game_user.losses}")
@@ -83,21 +83,21 @@ def test_game_user_crud():
     # Пытаемся получить существующего пользователя
     game_user2, created = db.get_or_create_game_user(
         telegram_id=12345,
-        name="Другое имя",
+        username="Другой_username",
         initial_balance=999
     )
     print(f"   ✓ Пользователь существует: created={created}")
-    print(f"   - Имя осталось: {game_user2.name}")
+    print(f"   - Username остался: {game_user2.username}")
     print(f"   - Баланс остался: ${game_user2.balance}")
 
     # Создаем нового пользователя
     game_user3, created = db.get_or_create_game_user(
         telegram_id=67890,
-        name="Новый игрок",
+        username="Новый_игрок",
         initial_balance=1000
     )
     print(f"   ✓ Создан новый пользователь: created={created}")
-    print(f"   - Имя: {game_user3.name}")
+    print(f"   - Username: {game_user3.username}")
     print(f"   - Баланс: ${game_user3.balance}")
 
     # 9. Удаление игрового пользователя

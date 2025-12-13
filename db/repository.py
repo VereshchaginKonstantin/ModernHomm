@@ -368,14 +368,13 @@ class Database:
 
     # ===== CRUD методы для GameUser =====
 
-    def create_game_user(self, telegram_id: int, name: str, username: str = None, initial_balance: float = 1000) -> GameUser:
+    def create_game_user(self, telegram_id: int, username: str, initial_balance: float = 1000) -> GameUser:
         """
         Создание нового игрового пользователя
 
         Args:
             telegram_id: ID пользователя в Telegram
-            name: Имя игрока
-            username: Username пользователя в Telegram (для входа в веб-интерфейс)
+            username: Username пользователя в Telegram
             initial_balance: Начальный баланс (по умолчанию 1000)
 
         Returns:
@@ -384,7 +383,6 @@ class Database:
         with self.get_session() as session:
             game_user = GameUser(
                 telegram_id=telegram_id,
-                name=name,
                 username=username,
                 balance=initial_balance
             )
@@ -395,7 +393,6 @@ class Database:
             # Загружаем все атрибуты
             _ = game_user.id
             _ = game_user.telegram_id
-            _ = game_user.name
             _ = game_user.username
             _ = game_user.balance
             _ = game_user.wins
@@ -423,7 +420,7 @@ class Database:
                 # Загружаем все атрибуты
                 _ = game_user.id
                 _ = game_user.telegram_id
-                _ = game_user.name
+                _ = game_user.username
                 _ = game_user.balance
                 _ = game_user.wins
                 _ = game_user.losses
@@ -462,7 +459,7 @@ class Database:
             # Загружаем все атрибуты
             _ = game_user.id
             _ = game_user.telegram_id
-            _ = game_user.name
+            _ = game_user.username
             _ = game_user.balance
             _ = game_user.wins
             _ = game_user.losses
@@ -505,7 +502,6 @@ class Database:
             for user in game_users:
                 _ = user.id
                 _ = user.telegram_id
-                _ = user.name
                 _ = user.username
                 _ = user.balance
                 _ = user.wins
@@ -516,14 +512,13 @@ class Database:
             session.expunge_all()
             return game_users
 
-    def get_or_create_game_user(self, telegram_id: int, name: str, username: str = None, initial_balance: float = 1000) -> tuple:
+    def get_or_create_game_user(self, telegram_id: int, username: str, initial_balance: float = 1000) -> tuple:
         """
         Получение или создание игрового пользователя
 
         Args:
             telegram_id: ID пользователя в Telegram
-            name: Имя игрока
-            username: Username пользователя в Telegram (для входа в веб-интерфейс)
+            username: Username пользователя (обязательное поле)
             initial_balance: Начальный баланс (по умолчанию 1000)
 
         Returns:
@@ -534,7 +529,7 @@ class Database:
         if game_user:
             return game_user, False
 
-        game_user = self.create_game_user(telegram_id, name, username, initial_balance)
+        game_user = self.create_game_user(telegram_id, username, initial_balance)
         return game_user, True
 
     def get_random_game_users(self, limit: int = 10, exclude_telegram_id: int = None) -> list:
@@ -564,7 +559,7 @@ class Database:
             for game_user in game_users:
                 _ = game_user.id
                 _ = game_user.telegram_id
-                _ = game_user.name
+                _ = game_user.username
                 _ = game_user.balance
                 _ = game_user.wins
                 _ = game_user.losses
@@ -665,7 +660,7 @@ class Database:
             for game_user in candidates:
                 _ = game_user.id
                 _ = game_user.telegram_id
-                _ = game_user.name
+                _ = game_user.username
                 _ = game_user.balance
                 _ = game_user.wins
                 _ = game_user.losses
@@ -713,7 +708,7 @@ class Database:
             current_player_data = {
                 'id': current_player.id,
                 'telegram_id': current_player.telegram_id,
-                'name': current_player.username or current_player.name,
+                'name': current_player.username,
                 'balance': float(current_player.balance),
                 'wins': current_player.wins,
                 'losses': current_player.losses
@@ -787,7 +782,7 @@ class Database:
                 opponents.append({
                     'id': player.id,
                     'telegram_id': player.telegram_id,
-                    'name': player.username or player.name,
+                    'name': player.username,
                     'balance': float(player.balance),
                     'wins': player.wins,
                     'losses': player.losses,
@@ -1365,7 +1360,7 @@ class Database:
                 # Загружаем все атрибуты
                 _ = game_user.id
                 _ = game_user.telegram_id
-                _ = game_user.name
+                _ = game_user.username
                 _ = game_user.balance
                 _ = game_user.wins
                 _ = game_user.losses

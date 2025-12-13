@@ -154,8 +154,8 @@ def notify_game_completion(game_id: int, winner_id: int, message: str):
         result_message += "🏆 " + "=" * 20 + "\n"
         result_message += "   ИГРА ЗАВЕРШЕНА!\n"
         result_message += "=" * 20 + "\n\n"
-        result_message += f"👑 <b>Победитель:</b> {winner.name}\n"
-        result_message += f"💔 <b>Проигравший:</b> {loser.name}\n"
+        result_message += f"👑 <b>Победитель:</b> {winner.username}\n"
+        result_message += f"💔 <b>Проигравший:</b> {loser.username}\n"
 
         # Отправляем уведомление победителю
         if winner.telegram_id:
@@ -221,7 +221,7 @@ ARENA_INDEX_TEMPLATE = """
             <div class="arena-mode-card">
                 <h2>🎮 Godot Арена</h2>
                 <p>Новая арена на движке Godot (WebGL)</p>
-                <a href="/godot-arena/?player_id={{ current_player.id if current_player else '' }}" class="btn btn-primary" target="_blank">Открыть Godot</a>
+                <a href="/godot-arena/?player_id={{ current_player_id if current_player_id else '' }}" class="btn btn-primary" target="_blank">Открыть Godot</a>
             </div>
 
         </div>
@@ -420,14 +420,14 @@ PLAY_TEMPLATE = """
 
             <div class="setup-form">
                 <div class="player-info-card" style="background: #ecf0f1; padding: 15px; border-radius: 8px; margin-bottom: 20px;">
-                    <h3 style="margin-top: 0;">👤 Вы: {{ current_player.name }}</h3>
+                    <h3 style="margin-top: 0;">👤 Вы: {{ current_player.username }}</h3>
                     <p style="margin: 5px 0;">💰 Баланс: {{ current_player.balance }}</p>
                     <p style="margin: 5px 0;">⚔️ Стоимость армии: {{ "%.0f"|format(current_player.army_value) }}</p>
                     <p style="margin: 5px 0;">🏆 Победы: {{ current_player.wins }} | 💔 Поражения: {{ current_player.losses }}</p>
                 </div>
 
                 <!-- Скрытое поле с ID и именем текущего игрока -->
-                <input type="hidden" id="player1-id" value="{{ current_player.id }}" data-name="{{ current_player.name }}">
+                <input type="hidden" id="player1-id" value="{{ current_player.id }}" data-name="{{ current_player.username }}">
 
                 <div class="form-group">
                     <label>Противник (игроки с близкой стоимостью армии ±50%):</label>
@@ -649,7 +649,7 @@ PLAY_GAME_TEMPLATE = """
 def index():
     """Главная страница арены"""
     current_username = session.get('username')
-    current_player = None
+    current_player_id = None
 
     with db.get_session() as session_db:
         total_games = session_db.query(Game).count()
@@ -659,9 +659,11 @@ def index():
         # Проверяем есть ли активная игра для кнопки
         has_active_game = active_games > 0
 
-        # Получаем текущего игрока для ссылки на Godot арену
+        # Получаем ID текущего игрока для ссылки на Godot арену
         if current_username:
             current_player = session_db.query(GameUser).filter_by(username=current_username).first()
+            if current_player:
+                current_player_id = current_player.id
 
     return render_template_string(
         ARENA_INDEX_TEMPLATE,
@@ -670,7 +672,7 @@ def index():
         completed_games=completed_games,
         active_games=active_games,
         has_active_game=has_active_game,
-        current_player=current_player,
+        current_player_id=current_player_id,
         web_version=get_web_version(),
         bot_version=get_bot_version(),
         static_version=get_static_version(),
@@ -697,9 +699,9 @@ def replay_list():
 
             games_data.append({
                 'id': game.id,
-                'player1_name': (player1.username or player1.name) if player1 else 'Unknown',
-                'player2_name': (player2.username or player2.name) if player2 else 'Unknown',
-                'winner_name': (winner.username or winner.name) if winner else None,
+                'player1_name': (player1.username) if player1 else 'Unknown',
+                'player2_name': (player2.username) if player2 else 'Unknown',
+                'winner_name': (winner.username) if winner else None,
                 'field_size': field.name if field else 'Unknown',
                 'created_at': game.created_at,
                 'completed_at': game.completed_at
@@ -813,8 +815,8 @@ def play_game(game_id, player_id=None):
         player2 = session_db.query(GameUser).filter_by(id=game.player2_id).first()
 
         # Извлекаем имена внутри сессии (предпочитаем username)
-        player1_name = (player1.username or player1.name) if player1 else 'Игрок 1'
-        player2_name = (player2.username or player2.name) if player2 else 'Игрок 2'
+        player1_name = (player1.username) if player1 else 'Игрок 1'
+        player2_name = (player2.username) if player2 else 'Игрок 2'
 
         # Определяем player_id на основе текущего пользователя
         if not player_id:
@@ -851,7 +853,7 @@ def play_game(game_id, player_id=None):
 def api_players():
     """Получить список игроков"""
     with db.get_session() as session_db:
-        players = session_db.query(GameUser).order_by(GameUser.name).all()
+        players = session_db.query(GameUser).order_by(GameUser.username).all()
         result = []
         for p in players:
             # Получаем юнитов игрока
@@ -907,8 +909,8 @@ def api_games():
 
             result.append({
                 'id': game.id,
-                'player1': {'id': player1.id, 'name': player1.username or player1.name} if player1 else None,
-                'player2': {'id': player2.id, 'name': player2.username or player2.name} if player2 else None,
+                'player1': {'id': player1.id, 'name': player1.username} if player1 else None,
+                'player2': {'id': player2.id, 'name': player2.username} if player2 else None,
                 'winner_id': game.winner_id,
                 'field_size': field.name if field else None,
                 'status': game.status.value,
@@ -951,7 +953,7 @@ def api_create_game():
             player2 = session_db.query(GameUser).filter_by(id=game.player2_id).first()
 
             if player2 and player2.telegram_id:
-                challenger_name = (player1.username or player1.name) if player1 else 'Неизвестный'
+                challenger_name = (player1.username) if player1 else 'Неизвестный'
                 reply_markup = {
                     'inline_keyboard': [
                         [
@@ -1003,7 +1005,7 @@ def api_accept_game(game_id):
                 player1 = session_db.query(GameUser).filter_by(id=game.player1_id).first()
                 player2 = session_db.query(GameUser).filter_by(id=game.player2_id).first()
                 if player1 and player1.telegram_id:
-                    opponent_name = (player2.username or player2.name) if player2 else 'Противник'
+                    opponent_name = (player2.username) if player2 else 'Противник'
                     reply_markup = {
                         'inline_keyboard': [[
                             {'text': '🎮 К игре', 'callback_data': f'show_game:{game_id}'}
@@ -1052,7 +1054,7 @@ def api_pending_games():
             challenges.append({
                 'game_id': game.id,
                 'challenger_id': game.player1_id,
-                'challenger_name': (challenger.username or challenger.name) if challenger else 'Неизвестный',
+                'challenger_name': (challenger.username) if challenger else 'Неизвестный',
                 'field_size': field.name if field else 'Unknown',
                 'created_at': game.created_at.isoformat() if game.created_at else None
             })
@@ -1082,7 +1084,7 @@ def api_cancel_game(game_id):
         # Уведомляем противника об отмене
         player2 = session_db.query(GameUser).filter_by(id=game.player2_id).first()
         if player2 and player2.telegram_id:
-            challenger_name = (current_user.username or current_user.name)
+            challenger_name = (current_user.username)
             send_telegram_notification(
                 player2.telegram_id,
                 f"❌ <b>{challenger_name}</b> отменил вызов на бой.\n\nИгра #{game_id} отменена."
@@ -1117,7 +1119,7 @@ def api_decline_game(game_id):
         # Уведомляем создателя об отклонении
         player1 = session_db.query(GameUser).filter_by(id=game.player1_id).first()
         if player1 and player1.telegram_id:
-            opponent_name = (current_user.username or current_user.name)
+            opponent_name = (current_user.username)
             send_telegram_notification(
                 player1.telegram_id,
                 f"❌ <b>{opponent_name}</b> отклонил ваш вызов на бой.\n\nИгра #{game_id} отменена."
@@ -1190,8 +1192,8 @@ def api_game_state(game_id):
         # Имена игроков
         player1 = session_db.query(GameUser).filter_by(id=game.player1_id).first()
         player2 = session_db.query(GameUser).filter_by(id=game.player2_id).first()
-        player1_name = (player1.username or player1.name) if player1 else 'Игрок 1'
-        player2_name = (player2.username or player2.name) if player2 else 'Игрок 2'
+        player1_name = (player1.username) if player1 else 'Игрок 1'
+        player2_name = (player2.username) if player2 else 'Игрок 2'
 
         return jsonify({
             'game_id': game.id,
@@ -1452,12 +1454,12 @@ def get_game_full_data(game_id):
             },
             'player1': {
                 'id': player1.id,
-                'name': player1.username or player1.name,
+                'name': player1.username,
                 'telegram_id': player1.telegram_id
             } if player1 else None,
             'player2': {
                 'id': player2.id,
-                'name': player2.username or player2.name,
+                'name': player2.username,
                 'telegram_id': player2.telegram_id
             } if player2 else None,
             'field': {
@@ -1478,7 +1480,7 @@ def get_game_full_data(game_id):
 def api_public_players():
     """Публичный эндпоинт - получить список игроков для Godot"""
     with db.get_session() as session_db:
-        players = session_db.query(GameUser).order_by(GameUser.name).all()
+        players = session_db.query(GameUser).order_by(GameUser.username).all()
         result = []
         for p in players:
             user_units = session_db.query(UserUnit).filter_by(game_user_id=p.id).all()
@@ -1540,7 +1542,7 @@ def api_public_me():
             "current_player": {
                 'id': player.id,
                 'telegram_id': player.telegram_id,
-                'name': player.name,
+                'name': player.username,
                 'balance': float(player.balance),
                 'wins': player.wins,
                 'losses': player.losses,

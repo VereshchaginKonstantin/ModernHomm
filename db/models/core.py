@@ -59,8 +59,7 @@ class GameUser(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     telegram_id = Column(BigInteger, unique=True, nullable=False, index=True)
-    name = Column(String(255), nullable=False)  # username пользователя
-    username = Column(String(255), unique=True, nullable=True, index=True)  # username из Telegram (уникальный идентификатор, требуется для входа в веб-интерфейс)
+    username = Column(String(255), unique=True, nullable=False, index=True)  # username из Telegram (уникальный идентификатор)
     balance = Column(Numeric(12, 2), nullable=False, default=1000)  # Монеты
     crystals = Column(Integer, nullable=False, default=0)  # Кристаллы
     glory = Column(Integer, nullable=False, default=0)  # Слава
@@ -74,4 +73,4 @@ class GameUser(Base):
     units = relationship("UserUnit", back_populates="game_user", cascade="all, delete-orphan")
 
     def __repr__(self):
-        return f"<GameUser(telegram_id={self.telegram_id}, name={self.name}, balance={self.balance})>"
+        return f"<GameUser(telegram_id={self.telegram_id}, username={self.username}, balance={self.balance})>"
