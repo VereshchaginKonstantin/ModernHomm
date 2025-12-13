@@ -13,6 +13,8 @@ var http_request: HTTPRequest
 
 func _ready() -> void:
 	http_request = HTTPRequest.new()
+	# В WebGL отключаем threads чтобы избежать CORS проблем с SharedArrayBuffer
+	http_request.use_threads = false
 	add_child(http_request)
 	http_request.request_completed.connect(_on_request_completed)
 
@@ -127,12 +129,22 @@ func _make_request(url: String, method: int, body: String = "") -> void:
 
 ## Обработка ответа
 func _on_request_completed(result: int, response_code: int, headers: PackedStringArray, body: PackedByteArray) -> void:
+	# Отладочная информация в консоль браузера
+	if OS.has_feature("web"):
+		JavaScriptBridge.eval("console.log('API Response: result=%d, code=%d');" % [result, response_code])
+
 	if result != HTTPRequest.RESULT_SUCCESS:
-		request_failed.emit("Network error: " + str(result))
+		var error_msg = "Network error: " + str(result)
+		if OS.has_feature("web"):
+			JavaScriptBridge.eval("console.error('API Error: %s');" % error_msg)
+		request_failed.emit(error_msg)
 		return
 
 	if response_code < 200 or response_code >= 300:
-		request_failed.emit("HTTP error: " + str(response_code))
+		var error_msg = "HTTP error: " + str(response_code)
+		if OS.has_feature("web"):
+			JavaScriptBridge.eval("console.error('API Error: %s');" % error_msg)
+		request_failed.emit(error_msg)
 		return
 
 	var json_string = body.get_string_from_utf8()
@@ -140,7 +152,12 @@ func _on_request_completed(result: int, response_code: int, headers: PackedStrin
 	var parse_result = json.parse(json_string)
 
 	if parse_result != OK:
-		request_failed.emit("JSON parse error")
+		var error_msg = "JSON parse error"
+		if OS.has_feature("web"):
+			JavaScriptBridge.eval("console.error('API Error: %s, body=%s');" % [error_msg, json_string.substr(0, 100)])
+		request_failed.emit(error_msg)
 		return
 
+	if OS.has_feature("web"):
+		JavaScriptBridge.eval("console.log('API Success: ' + JSON.stringify(%s).substr(0, 200));" % JSON.stringify(json.data))
 	request_completed.emit(json.data)
