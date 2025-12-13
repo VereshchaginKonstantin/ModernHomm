@@ -1475,6 +1475,7 @@ def api_public_players():
         for p in players:
             user_units = session_db.query(UserUnit).filter_by(game_user_id=p.id).all()
             units = []
+            army_cost = 0
             for uu in user_units:
                 unit = session_db.query(Unit).filter_by(id=uu.unit_type_id).first()
                 if unit and uu.count > 0:
@@ -1484,6 +1485,7 @@ def api_public_players():
                         'icon': unit.icon,
                         'count': uu.count
                     })
+                    army_cost += float(unit.price) * uu.count
 
             result.append({
                 'id': p.id,
@@ -1492,10 +1494,12 @@ def api_public_players():
                 'balance': float(p.balance),
                 'wins': p.wins,
                 'losses': p.losses,
-                'units': units
+                'units': units,
+                'army_cost': army_cost
             })
 
-    return jsonify(result)
+    # Возвращаем в формате {"players": [...]} для совместимости с Godot
+    return jsonify({"players": result})
 
 
 @arena_bp.route('/api/public/games/<int:game_id>/state')
