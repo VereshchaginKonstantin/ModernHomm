@@ -10,6 +10,7 @@ namespace ModernHomm.Utils
     public static class WebGLBridge
     {
         #if UNITY_WEBGL && !UNITY_EDITOR
+        // URL Parameters & Storage
         [DllImport("__Internal")]
         private static extern string GetUrlParam(string paramName);
 
@@ -27,7 +28,46 @@ namespace ModernHomm.Utils
 
         [DllImport("__Internal")]
         private static extern void RedirectTo(string url);
+
+        // UI Functions
+        [DllImport("__Internal")]
+        private static extern void JS_UpdateTurnIndicator(string text, bool isMyTurn);
+
+        [DllImport("__Internal")]
+        private static extern void JS_UpdateHint(string text);
+
+        [DllImport("__Internal")]
+        private static extern void JS_UpdatePlayer1Info(string name, string stats);
+
+        [DllImport("__Internal")]
+        private static extern void JS_UpdatePlayer2Info(string name, string stats);
+
+        [DllImport("__Internal")]
+        private static extern void JS_SetPlayerActive(int playerNum);
+
+        [DllImport("__Internal")]
+        private static extern void JS_EnableActionButtons(bool canMove, bool canAttack, bool canSkip, bool canDefer);
+
+        [DllImport("__Internal")]
+        private static extern void JS_DisableAllActionButtons();
+
+        [DllImport("__Internal")]
+        private static extern void JS_AddLogEntry(string message, string type);
+
+        [DllImport("__Internal")]
+        private static extern void JS_ClearLog();
+
+        [DllImport("__Internal")]
+        private static extern void JS_ShowBattleOverlay(string attackerName, string attackerImage, string targetName, string targetImage, string resultText);
+
+        [DllImport("__Internal")]
+        private static extern void JS_CloseBattleOverlay();
+
+        [DllImport("__Internal")]
+        private static extern void JS_ShowGameOver(bool isWinner, string winnerName);
         #endif
+
+        #region URL & Storage
 
         /// <summary>
         /// Получить параметр из URL (?param=value)
@@ -45,7 +85,7 @@ namespace ModernHomm.Utils
                 return null;
             }
             #else
-            // В редакторе возвращаем null
+            // В редакторе возвращаем null или тестовые значения
             return null;
             #endif
         }
@@ -202,5 +242,243 @@ namespace ModernHomm.Utils
         {
             DeleteFromLocalStorage("player_id");
         }
+
+        #endregion
+
+        #region UI Updates
+
+        /// <summary>
+        /// Обновить индикатор хода
+        /// </summary>
+        public static void UpdateTurnIndicator(string text, bool isMyTurn)
+        {
+            #if UNITY_WEBGL && !UNITY_EDITOR
+            try
+            {
+                JS_UpdateTurnIndicator(text, isMyTurn);
+            }
+            catch (Exception e)
+            {
+                Debug.LogWarning($"[WebGL] Failed to update turn indicator: {e.Message}");
+            }
+            #else
+            Debug.Log($"[UI] Turn Indicator: {text} (isMyTurn: {isMyTurn})");
+            #endif
+        }
+
+        /// <summary>
+        /// Обновить подсказку
+        /// </summary>
+        public static void UpdateHint(string text)
+        {
+            #if UNITY_WEBGL && !UNITY_EDITOR
+            try
+            {
+                JS_UpdateHint(text);
+            }
+            catch (Exception e)
+            {
+                Debug.LogWarning($"[WebGL] Failed to update hint: {e.Message}");
+            }
+            #else
+            Debug.Log($"[UI] Hint: {text}");
+            #endif
+        }
+
+        /// <summary>
+        /// Обновить информацию игрока 1
+        /// </summary>
+        public static void UpdatePlayer1Info(string name, string stats)
+        {
+            #if UNITY_WEBGL && !UNITY_EDITOR
+            try
+            {
+                JS_UpdatePlayer1Info(name, stats);
+            }
+            catch (Exception e)
+            {
+                Debug.LogWarning($"[WebGL] Failed to update player 1 info: {e.Message}");
+            }
+            #else
+            Debug.Log($"[UI] Player1: {name} - {stats}");
+            #endif
+        }
+
+        /// <summary>
+        /// Обновить информацию игрока 2
+        /// </summary>
+        public static void UpdatePlayer2Info(string name, string stats)
+        {
+            #if UNITY_WEBGL && !UNITY_EDITOR
+            try
+            {
+                JS_UpdatePlayer2Info(name, stats);
+            }
+            catch (Exception e)
+            {
+                Debug.LogWarning($"[WebGL] Failed to update player 2 info: {e.Message}");
+            }
+            #else
+            Debug.Log($"[UI] Player2: {name} - {stats}");
+            #endif
+        }
+
+        /// <summary>
+        /// Установить активного игрока (1 или 2)
+        /// </summary>
+        public static void SetPlayerActive(int playerNum)
+        {
+            #if UNITY_WEBGL && !UNITY_EDITOR
+            try
+            {
+                JS_SetPlayerActive(playerNum);
+            }
+            catch (Exception e)
+            {
+                Debug.LogWarning($"[WebGL] Failed to set player active: {e.Message}");
+            }
+            #else
+            Debug.Log($"[UI] Active player: {playerNum}");
+            #endif
+        }
+
+        /// <summary>
+        /// Включить/выключить кнопки действий
+        /// </summary>
+        public static void EnableActionButtons(bool canMove, bool canAttack, bool canSkip, bool canDefer)
+        {
+            #if UNITY_WEBGL && !UNITY_EDITOR
+            try
+            {
+                JS_EnableActionButtons(canMove, canAttack, canSkip, canDefer);
+            }
+            catch (Exception e)
+            {
+                Debug.LogWarning($"[WebGL] Failed to enable action buttons: {e.Message}");
+            }
+            #else
+            Debug.Log($"[UI] Action buttons - Move:{canMove}, Attack:{canAttack}, Skip:{canSkip}, Defer:{canDefer}");
+            #endif
+        }
+
+        /// <summary>
+        /// Отключить все кнопки действий
+        /// </summary>
+        public static void DisableAllActionButtons()
+        {
+            #if UNITY_WEBGL && !UNITY_EDITOR
+            try
+            {
+                JS_DisableAllActionButtons();
+            }
+            catch (Exception e)
+            {
+                Debug.LogWarning($"[WebGL] Failed to disable action buttons: {e.Message}");
+            }
+            #else
+            Debug.Log("[UI] All action buttons disabled");
+            #endif
+        }
+
+        /// <summary>
+        /// Добавить запись в лог
+        /// </summary>
+        public static void AddLogEntry(string message, string type = "info")
+        {
+            #if UNITY_WEBGL && !UNITY_EDITOR
+            try
+            {
+                JS_AddLogEntry(message, type);
+            }
+            catch (Exception e)
+            {
+                Debug.LogWarning($"[WebGL] Failed to add log entry: {e.Message}");
+            }
+            #else
+            Debug.Log($"[LOG] [{type}] {message}");
+            #endif
+        }
+
+        /// <summary>
+        /// Очистить лог
+        /// </summary>
+        public static void ClearLog()
+        {
+            #if UNITY_WEBGL && !UNITY_EDITOR
+            try
+            {
+                JS_ClearLog();
+            }
+            catch (Exception e)
+            {
+                Debug.LogWarning($"[WebGL] Failed to clear log: {e.Message}");
+            }
+            #else
+            Debug.Log("[UI] Log cleared");
+            #endif
+        }
+
+        #endregion
+
+        #region Overlays
+
+        /// <summary>
+        /// Показать оверлей битвы
+        /// </summary>
+        public static void ShowBattleOverlay(string attackerName, string attackerImage, string targetName, string targetImage, string resultText)
+        {
+            #if UNITY_WEBGL && !UNITY_EDITOR
+            try
+            {
+                JS_ShowBattleOverlay(attackerName, attackerImage, targetName, targetImage, resultText);
+            }
+            catch (Exception e)
+            {
+                Debug.LogWarning($"[WebGL] Failed to show battle overlay: {e.Message}");
+            }
+            #else
+            Debug.Log($"[UI] Battle: {attackerName} vs {targetName} - {resultText}");
+            #endif
+        }
+
+        /// <summary>
+        /// Закрыть оверлей битвы
+        /// </summary>
+        public static void CloseBattleOverlay()
+        {
+            #if UNITY_WEBGL && !UNITY_EDITOR
+            try
+            {
+                JS_CloseBattleOverlay();
+            }
+            catch (Exception e)
+            {
+                Debug.LogWarning($"[WebGL] Failed to close battle overlay: {e.Message}");
+            }
+            #else
+            Debug.Log("[UI] Battle overlay closed");
+            #endif
+        }
+
+        /// <summary>
+        /// Показать оверлей окончания игры
+        /// </summary>
+        public static void ShowGameOver(bool isWinner, string winnerName)
+        {
+            #if UNITY_WEBGL && !UNITY_EDITOR
+            try
+            {
+                JS_ShowGameOver(isWinner, winnerName);
+            }
+            catch (Exception e)
+            {
+                Debug.LogWarning($"[WebGL] Failed to show game over: {e.Message}");
+            }
+            #else
+            Debug.Log($"[UI] Game Over - Winner: {winnerName}, You won: {isWinner}");
+            #endif
+        }
+
+        #endregion
     }
 }

@@ -1,45 +1,796 @@
 <!DOCTYPE html>
-<html lang="en-us">
-  <head>
+<html lang="ru">
+<head>
     <meta charset="utf-8">
     <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
-    <title>Unity Web Player | Unity Arena</title>
-  </head>
-  <body style="text-align: center; padding: 0; border: 0; margin: 0;">
-    <canvas id="unity-canvas" width=1280 height=720 tabindex="-1" style="width: 1280px; height: 720px; background: #231F20"></canvas>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Unity Arena | ModernHomm</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+            min-height: 100vh;
+            color: #fff;
+        }
+
+        .container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 20px;
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 20px;
+        }
+
+        .header h1 {
+            font-size: 2.5rem;
+            background: linear-gradient(45deg, #f39c12, #e74c3c);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            margin-bottom: 10px;
+        }
+
+        .header p {
+            color: #888;
+            font-size: 1rem;
+        }
+
+        .game-wrapper {
+            display: flex;
+            gap: 20px;
+            justify-content: center;
+            align-items: flex-start;
+            flex-wrap: wrap;
+        }
+
+        /* Unity Canvas Container */
+        #unity-container {
+            background: #231F20;
+            border-radius: 12px;
+            overflow: hidden;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+            position: relative;
+        }
+
+        #unity-canvas {
+            display: block;
+        }
+
+        #loading-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(26, 26, 46, 0.95);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 100;
+        }
+
+        .loader {
+            width: 60px;
+            height: 60px;
+            border: 4px solid #333;
+            border-top-color: #f39c12;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        #loading-progress {
+            margin-top: 20px;
+            font-size: 1.2rem;
+            color: #f39c12;
+        }
+
+        /* Side Panel */
+        .side-panel {
+            width: 300px;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 12px;
+            padding: 20px;
+            backdrop-filter: blur(10px);
+        }
+
+        .panel-section {
+            margin-bottom: 20px;
+        }
+
+        .panel-section h3 {
+            font-size: 1.1rem;
+            margin-bottom: 10px;
+            padding-bottom: 8px;
+            border-bottom: 2px solid #f39c12;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        /* Player Info */
+        .player-info {
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 15px;
+        }
+
+        .player-info.active {
+            border: 2px solid #2ecc71;
+            box-shadow: 0 0 20px rgba(46, 204, 113, 0.3);
+        }
+
+        .player-name {
+            font-size: 1.2rem;
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+
+        .player-name.player1 { color: #e74c3c; }
+        .player-name.player2 { color: #2ecc71; }
+
+        .player-stats {
+            font-size: 0.85rem;
+            color: #aaa;
+        }
+
+        /* Turn Indicator */
+        .turn-indicator {
+            text-align: center;
+            padding: 15px;
+            background: linear-gradient(135deg, #2ecc71, #27ae60);
+            border-radius: 8px;
+            font-size: 1.2rem;
+            font-weight: bold;
+            margin-bottom: 15px;
+            animation: pulse 2s infinite;
+        }
+
+        .turn-indicator.waiting {
+            background: linear-gradient(135deg, #e74c3c, #c0392b);
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.8; }
+        }
+
+        /* Game Log */
+        .game-log {
+            max-height: 200px;
+            overflow-y: auto;
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 8px;
+            padding: 10px;
+        }
+
+        .log-entry {
+            padding: 5px 0;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            font-size: 0.85rem;
+        }
+
+        .log-entry:last-child {
+            border-bottom: none;
+        }
+
+        .log-entry.attack { color: #e74c3c; }
+        .log-entry.move { color: #3498db; }
+        .log-entry.info { color: #f39c12; }
+
+        /* Action Buttons */
+        .action-buttons {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+        }
+
+        .btn {
+            padding: 12px 20px;
+            border: none;
+            border-radius: 8px;
+            font-size: 1rem;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }
+
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .btn-move {
+            background: linear-gradient(135deg, #2ecc71, #27ae60);
+            color: white;
+        }
+
+        .btn-move:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 20px rgba(46, 204, 113, 0.4);
+        }
+
+        .btn-attack {
+            background: linear-gradient(135deg, #e74c3c, #c0392b);
+            color: white;
+        }
+
+        .btn-attack:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 20px rgba(231, 76, 60, 0.4);
+        }
+
+        .btn-skip {
+            background: linear-gradient(135deg, #95a5a6, #7f8c8d);
+            color: white;
+        }
+
+        .btn-defer {
+            background: linear-gradient(135deg, #3498db, #2980b9);
+            color: white;
+        }
+
+        .btn-surrender {
+            background: linear-gradient(135deg, #8e44ad, #9b59b6);
+            color: white;
+            grid-column: span 2;
+        }
+
+        /* Hint Box */
+        .hint-box {
+            background: rgba(243, 156, 18, 0.2);
+            border-left: 4px solid #f39c12;
+            padding: 12px;
+            border-radius: 0 8px 8px 0;
+            margin-bottom: 15px;
+        }
+
+        .hint-box p {
+            font-size: 0.9rem;
+            color: #f39c12;
+        }
+
+        /* Battle Overlay */
+        .battle-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.9);
+            display: none;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+            animation: fadeIn 0.3s ease;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+
+        .battle-content {
+            text-align: center;
+            max-width: 600px;
+        }
+
+        .battle-combatants {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 40px;
+            margin-bottom: 30px;
+        }
+
+        .battle-unit {
+            text-align: center;
+        }
+
+        .battle-unit-image {
+            width: 120px;
+            height: 120px;
+            object-fit: contain;
+            border-radius: 12px;
+            background: rgba(255, 255, 255, 0.1);
+            padding: 10px;
+        }
+
+        .battle-unit-name {
+            margin-top: 10px;
+            font-size: 1.2rem;
+            font-weight: bold;
+        }
+
+        .battle-lightning {
+            font-size: 4rem;
+            animation: flash 0.5s infinite;
+        }
+
+        @keyframes flash {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.5; transform: scale(1.2); }
+        }
+
+        .battle-result {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 20px;
+            border-radius: 12px;
+            margin-bottom: 20px;
+        }
+
+        .battle-result-title {
+            font-size: 1.5rem;
+            margin-bottom: 10px;
+        }
+
+        .battle-close-btn {
+            padding: 15px 40px;
+            font-size: 1.2rem;
+            background: linear-gradient(135deg, #e74c3c, #c0392b);
+            border: none;
+            border-radius: 8px;
+            color: white;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .battle-close-btn:hover {
+            transform: scale(1.05);
+        }
+
+        /* Game Over Overlay */
+        .game-over-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.95);
+            display: none;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 1001;
+        }
+
+        .game-over-content {
+            text-align: center;
+            padding: 40px;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 20px;
+            max-width: 500px;
+        }
+
+        .game-over-title {
+            font-size: 3rem;
+            margin-bottom: 20px;
+        }
+
+        .game-over-title.victory {
+            color: #f39c12;
+            text-shadow: 0 0 30px rgba(243, 156, 18, 0.5);
+        }
+
+        .game-over-title.defeat {
+            color: #e74c3c;
+            text-shadow: 0 0 30px rgba(231, 76, 60, 0.5);
+        }
+
+        .game-over-message {
+            font-size: 1.3rem;
+            margin-bottom: 30px;
+            color: #ccc;
+        }
+
+        .game-over-btn {
+            padding: 15px 40px;
+            font-size: 1.2rem;
+            background: linear-gradient(135deg, #f39c12, #e67e22);
+            border: none;
+            border-radius: 8px;
+            color: white;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .game-over-btn:hover {
+            transform: scale(1.05);
+        }
+
+        /* Mobile Responsive */
+        @media (max-width: 1200px) {
+            .game-wrapper {
+                flex-direction: column;
+                align-items: center;
+            }
+
+            .side-panel {
+                width: 100%;
+                max-width: 600px;
+            }
+
+            #unity-canvas {
+                width: 100% !important;
+                height: auto !important;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Unity Arena</h1>
+            <p>ModernHomm - Тактическая арена</p>
+        </div>
+
+        <div class="game-wrapper">
+            <!-- Unity Canvas -->
+            <div id="unity-container">
+                <canvas id="unity-canvas" width="960" height="600" tabindex="-1"></canvas>
+                <div id="loading-overlay">
+                    <div class="loader"></div>
+                    <div id="loading-progress">Загрузка... 0%</div>
+                </div>
+            </div>
+
+            <!-- Side Panel -->
+            <div class="side-panel">
+                <!-- Turn Indicator -->
+                <div id="turn-indicator" class="turn-indicator">
+                    Загрузка игры...
+                </div>
+
+                <!-- Hint -->
+                <div class="hint-box">
+                    <p id="hint-text">Выберите юнита для действия</p>
+                </div>
+
+                <!-- Player 1 Info -->
+                <div class="panel-section">
+                    <div id="player1-info" class="player-info">
+                        <div class="player-name player1" id="player1-name">Игрок 1</div>
+                        <div class="player-stats" id="player1-stats">-</div>
+                    </div>
+                </div>
+
+                <!-- Player 2 Info -->
+                <div class="panel-section">
+                    <div id="player2-info" class="player-info">
+                        <div class="player-name player2" id="player2-name">Игрок 2</div>
+                        <div class="player-stats" id="player2-stats">-</div>
+                    </div>
+                </div>
+
+                <!-- Action Buttons -->
+                <div class="panel-section">
+                    <h3>Действия</h3>
+                    <div class="action-buttons">
+                        <button class="btn btn-move" id="btn-move" disabled onclick="UnityBridge.onMoveClicked()">
+                            <span>Двигаться</span>
+                        </button>
+                        <button class="btn btn-attack" id="btn-attack" disabled onclick="UnityBridge.onAttackClicked()">
+                            <span>Атаковать</span>
+                        </button>
+                        <button class="btn btn-skip" id="btn-skip" disabled onclick="UnityBridge.onSkipClicked()">
+                            <span>Пропустить</span>
+                        </button>
+                        <button class="btn btn-defer" id="btn-defer" disabled onclick="UnityBridge.onDeferClicked()">
+                            <span>Отложить</span>
+                        </button>
+                        <button class="btn btn-surrender" id="btn-surrender" onclick="UnityBridge.onSurrenderClicked()">
+                            <span>Сдаться</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Game Log -->
+                <div class="panel-section">
+                    <h3>Лог боя</h3>
+                    <div class="game-log" id="game-log">
+                        <div class="log-entry info">Ожидание начала игры...</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Battle Overlay -->
+    <div class="battle-overlay" id="battle-overlay">
+        <div class="battle-content">
+            <div class="battle-combatants">
+                <div class="battle-unit">
+                    <img class="battle-unit-image" id="attacker-image" src="" alt="Атакующий">
+                    <div class="battle-unit-name" id="attacker-name">Атакующий</div>
+                </div>
+                <div class="battle-lightning">⚡</div>
+                <div class="battle-unit">
+                    <img class="battle-unit-image" id="target-image" src="" alt="Цель">
+                    <div class="battle-unit-name" id="target-name">Цель</div>
+                </div>
+            </div>
+            <div class="battle-result">
+                <div class="battle-result-title">Результат атаки</div>
+                <div class="battle-result-text" id="battle-result-text">-</div>
+            </div>
+            <button class="battle-close-btn" onclick="UnityBridge.closeBattleOverlay()">Закрыть</button>
+        </div>
+    </div>
+
+    <!-- Game Over Overlay -->
+    <div class="game-over-overlay" id="game-over-overlay">
+        <div class="game-over-content">
+            <div class="game-over-title" id="game-over-title">ПОБЕДА!</div>
+            <div class="game-over-message" id="game-over-message">Вы победили!</div>
+            <button class="game-over-btn" onclick="window.location.href='/unityArena/menu.html'">Новая игра</button>
+            <button class="game-over-btn" onclick="window.location.href='/arena/'" style="background: linear-gradient(135deg, #3498db, #2980b9); margin-top: 10px;">Вернуться к веб-арене</button>
+        </div>
+    </div>
+
+    <!-- Unity Loader -->
     <script src="Build/arena.loader.js"></script>
     <script>
-      if (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent)) {
-        // Mobile device style: fill the whole browser client area with the game canvas:
-        var meta = document.createElement('meta');
-        meta.name = 'viewport';
-        meta.content = 'width=device-width, height=device-height, initial-scale=1.0, user-scalable=no, shrink-to-fit=yes';
-        document.getElementsByTagName('head')[0].appendChild(meta);
+        // Unity Instance
+        let unityInstance = null;
 
-        var canvas = document.querySelector("#unity-canvas");
-        canvas.style.width = "100%";
-        canvas.style.height = "100%";
-        canvas.style.position = "fixed";
+        // Unity Bridge - JavaScript functions called from Unity
+        const UnityBridge = {
+            // URL Parameters
+            GetUrlParam: function(paramName) {
+                const urlParams = new URLSearchParams(window.location.search);
+                return urlParams.get(paramName) || '';
+            },
 
-        document.body.style.textAlign = "left";
+            // LocalStorage
+            SetLocalStorage: function(key, value) {
+                try {
+                    localStorage.setItem(key, value);
+                } catch (e) {
+                    console.warn('LocalStorage error:', e);
+                }
+            },
 
-      }
+            GetLocalStorage: function(key) {
+                try {
+                    return localStorage.getItem(key) || '';
+                } catch (e) {
+                    console.warn('LocalStorage error:', e);
+                    return '';
+                }
+            },
 
-      createUnityInstance(document.querySelector("#unity-canvas"), {
-        arguments: [],
-        dataUrl: "Build/arena.data.gz",
-        frameworkUrl: "Build/arena.framework.js.gz",
-        codeUrl: "Build/arena.wasm.gz",
-        streamingAssetsUrl: "StreamingAssets",
-        companyName: "ModernHomm",
-        productName: "Unity Arena",
-        productVersion: "1.0.0",
-        // matchWebGLToCanvasSize: false, // Uncomment this to separately control WebGL canvas render size and DOM element size.
-        // devicePixelRatio: 1, // Uncomment this to override low DPI rendering on high DPI displays.
-      }).then((unityInstance) => {
-      }).catch((message) => {
-        alert(message);
-      });
+            RemoveLocalStorage: function(key) {
+                try {
+                    localStorage.removeItem(key);
+                } catch (e) {
+                    console.warn('LocalStorage error:', e);
+                }
+            },
+
+            // URL & Navigation
+            GetCurrentUrl: function() {
+                return window.location.href;
+            },
+
+            RedirectTo: function(url) {
+                window.location.href = url;
+            },
+
+            // UI Updates from Unity
+            updateTurnIndicator: function(text, isMyTurn) {
+                const indicator = document.getElementById('turn-indicator');
+                indicator.textContent = text;
+                indicator.className = 'turn-indicator' + (isMyTurn ? '' : ' waiting');
+            },
+
+            updateHint: function(text) {
+                document.getElementById('hint-text').textContent = text;
+            },
+
+            updatePlayer1Info: function(name, stats) {
+                document.getElementById('player1-name').textContent = name;
+                document.getElementById('player1-stats').textContent = stats;
+            },
+
+            updatePlayer2Info: function(name, stats) {
+                document.getElementById('player2-name').textContent = name;
+                document.getElementById('player2-stats').textContent = stats;
+            },
+
+            setPlayerActive: function(playerNum) {
+                document.getElementById('player1-info').classList.toggle('active', playerNum === 1);
+                document.getElementById('player2-info').classList.toggle('active', playerNum === 2);
+            },
+
+            enableActionButtons: function(canMove, canAttack, canSkip, canDefer) {
+                document.getElementById('btn-move').disabled = !canMove;
+                document.getElementById('btn-attack').disabled = !canAttack;
+                document.getElementById('btn-skip').disabled = !canSkip;
+                document.getElementById('btn-defer').disabled = !canDefer;
+            },
+
+            disableAllActionButtons: function() {
+                document.getElementById('btn-move').disabled = true;
+                document.getElementById('btn-attack').disabled = true;
+                document.getElementById('btn-skip').disabled = true;
+                document.getElementById('btn-defer').disabled = true;
+            },
+
+            addLogEntry: function(message, type) {
+                const log = document.getElementById('game-log');
+                const entry = document.createElement('div');
+                entry.className = 'log-entry ' + (type || 'info');
+                const time = new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+                entry.innerHTML = `[${time}] ${message}`;
+                log.insertBefore(entry, log.firstChild);
+
+                // Limit log entries
+                while (log.children.length > 50) {
+                    log.removeChild(log.lastChild);
+                }
+            },
+
+            clearLog: function() {
+                document.getElementById('game-log').innerHTML = '';
+            },
+
+            // Battle Overlay
+            showBattleOverlay: function(attackerName, attackerImage, targetName, targetImage, resultText) {
+                document.getElementById('attacker-name').textContent = attackerName;
+                document.getElementById('attacker-image').src = attackerImage || '/static/images/units/default.png';
+                document.getElementById('target-name').textContent = targetName;
+                document.getElementById('target-image').src = targetImage || '/static/images/units/default.png';
+                document.getElementById('battle-result-text').textContent = resultText;
+                document.getElementById('battle-overlay').style.display = 'flex';
+
+                // Auto close after 5 seconds
+                setTimeout(() => {
+                    UnityBridge.closeBattleOverlay();
+                }, 5000);
+            },
+
+            closeBattleOverlay: function() {
+                document.getElementById('battle-overlay').style.display = 'none';
+            },
+
+            // Game Over
+            showGameOver: function(isWinner, winnerName) {
+                const overlay = document.getElementById('game-over-overlay');
+                const title = document.getElementById('game-over-title');
+                const message = document.getElementById('game-over-message');
+
+                if (isWinner) {
+                    title.textContent = 'ПОБЕДА!';
+                    title.className = 'game-over-title victory';
+                    message.textContent = 'Поздравляем! Вы одержали победу!';
+                } else {
+                    title.textContent = 'ПОРАЖЕНИЕ';
+                    title.className = 'game-over-title defeat';
+                    message.textContent = winnerName + ' одержал победу.';
+                }
+
+                overlay.style.display = 'flex';
+            },
+
+            // Button callbacks - send to Unity
+            onMoveClicked: function() {
+                if (unityInstance) {
+                    unityInstance.SendMessage('GameManager', 'OnMoveButtonClicked');
+                }
+            },
+
+            onAttackClicked: function() {
+                if (unityInstance) {
+                    unityInstance.SendMessage('GameManager', 'OnAttackButtonClicked');
+                }
+            },
+
+            onSkipClicked: function() {
+                if (unityInstance) {
+                    unityInstance.SendMessage('GameManager', 'OnSkipButtonClicked');
+                }
+            },
+
+            onDeferClicked: function() {
+                if (unityInstance) {
+                    unityInstance.SendMessage('GameManager', 'OnDeferButtonClicked');
+                }
+            },
+
+            onSurrenderClicked: function() {
+                if (confirm('Вы уверены, что хотите сдаться?')) {
+                    if (unityInstance) {
+                        unityInstance.SendMessage('GameManager', 'OnSurrenderClicked');
+                    }
+                }
+            }
+        };
+
+        // Global functions for Unity jslib
+        function GetUrlParam(paramName) {
+            return UnityBridge.GetUrlParam(paramName);
+        }
+
+        function SetLocalStorage(key, value) {
+            UnityBridge.SetLocalStorage(key, value);
+        }
+
+        function GetLocalStorage(key) {
+            return UnityBridge.GetLocalStorage(key);
+        }
+
+        function RemoveLocalStorage(key) {
+            UnityBridge.RemoveLocalStorage(key);
+        }
+
+        function GetCurrentUrl() {
+            return UnityBridge.GetCurrentUrl();
+        }
+
+        function RedirectTo(url) {
+            UnityBridge.RedirectTo(url);
+        }
+
+        // Mobile detection
+        if (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent)) {
+            const canvas = document.querySelector("#unity-canvas");
+            canvas.style.width = "100%";
+            canvas.style.height = "auto";
+        }
+
+        // Initialize Unity
+        createUnityInstance(document.querySelector("#unity-canvas"), {
+            arguments: [],
+            dataUrl: "Build/arena.data.gz",
+            frameworkUrl: "Build/arena.framework.js.gz",
+            codeUrl: "Build/arena.wasm.gz",
+            streamingAssetsUrl: "StreamingAssets",
+            companyName: "ModernHomm",
+            productName: "Unity Arena",
+            productVersion: "1.0.0",
+        }, (progress) => {
+            // Update progress
+            const percent = Math.round(progress * 100);
+            document.getElementById('loading-progress').textContent = `Загрузка... ${percent}%`;
+        }).then((instance) => {
+            unityInstance = instance;
+            // Hide loading overlay
+            document.getElementById('loading-overlay').style.display = 'none';
+
+            // Log startup
+            UnityBridge.addLogEntry('Unity Arena загружена', 'info');
+
+            // Check for game_id in URL and auto-start
+            const gameId = UnityBridge.GetUrlParam('game_id');
+            const playerId = UnityBridge.GetUrlParam('player_id');
+
+            if (gameId && playerId) {
+                UnityBridge.addLogEntry(`Загрузка игры #${gameId}...`, 'info');
+            }
+        }).catch((message) => {
+            console.error('Unity load error:', message);
+            document.getElementById('loading-progress').textContent = 'Ошибка загрузки: ' + message;
+        });
     </script>
-  </body>
+</body>
 </html>
