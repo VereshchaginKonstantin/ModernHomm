@@ -179,10 +179,44 @@ class TestGodotArenaCORS:
         with open(api_client_path, 'r') as f:
             content = f.read()
 
-        # Проверяем что используется правильный путь API
-        assert '/arena/api' in content, "API путь должен быть /arena/api"
+        # Проверяем что используется публичный API путь (без авторизации)
+        assert '/arena/api/public' in content, "API путь должен быть /arena/api/public"
         # Проверяем что в веб-версии получаем origin из JavaScript
         assert 'window.location.origin' in content, "В веб-версии должен использоваться origin браузера"
+
+
+class TestGodotArenaPublicAPI:
+    """Тесты публичных API эндпоинтов для Godot"""
+
+    def test_public_api_endpoints_exist_in_arena(self):
+        """Проверка наличия публичных API эндпоинтов в arena.py"""
+        import os
+        arena_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'web', 'arena.py')
+        with open(arena_path, 'r') as f:
+            content = f.read()
+
+        # Проверяем наличие публичных эндпоинтов
+        assert '/api/public/players' in content, "Должен быть эндпоинт /api/public/players"
+        assert '/api/public/games/' in content, "Должны быть эндпоинты /api/public/games/"
+        assert 'api_public_players' in content, "Должна быть функция api_public_players"
+        assert 'api_public_game_state' in content, "Должна быть функция api_public_game_state"
+        assert 'api_public_move' in content, "Должна быть функция api_public_move"
+
+    def test_public_api_no_login_required(self):
+        """Проверка что публичные API не требуют авторизации"""
+        import os
+        arena_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'web', 'arena.py')
+        with open(arena_path, 'r') as f:
+            content = f.read()
+
+        # Находим секцию публичного API
+        public_api_section = content.split('# ==================== Public API Endpoints for Godot ====================')
+        assert len(public_api_section) > 1, "Должна быть секция Public API Endpoints"
+
+        public_api_code = public_api_section[1]
+        # Проверяем что в секции публичного API нет @login_required
+        assert '@login_required' not in public_api_code, \
+            "Публичные API эндпоинты не должны использовать @login_required"
 
 
 class TestGodotArenaIntegration:

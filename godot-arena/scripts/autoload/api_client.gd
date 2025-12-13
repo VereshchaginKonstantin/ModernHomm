@@ -5,7 +5,8 @@ signal request_completed(result: Dictionary)
 signal request_failed(error: String)
 
 # API Base URL - определяется из текущего URL в браузере
-var api_base: String = "/arena/api"
+# Используем публичный API без авторизации для Godot WebGL
+var api_base: String = "/arena/api/public"
 
 # HTTP Request node
 var http_request: HTTPRequest
@@ -21,9 +22,10 @@ func _ready() -> void:
 
 func _init_web_api_base() -> void:
 	# Получаем origin из JavaScript
+	# Используем публичный API без авторизации для Godot WebGL
 	var js_code = """
 		(function() {
-			return window.location.origin + '/arena/api';
+			return window.location.origin + '/arena/api/public';
 		})()
 	"""
 	var result = JavaScriptBridge.eval(js_code)

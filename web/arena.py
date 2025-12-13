@@ -1461,3 +1461,196 @@ def get_game_full_data(game_id):
             'obstacles': obstacles_data,
             'logs': logs_data
         }
+
+
+# ==================== Public API Endpoints for Godot ====================
+# Эти эндпоинты не требуют авторизации для использования из Godot WebGL
+
+@arena_bp.route('/api/public/players')
+def api_public_players():
+    """Публичный эндпоинт - получить список игроков для Godot"""
+    with db.get_session() as session_db:
+        players = session_db.query(GameUser).order_by(GameUser.name).all()
+        result = []
+        for p in players:
+            user_units = session_db.query(UserUnit).filter_by(game_user_id=p.id).all()
+            units = []
+            for uu in user_units:
+                unit = session_db.query(Unit).filter_by(id=uu.unit_type_id).first()
+                if unit and uu.count > 0:
+                    units.append({
+                        'unit_id': unit.id,
+                        'name': unit.name,
+                        'icon': unit.icon,
+                        'count': uu.count
+                    })
+
+            result.append({
+                'id': p.id,
+                'telegram_id': p.telegram_id,
+                'name': p.name,
+                'balance': float(p.balance),
+                'wins': p.wins,
+                'losses': p.losses,
+                'units': units
+            })
+
+    return jsonify(result)
+
+
+@arena_bp.route('/api/public/games/<int:game_id>/state')
+def api_public_game_state(game_id):
+    """Публичный эндпоинт - получить состояние игры для Godot"""
+    with db.get_session() as session_db:
+        game = session_db.query(Game).filter_by(id=game_id).first()
+        if not game:
+            return jsonify({'error': 'Game not found'}), 404
+
+        game_state = GameState.from_game(game, session_db)
+        return jsonify(game_state.to_dict())
+
+
+@arena_bp.route('/api/public/games/<int:game_id>/units/<int:unit_id>/actions')
+def api_public_unit_actions(game_id, unit_id):
+    """Публичный эндпоинт - получить доступные действия юнита для Godot"""
+    with db.get_session() as session_db:
+        game = session_db.query(Game).filter_by(id=game_id).first()
+        if not game:
+            return jsonify({'error': 'Game not found'}), 404
+
+        game_state = GameState.from_game(game, session_db)
+
+        unit = None
+        for u in game_state.units:
+            if u.get('id') == unit_id:
+                unit = u
+                break
+
+        if not unit:
+            return jsonify({'error': 'Unit not found'}), 404
+
+        engine = GameEngine(game_state)
+        moves = engine.get_valid_moves(unit_id)
+        attacks = engine.get_valid_attacks(unit_id)
+
+        return jsonify({
+            'unit_id': unit_id,
+            'moves': moves,
+            'attacks': attacks
+        })
+
+
+@arena_bp.route('/api/public/games/create', methods=['POST'])
+def api_public_create_game():
+    """Публичный эндпоинт - создать игру для Godot"""
+    data = request.get_json()
+    player1_id = data.get('player1_id')
+    player2_name = data.get('player2_name')
+    field_size = data.get('field_size', '7x7')
+
+    with db.get_session() as session_db:
+        player1 = session_db.query(GameUser).filter_by(id=player1_id).first()
+        if not player1:
+            return jsonify({'error': 'Player 1 not found'}), 404
+
+        player2 = session_db.query(GameUser).filter_by(name=player2_name).first()
+        if not player2:
+            return jsonify({'error': 'Player 2 not found'}), 404
+
+        field = session_db.query(Field).filter_by(name=field_size).first()
+        if not field:
+            return jsonify({'error': 'Field not found'}), 404
+
+        game = Game(
+            player1_id=player1.id,
+            player2_id=player2.id,
+            field_id=field.id,
+            status=GameStatus.WAITING,
+            current_player_id=player1.id
+        )
+        session_db.add(game)
+        session_db.flush()
+
+        game_id = game.id
+        session_db.commit()
+
+        return jsonify({'game_id': game_id, 'status': 'waiting'})
+
+
+@arena_bp.route('/api/public/games/<int:game_id>/accept', methods=['POST'])
+def api_public_accept_game(game_id):
+    """Публичный эндпоинт - принять игру для Godot"""
+    data = request.get_json()
+    player_id = data.get('player_id')
+
+    with db.get_session() as session_db:
+        game = session_db.query(Game).filter_by(id=game_id).first()
+        if not game:
+            return jsonify({'error': 'Game not found'}), 404
+
+        if game.status != GameStatus.WAITING:
+            return jsonify({'error': 'Game is not waiting for acceptance'}), 400
+
+        if game.player2_id != player_id:
+            return jsonify({'error': 'You are not player 2 in this game'}), 403
+
+        game.status = GameStatus.IN_PROGRESS
+        game.started_at = datetime.utcnow()
+
+        place_units_on_field(game, session_db)
+        generate_obstacles(game, session_db)
+
+        session_db.commit()
+
+        return jsonify({'status': 'in_progress', 'game_id': game_id})
+
+
+@arena_bp.route('/api/public/games/<int:game_id>/move', methods=['POST'])
+def api_public_move(game_id):
+    """Публичный эндпоинт - выполнить ход для Godot"""
+    data = request.get_json()
+    player_id = data.get('player_id')
+    unit_id = data.get('unit_id')
+    action = data.get('action')
+    target_x = data.get('target_x')
+    target_y = data.get('target_y')
+    target_id = data.get('target_id')
+
+    with db.get_session() as session_db:
+        game = session_db.query(Game).filter_by(id=game_id).first()
+        if not game:
+            return jsonify({'error': 'Game not found'}), 404
+
+        if game.status != GameStatus.IN_PROGRESS:
+            return jsonify({'error': 'Game is not in progress'}), 400
+
+        if game.current_player_id != player_id:
+            return jsonify({'error': 'Not your turn'}), 403
+
+        game_state = GameState.from_game(game, session_db)
+        engine = GameEngine(game_state)
+
+        result = None
+        if action == 'move':
+            result = engine.move_unit(unit_id, target_x, target_y)
+        elif action == 'attack':
+            result = engine.attack_unit(unit_id, target_id)
+        elif action == 'skip':
+            result = engine.skip_unit(unit_id)
+        elif action == 'defer':
+            result = engine.defer_unit(unit_id)
+        else:
+            return jsonify({'error': 'Invalid action'}), 400
+
+        if not result.get('success'):
+            return jsonify({'error': result.get('error', 'Action failed')}), 400
+
+        engine.save_to_game(game, session_db)
+        session_db.commit()
+
+        new_state = GameState.from_game(game, session_db)
+        return jsonify({
+            'success': True,
+            'result': result,
+            'game_state': new_state.to_dict()
+        })
