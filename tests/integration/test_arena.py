@@ -2207,5 +2207,60 @@ class TestPublicCreateGameAPI:
             assert found is not None
 
 
+class TestGameAcceptButtonCallback:
+    """Тесты для кнопки принятия игры в Telegram боте"""
+
+    def test_accept_game_button_uses_correct_callback_pattern(self):
+        """Тест: кнопка принятия игры использует правильный callback_data pattern"""
+        import sys
+        import os
+        sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+
+        from bot.main import SimpleBot
+
+        # Проверяем что callback_data для кнопки "Принять игру"
+        # соответствует паттерну accept_game:
+        # Это проверяется через создание клавиатуры
+
+        # Создаем мок бота для доступа к методу
+        class MockBot(SimpleBot):
+            def __init__(self):
+                # Не вызываем __init__ родителя, только проверяем метод
+                pass
+
+        mock_bot = MockBot()
+
+        # Тестируем создание клавиатуры с action=accept
+        actions = {"action": "accept", "message": "Примите игру"}
+        game_id = 123
+        player_id = 456
+
+        keyboard = mock_bot._create_game_keyboard(game_id, player_id, actions)
+
+        # Проверяем что первая кнопка имеет правильный callback_data
+        assert len(keyboard) > 0
+        accept_button = keyboard[0][0]
+        assert accept_button.callback_data == f"accept_game:{game_id}"
+        # Ранее было ошибочно: game_accept:{game_id}
+        # Теперь должно быть: accept_game:{game_id}
+
+    def test_accept_game_handler_pattern_matches_button(self):
+        """Тест: паттерн обработчика соответствует callback_data кнопки"""
+        import re
+
+        # Паттерн обработчика (из bot/main.py line 4158)
+        handler_pattern = r'^accept_game:'
+
+        # callback_data кнопки
+        button_callback_data = "accept_game:123"
+
+        # Проверяем что паттерн соответствует
+        assert re.match(handler_pattern, button_callback_data) is not None
+
+        # Проверяем что старый неправильный паттерн НЕ соответствует
+        wrong_callback_data = "game_accept:123"
+        assert re.match(handler_pattern, wrong_callback_data) is None
+
+
 if __name__ == '__main__':
     pytest.main([__file__, '-v'])

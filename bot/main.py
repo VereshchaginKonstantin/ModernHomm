@@ -1882,7 +1882,7 @@ class SimpleBot:
         keyboard = []
 
         if actions.get("action") == "accept":
-            keyboard.append([InlineKeyboardButton("✅ Принять игру", callback_data=f"game_accept:{game_id}")])
+            keyboard.append([InlineKeyboardButton("✅ Принять игру", callback_data=f"accept_game:{game_id}")])
         elif actions.get("action") == "wait":
             # Не возвращаем пустой список, просто не добавляем кнопки действий
             pass
