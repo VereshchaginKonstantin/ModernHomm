@@ -14,7 +14,7 @@ from flask import Blueprint, render_template_string, request, jsonify, session, 
 from sqlalchemy import text, desc
 from functools import wraps
 
-from db.models import Base, GameUser, Unit, UserUnit, Game, GameStatus, BattleUnit, Field, GameLog, Obstacle
+from db.models import Base, GameUser, Game, GameStatus, BattleUnit, Field, GameLog, Obstacle, Army, ArmyUnit, UserRace, RaceUnit
 from db.repository import Database
 from core.game_engine import GameEngine
 from web.templates import HEADER_TEMPLATE, BASE_STYLE, FOOTER_TEMPLATE, get_web_version, get_bot_version
@@ -66,25 +66,26 @@ class GameState:
         units = []
         for bu in game.battle_units:
             if bu.total_count > 0:
-                unit_type = bu.user_unit.unit
-                units.append({
-                    'id': bu.id,
-                    'player_id': bu.player_id,
-                    'x': bu.position_x,
-                    'y': bu.position_y,
-                    'count': bu.total_count,
-                    'has_moved': 1 if bu.has_moved else 0,
-                    'unit_type': {
-                        'id': unit_type.id,
-                        'name': unit_type.name,
-                        'icon': unit_type.icon,
-                        'attack': unit_type.attack,
-                        'defense': unit_type.defense,
-                        'hp': unit_type.hp,
-                        'speed': unit_type.speed,
-                        'attack_range': unit_type.attack_range
-                    }
-                })
+                race_unit = bu.army_unit.race_unit if bu.army_unit else None
+                if race_unit:
+                    units.append({
+                        'id': bu.id,
+                        'player_id': bu.player_id,
+                        'x': bu.position_x,
+                        'y': bu.position_y,
+                        'count': bu.total_count,
+                        'has_moved': 1 if bu.has_moved else 0,
+                        'unit_type': {
+                            'id': race_unit.id,
+                            'name': race_unit.name,
+                            'icon': race_unit.unit_level.icon if race_unit.unit_level else '?',
+                            'attack': race_unit.attack,
+                            'defense': race_unit.defense,
+                            'hp': race_unit.health,
+                            'speed': race_unit.speed,
+                            'attack_range': race_unit.attack_range
+                        }
+                    })
 
         obstacles = []
         for obs in session.query(Obstacle).filter_by(game_id=game.id).all():
@@ -939,17 +940,24 @@ def api_players():
         players = session_db.query(GameUser).order_by(GameUser.username).all()
         result = []
         for p in players:
-            # Получаем юнитов игрока
-            user_units = session_db.query(UserUnit).filter_by(game_user_id=p.id).all()
-            units = []
-            for uu in user_units:
-                unit = session_db.query(Unit).filter_by(id=uu.unit_type_id).first()
-                if unit and uu.count > 0:
-                    units.append({
-                        'unit_id': unit.id,
-                        'name': unit.name,
-                        'icon': unit.icon,
-                        'count': uu.count
+            # Получаем армии игрока через user_races
+            armies = []
+            user_races = session_db.query(UserRace).filter_by(game_user_id=p.id).all()
+            for user_race in user_races:
+                for army in user_race.armies:
+                    army_units = []
+                    for au in army.army_units:
+                        if au.race_unit and au.count > 0:
+                            army_units.append({
+                                'unit_id': au.race_unit.id,
+                                'name': au.race_unit.name,
+                                'icon': au.race_unit.unit_level.icon if au.race_unit.unit_level else '?',
+                                'count': au.count
+                            })
+                    armies.append({
+                        'army_id': army.id,
+                        'army_name': army.name,
+                        'units': army_units
                     })
 
             result.append({
@@ -959,7 +967,7 @@ def api_players():
                 'balance': float(p.balance),
                 'wins': p.wins,
                 'losses': p.losses,
-                'units': units
+                'armies': armies
             })
 
     return jsonify(result)
@@ -1229,8 +1237,13 @@ def api_game_state(game_id):
         units_data = []
 
         for bu in battle_units:
-            user_unit = session_db.query(UserUnit).filter_by(id=bu.user_unit_id).first()
-            unit_type = session_db.query(Unit).filter_by(id=user_unit.unit_type_id).first() if user_unit else None
+            # Используем army_unit -> race_unit вместо user_unit -> unit
+            army_unit = bu.army_unit
+            race_unit = army_unit.race_unit if army_unit else None
+
+            # Получаем скин юнита если есть
+            skin = race_unit.skins[0] if race_unit and race_unit.skins else None
+            image_path = skin.image_path if skin else None
 
             units_data.append({
                 'id': bu.id,
@@ -1244,16 +1257,16 @@ def api_game_state(game_id):
                 'has_moved': bu.has_moved,
                 'deferred': bu.deferred,
                 'unit_type': {
-                    'id': unit_type.id,
-                    'name': unit_type.name,
-                    'icon': unit_type.icon,
-                    'damage': unit_type.damage,
-                    'defense': unit_type.defense,
-                    'health': unit_type.health,
-                    'speed': unit_type.speed,
-                    'range': unit_type.range,
-                    'image_path': unit_type.image_path
-                } if unit_type else None
+                    'id': race_unit.id,
+                    'name': race_unit.name,
+                    'icon': race_unit.unit_level.icon if race_unit.unit_level else '?',
+                    'damage': race_unit.attack,
+                    'defense': race_unit.defense,
+                    'health': race_unit.health,
+                    'speed': race_unit.speed,
+                    'range': race_unit.attack_range,
+                    'image_path': image_path
+                } if race_unit else None
             })
 
         # Препятствия
@@ -1323,14 +1336,14 @@ def api_unit_actions(game_id, unit_id):
                 BattleUnit.total_count > 0
             ).all()
 
-            user_unit = session_db.query(UserUnit).filter_by(id=battle_unit.user_unit_id).first()
-            unit_type = session_db.query(Unit).filter_by(id=user_unit.unit_type_id).first() if user_unit else None
+            # Используем army_unit -> race_unit
+            race_unit = battle_unit.army_unit.race_unit if battle_unit.army_unit else None
 
-            if unit_type:
+            if race_unit:
                 for enemy in enemy_units:
                     # Проверяем дальность атаки
                     distance = abs(battle_unit.position_x - enemy.position_x) + abs(battle_unit.position_y - enemy.position_y)
-                    if distance <= unit_type.range:
+                    if distance <= race_unit.attack_range:
                         # Проверяем линию обзора
                         if engine._has_line_of_sight(
                             battle_unit.position_x, battle_unit.position_y,
@@ -1497,8 +1510,13 @@ def get_game_full_data(game_id):
         units_data = []
 
         for bu in battle_units:
-            user_unit = session_db.query(UserUnit).filter_by(id=bu.user_unit_id).first()
-            unit_type = session_db.query(Unit).filter_by(id=user_unit.unit_type_id).first() if user_unit else None
+            # Используем army_unit -> race_unit
+            army_unit = bu.army_unit
+            race_unit = army_unit.race_unit if army_unit else None
+
+            # Получаем скин юнита если есть
+            skin = race_unit.skins[0] if race_unit and race_unit.skins else None
+            image_path = skin.image_path if skin else None
 
             units_data.append({
                 'id': bu.id,
@@ -1510,16 +1528,16 @@ def get_game_full_data(game_id):
                 'morale': bu.morale,
                 'fatigue': bu.fatigue,
                 'unit_type': {
-                    'id': unit_type.id,
-                    'name': unit_type.name,
-                    'icon': unit_type.icon,
-                    'damage': unit_type.damage,
-                    'defense': unit_type.defense,
-                    'health': unit_type.health,
-                    'speed': unit_type.speed,
-                    'range': unit_type.range,
-                    'image_path': unit_type.image_path
-                } if unit_type else None
+                    'id': race_unit.id,
+                    'name': race_unit.name,
+                    'icon': race_unit.unit_level.icon if race_unit.unit_level else '?',
+                    'damage': race_unit.attack,
+                    'defense': race_unit.defense,
+                    'health': race_unit.health,
+                    'speed': race_unit.speed,
+                    'range': race_unit.attack_range,
+                    'image_path': image_path
+                } if race_unit else None
             })
 
         # Препятствия
@@ -1566,19 +1584,25 @@ def api_public_players():
         players = session_db.query(GameUser).order_by(GameUser.username).all()
         result = []
         for p in players:
-            user_units = session_db.query(UserUnit).filter_by(game_user_id=p.id).all()
-            units = []
-            army_cost = 0
-            for uu in user_units:
-                unit = session_db.query(Unit).filter_by(id=uu.unit_type_id).first()
-                if unit and uu.count > 0:
-                    units.append({
-                        'unit_id': unit.id,
-                        'name': unit.name,
-                        'icon': unit.icon,
-                        'count': uu.count
+            # Получаем армии игрока через user_races
+            armies = []
+            user_races = session_db.query(UserRace).filter_by(game_user_id=p.id).all()
+            for user_race in user_races:
+                for army in user_race.armies:
+                    army_units = []
+                    for au in army.army_units:
+                        if au.race_unit and au.count > 0:
+                            army_units.append({
+                                'unit_id': au.race_unit.id,
+                                'name': au.race_unit.name,
+                                'icon': au.race_unit.unit_level.icon if au.race_unit.unit_level else '?',
+                                'count': au.count
+                            })
+                    armies.append({
+                        'army_id': army.id,
+                        'army_name': army.name,
+                        'units': army_units
                     })
-                    army_cost += float(unit.price) * uu.count
 
             result.append({
                 'id': p.id,
@@ -1587,8 +1611,8 @@ def api_public_players():
                 'balance': float(p.balance),
                 'wins': p.wins,
                 'losses': p.losses,
-                'units': units,
-                'army_cost': army_cost
+                'glory': p.glory,
+                'armies': armies
             })
 
     # Возвращаем в формате {"players": [...]} для совместимости с Godot
@@ -1607,19 +1631,25 @@ def api_public_me():
         if not player:
             return jsonify({"current_player": {}})
 
-        user_units = session_db.query(UserUnit).filter_by(game_user_id=player.id).all()
-        units = []
-        army_cost = 0
-        for uu in user_units:
-            unit = session_db.query(Unit).filter_by(id=uu.unit_type_id).first()
-            if unit and uu.count > 0:
-                units.append({
-                    'unit_id': unit.id,
-                    'name': unit.name,
-                    'icon': unit.icon,
-                    'count': uu.count
+        # Получаем армии игрока через user_races
+        armies = []
+        user_races = session_db.query(UserRace).filter_by(game_user_id=player.id).all()
+        for user_race in user_races:
+            for army in user_race.armies:
+                army_units = []
+                for au in army.army_units:
+                    if au.race_unit and au.count > 0:
+                        army_units.append({
+                            'unit_id': au.race_unit.id,
+                            'name': au.race_unit.name,
+                            'icon': au.race_unit.unit_level.icon if au.race_unit.unit_level else '?',
+                            'count': au.count
+                        })
+                armies.append({
+                    'army_id': army.id,
+                    'army_name': army.name,
+                    'units': army_units
                 })
-                army_cost += float(unit.price) * uu.count
 
         return jsonify({
             "current_player": {
@@ -1629,8 +1659,8 @@ def api_public_me():
                 'balance': float(player.balance),
                 'wins': player.wins,
                 'losses': player.losses,
-                'units': units,
-                'army_cost': army_cost
+                'glory': player.glory,
+                'armies': armies
             }
         })
 

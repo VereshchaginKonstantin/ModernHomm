@@ -65,6 +65,8 @@ package "Battle" #LightGreen {
         +id: Integer <<PK>>
         +player1_id: Integer <<FK>>
         +player2_id: Integer <<FK>>
+        +player1_army_id: Integer <<FK>>
+        +player2_army_id: Integer <<FK>>
         +field_id: Integer <<FK>>
         +status: GameStatus
         +current_player_id: Integer <<FK>>
@@ -78,7 +80,7 @@ package "Battle" #LightGreen {
     class BattleUnit {
         +id: Integer <<PK>>
         +game_id: Integer <<FK>>
-        +user_unit_id: Integer <<FK>>
+        +army_unit_id: Integer <<FK>>
         +player_id: Integer <<FK>>
         +position_x: Integer
         +position_y: Integer
@@ -111,47 +113,6 @@ package "Battle" #LightGreen {
 
 ' ============= ARMY =============
 package "Army" #LightYellow {
-    class Unit {
-        +id: Integer <<PK>>
-        +name: String(255) <<unique>>
-        +icon: String(10)
-        +image_path: String(512)
-        +description: String(1000)
-        +price: Numeric(12,2)
-        +damage: Integer
-        +defense: Integer
-        +range: Integer
-        +health: Integer
-        +speed: Integer
-        +luck: Numeric(5,4)
-        +crit_chance: Numeric(5,4)
-        +dodge_chance: Numeric(5,4)
-        +is_kamikaze: Integer
-        +is_flying: Integer
-        +counterattack_chance: Numeric(5,4)
-        +regeneration_health: Integer
-        +poison_damage: Integer
-        +poison_turns: Integer
-        +poison_immunity: Integer
-        +effective_against_unit_id: Integer <<FK>>
-        +owner_id: Integer <<FK>>
-    }
-
-    class UnitCustomIcon {
-        +id: Integer <<PK>>
-        +unit_id: Integer <<FK>> <<unique>>
-        +custom_icon: String(10)
-        +created_at: DateTime
-        +updated_at: DateTime
-    }
-
-    class UserUnit {
-        +id: Integer <<PK>>
-        +game_user_id: Integer <<FK>>
-        +unit_type_id: Integer <<FK>>
-        +count: Integer
-    }
-
     class UnitLevel {
         +id: Integer <<PK>>
         +level: Integer <<unique>>
@@ -280,20 +241,15 @@ GameUser "1" --> "*" Game : player2
 GameUser "1" --> "*" Game : current_player
 GameUser "1" --> "*" Game : winner
 GameUser "1" --> "*" BattleUnit : player
-GameUser "1" --> "*" UserUnit : units
 
 ' Battle relationships
 Game "*" --> "1" Field : field
 Game "1" --> "*" BattleUnit : battle_units
 Game "1" --> "*" Obstacle : obstacles
 Game "1" --> "*" GameLog : logs
-BattleUnit "*" --> "1" UserUnit : user_unit
-
-' Army relationships
-Unit "1" --> "0..1" UnitCustomIcon : custom_icon
-Unit "0..1" <-- Unit : effective_against
-Unit "*" --> "0..1" GameUser : owner
-UserUnit "*" --> "1" Unit : unit
+Game "*" --> "0..1" Army : player1_army
+Game "*" --> "0..1" Army : player2_army
+BattleUnit "*" --> "1" ArmyUnit : army_unit
 
 ' Race relationships
 GameRace "1" --> "*" RaceUnit : race_units

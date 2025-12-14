@@ -6,7 +6,7 @@ Merged conftest with fixtures for all test types.
 
 import os
 import pytest
-from db import Database, Base, User, Message, GameUser, UserUnit, Game
+from db import Database, Base, User, Message, GameUser, Game
 from sqlalchemy import create_engine, text
 
 
@@ -38,13 +38,11 @@ def db(test_db_url):
             session.execute(text("DELETE FROM game_logs"))
             session.execute(text("DELETE FROM obstacles"))
             session.execute(text("DELETE FROM games"))
-            session.execute(text("DELETE FROM user_units"))
             session.execute(text("DELETE FROM game_users"))
             # Clean user data from old simple bot
             session.execute(text("DELETE FROM messages"))
             session.execute(text("DELETE FROM users"))
-            # Clean image-related data
-            session.execute(text("DELETE FROM unit_images"))
+            # Clean settings
             session.execute(text("DELETE FROM settings"))
             session.commit()
     except Exception as e:
@@ -63,10 +61,8 @@ def db(test_db_url):
             session.execute(text("DELETE FROM game_logs"))
             session.execute(text("DELETE FROM obstacles"))
             session.execute(text("DELETE FROM games"))
-            session.execute(text("DELETE FROM user_units"))
             session.execute(text("DELETE FROM game_users"))
-            # Clean image-related data
-            session.execute(text("DELETE FROM unit_images"))
+            # Clean settings
             session.execute(text("DELETE FROM settings"))
             session.execute(text("DELETE FROM messages"))
             session.execute(text("DELETE FROM users"))

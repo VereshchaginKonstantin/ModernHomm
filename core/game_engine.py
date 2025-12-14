@@ -9,7 +9,7 @@ from datetime import datetime, timedelta
 from decimal import Decimal
 from typing import List, Tuple, Optional, Dict, Set
 from sqlalchemy.orm import Session
-from db.models import Game, GameStatus, BattleUnit, GameUser, UserUnit, Field, Unit, UnitCustomIcon, Obstacle, GameLog
+from db.models import Game, GameStatus, BattleUnit, GameUser, Field, Obstacle, GameLog, Army, ArmyUnit, RaceUnit, UserRace, UserRaceUnit
 
 logger = logging.getLogger(__name__)
 
@@ -118,6 +118,14 @@ class GameEngine:
 
         units_state = []
         for unit in units:
+            # Получаем информацию о юните из армии
+            unit_name = 'Unknown'
+            unit_icon = '?'
+            if unit.army_unit and unit.army_unit.race_unit:
+                unit_name = unit.army_unit.race_unit.name
+                # Используем иконку уровня юнита
+                if unit.army_unit.race_unit.unit_level:
+                    unit_icon = unit.army_unit.race_unit.unit_level.icon
             unit_info = {
                 'id': unit.id,
                 'player_id': unit.player_id,
@@ -125,8 +133,8 @@ class GameEngine:
                 'position_y': unit.position_y,
                 'total_count': unit.total_count,
                 'has_moved': unit.has_moved,
-                'unit_name': unit.user_unit.unit.name if unit.user_unit and unit.user_unit.unit else 'Unknown',
-                'unit_icon': unit.user_unit.unit.icon if unit.user_unit and unit.user_unit.unit else '?'
+                'unit_name': unit_name,
+                'unit_icon': unit_icon
             }
             units_state.append(unit_info)
 
@@ -136,58 +144,49 @@ class GameEngine:
             'units': units_state
         }
 
-    def create_game(self, player1_id: int, player2_username: str, field_name: str = "7x7") -> Tuple[Optional[Game], str]:
+    def create_game(self, player1_id: int, player2_username: str, player1_army_id: int, field_name: str = "7x7") -> Tuple[Optional[Game], str]:
         """
-        Создание новой игры
+        Создание новой игры с выбранной армией
 
         Args:
             player1_id: ID игрока, создающего игру
             player2_username: Имя второго игрока
+            player1_army_id: ID армии игрока 1
             field_name: Название поля (по умолчанию "7x7")
 
         Returns:
             Tuple[Game, str]: Созданная игра и сообщение
         """
-        # Проверить, что у всех юнитов загружены картинки
-        import os
-        units = self.db.query(Unit).all()
-        missing_images = []
-        for unit in units:
-            if not unit.image_path or not os.path.exists(unit.image_path):
-                missing_images.append(unit.name)
-
-        if missing_images:
-            return None, f"⚠️ Невозможно начать игру!\n\nНе загружены картинки для следующих юнитов:\n" + "\n".join([f"• {name}" for name in missing_images]) + "\n\nОбратитесь к администратору для загрузки картинок через веб-интерфейс."
-
         # Найти игроков
         player1 = self.db.query(GameUser).filter_by(id=player1_id).first()
         if not player1:
             return None, "Игрок 1 не найден"
 
-        # Ищем сначала по username, потом по name
+        # Ищем по username
         player2 = self.db.query(GameUser).filter_by(username=player2_username).first()
-        if not player2:
-            player2 = self.db.query(GameUser).filter_by(name=player2_username).first()
         if not player2:
             return None, f"Игрок с никнеймом '{player2_username}' не найден"
 
         if player1.id == player2.id:
             return None, "Нельзя играть с самим собой"
 
-        # Проверить, что у обоих игроков есть юниты
-        player1_units = self.db.query(UserUnit).filter(
-            UserUnit.game_user_id == player1.id,
-            UserUnit.count > 0
-        ).all()
-        player2_units = self.db.query(UserUnit).filter(
-            UserUnit.game_user_id == player2.id,
-            UserUnit.count > 0
-        ).all()
+        # Проверить армию игрока 1
+        player1_army = self.db.query(Army).filter_by(id=player1_army_id).first()
+        if not player1_army:
+            return None, "Армия не найдена"
 
-        if not player1_units:
-            return None, "У вас нет юнитов для игры"
-        if not player2_units:
-            return None, f"У игрока {player2_username} нет юнитов для игры"
+        # Проверить что армия принадлежит игроку
+        player1_user_race = player1_army.user_race
+        if not player1_user_race or player1_user_race.user_id != player1.id:
+            return None, "Эта армия вам не принадлежит"
+
+        # Проверить что в армии есть юниты
+        player1_army_units = self.db.query(ArmyUnit).filter(
+            ArmyUnit.army_id == player1_army_id,
+            ArmyUnit.count > 0
+        ).all()
+        if not player1_army_units:
+            return None, "В вашей армии нет юнитов"
 
         # Найти или создать поле
         field = self.db.query(Field).filter_by(name=field_name).first()
@@ -198,19 +197,20 @@ class GameEngine:
             if not field:
                 return None, f"Поле '{field_name}' не найдено"
 
-        # Создать игру
+        # Создать игру (армия игрока 2 будет установлена при принятии)
         game = Game(
             player1_id=player1.id,
             player2_id=player2.id,
+            player1_army_id=player1_army_id,
+            player2_army_id=None,  # Будет установлено при принятии игры
             field_id=field.id,
             status=GameStatus.WAITING
         )
         self.db.add(game)
         self.db.flush()
 
-        # Разместить юниты игроков на поле
-        self._place_units(game, player1, player1_units, 1)
-        self._place_units(game, player2, player2_units, 2)
+        # Разместить юниты армии игрока 1
+        self._place_army_units(game, player1, player1_army_units, 1)
 
         # Сгенерировать препятствия
         self._generate_obstacles(game)
@@ -221,13 +221,14 @@ class GameEngine:
         self.db.commit()
         return game, f"Игра создана! Ожидание принятия игроком {player2_username}"
 
-    def accept_game(self, game_id: int, player_id: int) -> Tuple[bool, str]:
+    def accept_game(self, game_id: int, player_id: int, player2_army_id: int) -> Tuple[bool, str]:
         """
-        Принятие игры вторым игроком
+        Принятие игры вторым игроком с выбранной армией
 
         Args:
             game_id: ID игры
             player_id: ID игрока, принимающего игру
+            player2_army_id: ID армии игрока 2
 
         Returns:
             Tuple[bool, str]: Успех и сообщение
@@ -242,6 +243,31 @@ class GameEngine:
         if game.player2_id != player_id:
             return False, "Вы не являетесь участником этой игры"
 
+        # Проверить армию игрока 2
+        player2_army = self.db.query(Army).filter_by(id=player2_army_id).first()
+        if not player2_army:
+            return False, "Армия не найдена"
+
+        # Проверить что армия принадлежит игроку
+        player2_user_race = player2_army.user_race
+        if not player2_user_race or player2_user_race.user_id != player_id:
+            return False, "Эта армия вам не принадлежит"
+
+        # Проверить что в армии есть юниты
+        player2_army_units = self.db.query(ArmyUnit).filter(
+            ArmyUnit.army_id == player2_army_id,
+            ArmyUnit.count > 0
+        ).all()
+        if not player2_army_units:
+            return False, "В вашей армии нет юнитов"
+
+        # Разместить юниты армии игрока 2
+        player2 = self.db.query(GameUser).filter_by(id=player_id).first()
+        self._place_army_units(game, player2, player2_army_units, 2)
+
+        # Установить армию игрока 2
+        game.player2_army_id = player2_army_id
+
         # Начать игру
         game.status = GameStatus.IN_PROGRESS
         game.started_at = datetime.utcnow()
@@ -250,7 +276,6 @@ class GameEngine:
 
         # Логировать начало игры
         player1 = self.db.query(GameUser).filter_by(id=game.player1_id).first()
-        player2 = self.db.query(GameUser).filter_by(id=game.player2_id).first()
         self._log_event(game.id, "game_started", f"🎮 Игра началась! Первый ход: {player1.username}")
 
         self.db.commit()
@@ -313,7 +338,7 @@ class GameEngine:
             return False, "На этой позиции препятствие", False
 
         # Получить характеристики юнита
-        unit = battle_unit.user_unit.unit
+        unit = self._get_unit_stats(battle_unit)
 
         # Проверить дистанцию (манхэттенское расстояние)
         distance = abs(battle_unit.position_x - target_x) + abs(battle_unit.position_y - target_y)
@@ -369,7 +394,7 @@ class GameEngine:
             return []
 
         # Получить характеристики юнита
-        unit = battle_unit.user_unit.unit
+        unit = self._get_unit_stats(battle_unit)
         speed = unit.speed
         start_x, start_y = battle_unit.position_x, battle_unit.position_y
 
@@ -467,10 +492,10 @@ class GameEngine:
             return False, "Нельзя атаковать своих юнитов", False
 
         # Проверить дистанцию
-        attacker_unit = attacker.user_unit.unit
+        attacker_unit = self._get_unit_stats(attacker)
         distance = abs(attacker.position_x - target.position_x) + abs(attacker.position_y - target.position_y)
-        if distance > attacker_unit.range:
-            return False, f"Цель слишком далеко! Дальность атаки: {attacker_unit.range}, расстояние: {distance}", False
+        if distance > attacker_unit['range']:
+            return False, f"Цель слишком далеко! Дальность атаки: {attacker_unit['range']}, расстояние: {distance}", False
 
         # Проверить линию видимости
         if not self._has_line_of_sight(attacker.position_x, attacker.position_y, target.position_x, target.position_y, game):
@@ -483,8 +508,8 @@ class GameEngine:
         units_killed = self._apply_damage(target, damage)
 
         # Обработать контратаку - вероятность контратаки всегда 50%
-        attacker_unit = attacker.user_unit.unit
-        target_unit = target.user_unit.unit
+        attacker_unit = self._get_unit_stats(attacker)
+        target_unit = self._get_unit_stats(target)
         counterattack_damage = 0
 
         # Проверяем что цель жива и был нанесен урон
@@ -493,14 +518,14 @@ class GameEngine:
             counterattack_roll = random.random()
             if counterattack_roll < 0.5:
                 # Рассчитать контратаку как урон цели с коэффициентом
-                counterattack_coef = float(target_unit.counterattack_chance)
+                counterattack_coef = float(target_unit['counterattack_chance'])
 
-                # Базовый урон контратаки
-                base_counter_damage = target_unit.damage
+                # Базовый урон контратаки (среднее между min и max)
+                base_counter_damage = (target_unit['min_damage'] + target_unit['max_damage']) // 2
                 alive_defenders = self._count_alive_units(target)
 
                 # Проверка, не камикадзе ли защитник
-                is_target_kamikaze = bool(target_unit.is_kamikaze)
+                is_target_kamikaze = bool(target_unit['is_kamikaze'])
                 if is_target_kamikaze:
                     alive_defenders = 1
 
@@ -511,7 +536,7 @@ class GameEngine:
                 if counterattack_damage > 0:
                     counter_units_killed = self._apply_damage(attacker, counterattack_damage)
 
-                    combat_log += f"\n\n🔄 КОНТРАТАКА! {target_unit.name} наносит ответный урон {attacker_unit.name}!\n"
+                    combat_log += f"\n\n🔄 КОНТРАТАКА! {target_unit['name']} наносит ответный урон {attacker_unit['name']}!\n"
                     combat_log += f"   Вероятность контратаки: 50.0% (бросок: {counterattack_roll*100:.1f}%)\n"
                     combat_log += f"   Коэффициент урона контратаки: {counterattack_coef*100:.1f}%\n"
                     combat_log += f"   Базовый урон: {base_counter_damage} x {alive_defenders} юнитов x {counterattack_coef:.2f} = {counterattack_damage}\n"
@@ -725,7 +750,7 @@ class GameEngine:
         # Разместить юниты
         for battle_unit in game.battle_units:
             x, y = battle_unit.position_x, battle_unit.position_y
-            unit = battle_unit.user_unit.unit
+            unit = self._get_unit_stats(battle_unit)
 
             # Подсчитать живых юнитов
             alive_count = self._count_alive_units(battle_unit)
@@ -795,10 +820,10 @@ class GameEngine:
         for unit in available_units:
             alive_count = self._count_alive_units(unit)
             if alive_count > 0:
-                unit_type = unit.user_unit.unit
+                unit_type = self._get_unit_stats(unit)
                 actions.append({
                     "unit_id": unit.id,
-                    "unit_name": unit_type.name,
+                    "unit_name": unit_type['name'],
                     "position": (unit.position_x, unit.position_y),
                     "can_move": True,
                     "targets": self._get_available_targets(game, unit)
@@ -807,6 +832,85 @@ class GameEngine:
         return {"action": "play", "units": actions}
 
     # Вспомогательные методы
+
+    def _get_unit_stats(self, battle_unit: BattleUnit) -> dict:
+        """
+        Получить характеристики юнита из армии
+
+        Args:
+            battle_unit: Юнит в бою
+
+        Returns:
+            dict: Характеристики юнита
+        """
+        army_unit = battle_unit.army_unit
+        race_unit = army_unit.race_unit if army_unit else None
+
+        if not race_unit:
+            return {
+                'name': 'Unknown',
+                'icon': '?',
+                'attack': 10,
+                'defense': 5,
+                'min_damage': 1,
+                'max_damage': 3,
+                'health': 10,
+                'speed': 4,
+                'initiative': 10,
+                'range': 1,
+                'luck': 0,
+                'crit_chance': 0,
+                'dodge_chance': 0,
+                'counterattack_chance': 0,
+                'is_flying': False,
+                'is_kamikaze': False,
+                'regeneration_health': 0,
+                'poison_damage': 0,
+                'poison_turns': 0,
+                'poison_immunity': False,
+                'price': 0
+            }
+
+        # Получить иконку уровня
+        icon = race_unit.unit_level.icon if race_unit.unit_level else '?'
+
+        return {
+            'name': race_unit.name,
+            'icon': icon,
+            'attack': race_unit.attack,
+            'defense': race_unit.defense,
+            'min_damage': race_unit.min_damage,
+            'max_damage': race_unit.max_damage,
+            'health': race_unit.health,
+            'speed': race_unit.speed,
+            'initiative': race_unit.initiative,
+            'range': race_unit.range,
+            'luck': float(race_unit.luck or 0),
+            'crit_chance': float(race_unit.crit_chance or 0),
+            'dodge_chance': float(race_unit.dodge_chance or 0),
+            'counterattack_chance': float(race_unit.counterattack_chance or 0),
+            'is_flying': race_unit.is_flying,
+            'is_kamikaze': race_unit.is_kamikaze,
+            'regeneration_health': race_unit.regeneration_health or 0,
+            'poison_damage': race_unit.poison_damage or 0,
+            'poison_turns': race_unit.poison_turns or 0,
+            'poison_immunity': race_unit.poison_immunity,
+            'price': self._calculate_prestige(race_unit)
+        }
+
+    def _calculate_prestige(self, race_unit: RaceUnit) -> int:
+        """Рассчитать престиж юнита"""
+        # Простой расчет престижа на основе характеристик
+        base = (
+            race_unit.attack +
+            race_unit.defense +
+            race_unit.health +
+            race_unit.min_damage +
+            race_unit.max_damage
+        )
+        range_bonus = race_unit.range * (race_unit.attack + race_unit.defense) if race_unit.range > 1 else 0
+        flying_bonus = 2 * (race_unit.attack + race_unit.defense) if race_unit.is_flying else 0
+        return int(base + range_bonus + flying_bonus)
 
     def _create_default_fields(self):
         """Создать стандартные поля"""
@@ -822,14 +926,14 @@ class GameEngine:
                 self.db.add(field)
         self.db.commit()
 
-    def _place_units(self, game: Game, player: GameUser, user_units: List[UserUnit], side: int):
+    def _place_army_units(self, game: Game, player: GameUser, army_units: List[ArmyUnit], side: int):
         """
-        Разместить юниты игрока на поле
+        Разместить юниты армии на поле
 
         Args:
             game: Игра
             player: Игрок
-            user_units: Список юнитов игрока
+            army_units: Список юнитов армии
             side: Сторона (1 или 2)
         """
         field = game.field
@@ -837,23 +941,26 @@ class GameEngine:
         # Определить стартовые позиции
         if side == 1:
             # Игрок 1 - левая сторона
-            positions = [(0, y) for y in range(min(len(user_units), field.height))]
+            positions = [(0, y) for y in range(min(len(army_units), field.height))]
         else:
             # Игрок 2 - правая сторона
-            positions = [(field.width - 1, y) for y in range(min(len(user_units), field.height))]
+            positions = [(field.width - 1, y) for y in range(min(len(army_units), field.height))]
 
-        for i, user_unit in enumerate(user_units[:len(positions)]):
+        for i, army_unit in enumerate(army_units[:len(positions)]):
             x, y = positions[i]
-            unit_type = user_unit.unit
+            race_unit = army_unit.race_unit
+
+            # Получаем здоровье из RaceUnit (+ бусты если есть UserRaceUnit)
+            health = race_unit.health
 
             battle_unit = BattleUnit(
                 game_id=game.id,
-                user_unit_id=user_unit.id,
+                army_unit_id=army_unit.id,
                 player_id=player.id,
                 position_x=x,
                 position_y=y,
-                total_count=user_unit.count,
-                remaining_hp=unit_type.health,
+                total_count=army_unit.count,
+                remaining_hp=health,
                 morale=100,  # Изначально 100 = коэффициент 1.0 (нейтральный)
                 fatigue=0,
                 has_moved=0
@@ -999,36 +1106,38 @@ class GameEngine:
         Returns:
             Tuple[int, bool, str]: Урон, критический удар, лог боя
         """
-        attacker_unit = attacker.user_unit.unit
-        target_unit = target.user_unit.unit
+        attacker_unit = self._get_unit_stats(attacker)
+        target_unit = self._get_unit_stats(target)
 
         # Подсчет количества атакующих юнитов
         alive_attackers = self._count_alive_units(attacker)
 
         # Проверка камикадзе (в расчете урона учитывается только 1 юнит)
-        is_kamikaze = bool(attacker_unit.is_kamikaze)
+        is_kamikaze = bool(attacker_unit['is_kamikaze'])
         actual_attackers = alive_attackers  # Сохраняем реальное количество для лога
         if is_kamikaze:
             alive_attackers = 1  # Камикадзе наносит урон только за 1 юнита
 
         # Проверка уклонения (dodge)
-        dodge_chance = float(target_unit.dodge_chance)
+        dodge_chance = float(target_unit['dodge_chance'])
         dodge_roll = random.random()
         is_dodged = dodge_roll < dodge_chance
 
         if is_dodged:
             # Уклонение успешно - урон 0
             attacker_display = f"x{actual_attackers}" if not is_kamikaze else f"x{actual_attackers} 💣КАМИКАДЗЕ💣"
-            log = f"⚔️ {attacker_unit.name} ({attacker_display}) атакует {target_unit.name}\n\n"
-            log += f"🌀 УКЛОНЕНИЕ! {target_unit.name} уклонился от атаки!\n"
+            log = f"⚔️ {attacker_unit['name']} ({attacker_display}) атакует {target_unit['name']}\n\n"
+            log += f"🌀 УКЛОНЕНИЕ! {target_unit['name']} уклонился от атаки!\n"
             log += f"   Шанс уклонения: {dodge_chance*100:.1f}% (бросок: {dodge_roll*100:.1f}%)\n"
             log += f"   ⚡ ИТОГОВЫЙ УРОН: 0"
             return 0, False, log
 
-        # Базовый урон с небольшой случайностью (±10%)
-        base_damage = attacker_unit.damage
-        damage_variance = random.uniform(0.9, 1.1)
-        base_damage_with_variance = int(base_damage * damage_variance)
+        # Базовый урон: случайное значение между min_damage и max_damage
+        min_dmg = attacker_unit['min_damage']
+        max_dmg = attacker_unit['max_damage']
+        base_damage = random.randint(min_dmg, max_dmg)
+        damage_variance = 1.0  # Уже учтено в random.randint
+        base_damage_with_variance = base_damage
 
         # Модификатор усталости на базовый урон (усталость снижает урон до -30%)
         fatigue_penalty = float(attacker.fatigue) / 100 * 0.3
@@ -1040,14 +1149,8 @@ class GameEngine:
         # Применяем модификаторы к базовому урону
         damage = int(base_damage_with_variance * fatigue_modifier * morale_modifier)
 
-        # Проверка эффективности против определенного типа юнита
-        is_effective = False
-        if attacker_unit.effective_against_unit_id == target_unit.id:
-            damage = int(damage * 1.5)
-            is_effective = True
-
         # Модификатор критического шанса (кураж увеличивает, усталость уменьшает)
-        base_crit_chance = float(attacker_unit.crit_chance)
+        base_crit_chance = float(attacker_unit['crit_chance'])
         crit_modifier = base_crit_chance
         crit_modifier += float(attacker.morale) / 100 * 0.2  # До +20% от куража
         crit_modifier -= float(attacker.fatigue) / 100 * 0.2  # До -20% от усталости
@@ -1058,7 +1161,7 @@ class GameEngine:
         is_crit = crit_roll < crit_modifier
 
         # Модификатор удачи (максимальный урон)
-        luck_modifier = float(attacker_unit.luck)
+        luck_modifier = float(attacker_unit['luck'])
         luck_roll = random.random()
         is_lucky = luck_roll < luck_modifier
 
@@ -1077,7 +1180,7 @@ class GameEngine:
         # Вычислить задетые юниты (сколько юнитов получит урон)
         # Формула: задетые_юниты = 1 + floor(0.5 * (dmg_multiplied - target_health) / target_health)
         import math
-        target_health = target_unit.health
+        target_health = target_unit['health']
         if damage_multiplied > target_health:
             affected_units = 1 + math.floor((0.5 * (damage_multiplied - target_health)) / target_health)
         else:
@@ -1085,17 +1188,16 @@ class GameEngine:
 
         # Применить защиту (вычитаем защиту × абсолютное значение задетых юнитов)
         alive_defenders = self._count_alive_units(target)
-        defense_reduction = target_unit.defense * abs(affected_units)
+        defense_reduction = target_unit['defense'] * abs(affected_units)
         total_damage = damage_multiplied - defense_reduction
 
         # Создать детальный лог с формулой расчета
         attacker_display = f"x{actual_attackers}" if not is_kamikaze else f"x{actual_attackers} 💣КАМИКАДЗЕ💣"
-        log = f"⚔️ {attacker_unit.name} ({attacker_display}) атакует {target_unit.name}\n"
+        log = f"⚔️ {attacker_unit['name']} ({attacker_display}) атакует {target_unit['name']}\n"
         if is_kamikaze:
             log += f"⚠️ КАМИКАДЗЕ: урон рассчитывается только за 1 юнита (вместо {actual_attackers})\n"
         log += f"\n📊 Расчет урона:\n"
-        log += f"1️⃣ Базовый урон: {base_damage}\n"
-        log += f"   Случайность (±10%): x{damage_variance:.2f} = {base_damage_with_variance}\n"
+        log += f"1️⃣ Базовый урон: {min_dmg}-{max_dmg} → {base_damage}\n"
 
         if attacker.fatigue > 0:
             log += f"2️⃣ Усталость: {float(attacker.fatigue):.1f}% → штраф -{fatigue_penalty*100:.1f}% (x{fatigue_modifier:.2f})\n"
@@ -1105,10 +1207,6 @@ class GameEngine:
             log += f"3️⃣ Кураж: {morale_display} (x{morale_modifier:.2f})\n"
 
         log += f"   = {damage_before_modifiers} урона\n"
-
-        # Информация об эффективности
-        if is_effective:
-            log += f"\n⚡ ЭФФЕКТИВНОСТЬ: {attacker_unit.name} эффективен против {target_unit.name}! x1.5 = {damage} урона\n"
 
         # Информация о критическом ударе
         log += f"\n4️⃣ Шанс крита: {base_crit_chance*100:.1f}%"
@@ -1132,7 +1230,7 @@ class GameEngine:
         log += f"\n7️⃣ Задетые юниты: 1 + floor(0.5 * ({damage_multiplied} - {target_health}) / {target_health}) = {affected_units}\n"
 
         # Защита
-        log += f"\n8️⃣ Защита цели: {target_unit.defense} × |{affected_units}| = {defense_reduction}\n"
+        log += f"\n8️⃣ Защита цели: {target_unit['defense']} × |{affected_units}| = {defense_reduction}\n"
         log += f"   Урон после защиты: {damage_multiplied} - {defense_reduction} = {total_damage}\n"
         log += f"   ⚡ ИТОГОВЫЙ УРОН: {int(total_damage)}"
 
@@ -1149,7 +1247,7 @@ class GameEngine:
         Returns:
             int: Количество убитых юнитов
         """
-        target_unit = target.user_unit.unit
+        target_unit = self._get_unit_stats(target)
         units_killed = 0
 
         while damage > 0 and target.total_count > 0:
@@ -1162,7 +1260,7 @@ class GameEngine:
                 # Если все юниты убиты, remaining_hp = 0
                 # Иначе восстанавливаем HP для следующего юнита
                 if target.total_count > 0:
-                    target.remaining_hp = target_unit.health
+                    target.remaining_hp = target_unit['health']
                 else:
                     target.remaining_hp = 0
             else:
@@ -1202,7 +1300,7 @@ class GameEngine:
         Returns:
             List[Dict]: Список доступных целей
         """
-        attacker_unit = attacker.user_unit.unit
+        attacker_unit = self._get_unit_stats(attacker)
         targets = []
 
         enemy_units = self.db.query(BattleUnit).filter(
@@ -1215,13 +1313,14 @@ class GameEngine:
                 continue
 
             distance = abs(attacker.position_x - enemy.position_x) + abs(attacker.position_y - enemy.position_y)
-            if distance <= attacker_unit.range:
+            if distance <= attacker_unit['range']:
                 # Проверить линию видимости до цели
                 if self._has_line_of_sight(attacker.position_x, attacker.position_y,
                                            enemy.position_x, enemy.position_y, game):
+                    enemy_unit = self._get_unit_stats(enemy)
                     targets.append({
                         "unit_id": enemy.id,
-                        "unit_name": enemy.user_unit.unit.name,
+                        "unit_name": enemy_unit['name'],
                         "position": (enemy.position_x, enemy.position_y),
                         "distance": distance
                     })
@@ -1295,10 +1394,10 @@ class GameEngine:
             if battle_unit.total_count <= 0:
                 continue
 
-            unit_type = battle_unit.user_unit.unit
+            unit_type = self._get_unit_stats(battle_unit)
 
             # Применить регенерацию
-            regeneration = getattr(unit_type, 'regeneration_health', 0) or 0
+            regeneration = unit_type.get('regeneration_health', 0) or 0
             if regeneration > 0:
                 self._apply_regeneration(battle_unit, regeneration)
 
@@ -1317,8 +1416,8 @@ class GameEngine:
         if battle_unit.total_count <= 0 or regeneration_health <= 0:
             return
 
-        unit_type = battle_unit.user_unit.unit
-        max_health = unit_type.health
+        unit_type = self._get_unit_stats(battle_unit)
+        max_health = unit_type['health']
 
         # Добавляем здоровье к remaining_hp
         old_hp = battle_unit.remaining_hp
@@ -1342,7 +1441,7 @@ class GameEngine:
         if battle_unit.total_count > old_count or battle_unit.remaining_hp > old_hp:
             units_gained = battle_unit.total_count - old_count
             hp_gained = battle_unit.remaining_hp - old_hp if battle_unit.total_count == old_count else regeneration_health
-            logger.info(f"Регенерация: {unit_type.name} восстановил {regeneration_health} HP (+{units_gained} юнитов)")
+            logger.info(f"Регенерация: {unit_type['name']} восстановил {regeneration_health} HP (+{units_gained} юнитов)")
 
     def _apply_poison_damage(self, game: Game, battle_unit: BattleUnit):
         """
@@ -1355,7 +1454,7 @@ class GameEngine:
         if battle_unit.poison_remaining_turns <= 0 or battle_unit.poison_damage_per_turn <= 0:
             return
 
-        unit_type = battle_unit.user_unit.unit
+        unit_type = self._get_unit_stats(battle_unit)
         poison_damage = battle_unit.poison_damage_per_turn
 
         # Применить урон от яда
@@ -1365,7 +1464,7 @@ class GameEngine:
         battle_unit.poison_remaining_turns -= 1
 
         # Логирование
-        log_msg = f"☠️ ЯД: {unit_type.name} получает {poison_damage} урона от отравления"
+        log_msg = f"☠️ ЯД: {unit_type['name']} получает {poison_damage} урона от отравления"
         if units_killed > 0:
             log_msg += f", погибло юнитов: {units_killed}"
         if battle_unit.poison_remaining_turns > 0:
@@ -1391,26 +1490,26 @@ class GameEngine:
         Returns:
             str: Сообщение о применении яда
         """
-        attacker_unit = attacker.user_unit.unit
-        target_unit = target.user_unit.unit
+        attacker_unit = self._get_unit_stats(attacker)
+        target_unit = self._get_unit_stats(target)
 
         # Проверить, есть ли у атакующего способность отравления
-        poison_damage = getattr(attacker_unit, 'poison_damage', 0) or 0
-        poison_turns = getattr(attacker_unit, 'poison_turns', 0) or 0
+        poison_damage = attacker_unit.get('poison_damage', 0) or 0
+        poison_turns = attacker_unit.get('poison_turns', 0) or 0
 
         if poison_damage <= 0 or poison_turns <= 0:
             return ""
 
         # Проверить иммунитет к яду у цели
-        poison_immunity = getattr(target_unit, 'poison_immunity', 0) or 0
+        poison_immunity = target_unit.get('poison_immunity', False)
         if poison_immunity:
-            return f"\n\n🛡️ {target_unit.name} имеет иммунитет к яду!"
+            return f"\n\n🛡️ {target_unit['name']} имеет иммунитет к яду!"
 
         # Применить отравление к цели
         target.poison_damage_per_turn = poison_damage
         target.poison_remaining_turns = poison_turns
 
-        return f"\n\n☠️ ОТРАВЛЕНИЕ! {target_unit.name} отравлен на {poison_turns} ходов ({poison_damage} урона/ход)"
+        return f"\n\n☠️ ОТРАВЛЕНИЕ! {target_unit['name']} отравлен на {poison_turns} ходов ({poison_damage} урона/ход)"
 
     def _check_game_over(self, game: Game) -> Optional[int]:
         """
@@ -1518,20 +1617,21 @@ class GameEngine:
             # Подсчитать живых юнитов
             alive_count = self._count_alive_units(battle_unit)
 
-            # Обновить количество юнитов у игрока
-            user_unit = battle_unit.user_unit
-            old_count = user_unit.count
-            user_unit.count = alive_count
+            # Обновить количество юнитов в армии
+            army_unit = battle_unit.army_unit
+            unit_stats = self._get_unit_stats(battle_unit)
+            old_count = army_unit.count
+            army_unit.count = alive_count
 
-            logger.info(f"Обновление юнитов после игры: {user_unit.unit.name} игрока (ID: {battle_unit.player_id}) - было {old_count}, стало {alive_count}, потеряно {old_count - alive_count}")
+            logger.info(f"Обновление юнитов после игры: {unit_stats['name']} игрока (ID: {battle_unit.player_id}) - было {old_count}, стало {alive_count}, потеряно {old_count - alive_count}")
 
             # Помечаем записи с count=0 для удаления
             if alive_count == 0:
-                units_to_delete.append(user_unit)
+                units_to_delete.append(army_unit)
 
         # Удаляем записи о юнитах с количеством 0
-        for user_unit in units_to_delete:
-            self.db.delete(user_unit)
+        for army_unit in units_to_delete:
+            self.db.delete(army_unit)
 
         self.db.flush()
 
@@ -1577,9 +1677,10 @@ class GameEngine:
 
         # Подсчитать убитых юнитов у обоих игроков
         for battle_unit in game.battle_units:
-            unit_price = battle_unit.user_unit.unit.price
-            unit_name = battle_unit.user_unit.unit.name
-            initial_count = battle_unit.user_unit.count
+            unit_stats = self._get_unit_stats(battle_unit)
+            unit_price = unit_stats['price']
+            unit_name = unit_stats['name']
+            initial_count = battle_unit.army_unit.count
             alive_count = self._count_alive_units(battle_unit)
             killed_count = initial_count - alive_count
 

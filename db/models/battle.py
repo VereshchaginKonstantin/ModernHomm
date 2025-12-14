@@ -42,6 +42,8 @@ class Game(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     player1_id = Column(Integer, ForeignKey('game_users.id', ondelete='CASCADE'), nullable=False, index=True)
     player2_id = Column(Integer, ForeignKey('game_users.id', ondelete='CASCADE'), nullable=False, index=True)
+    player1_army_id = Column(Integer, ForeignKey('armies.id', ondelete='SET NULL'), nullable=True)  # Армия игрока 1
+    player2_army_id = Column(Integer, ForeignKey('armies.id', ondelete='SET NULL'), nullable=True)  # Армия игрока 2
     field_id = Column(Integer, ForeignKey('fields.id', ondelete='CASCADE'), nullable=False)
     status = Column(Enum(GameStatus, values_callable=lambda obj: [e.value for e in obj], name='game_status', create_type=False), nullable=False, default=GameStatus.WAITING)
     current_player_id = Column(Integer, ForeignKey('game_users.id'), nullable=True)  # Чей сейчас ход
@@ -54,6 +56,8 @@ class Game(Base):
     # Связи
     player1 = relationship("GameUser", foreign_keys=[player1_id])
     player2 = relationship("GameUser", foreign_keys=[player2_id])
+    player1_army = relationship("Army", foreign_keys=[player1_army_id])
+    player2_army = relationship("Army", foreign_keys=[player2_army_id])
     field = relationship("Field")
     current_player = relationship("GameUser", foreign_keys=[current_player_id])
     winner = relationship("GameUser", foreign_keys=[winner_id])
@@ -71,7 +75,7 @@ class BattleUnit(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     game_id = Column(Integer, ForeignKey('games.id', ondelete='CASCADE'), nullable=False, index=True)
-    user_unit_id = Column(Integer, ForeignKey('user_units.id', ondelete='CASCADE'), nullable=False)
+    army_unit_id = Column(Integer, ForeignKey('army_units.id', ondelete='CASCADE'), nullable=False)  # Ссылка на юнита из армии
     player_id = Column(Integer, ForeignKey('game_users.id', ondelete='CASCADE'), nullable=False, index=True)
 
     # Позиция на поле
@@ -96,7 +100,7 @@ class BattleUnit(Base):
 
     # Связи
     game = relationship("Game", back_populates="battle_units")
-    user_unit = relationship("UserUnit")
+    army_unit = relationship("ArmyUnit")  # Связь с юнитом из армии
     player = relationship("GameUser")
 
     __table_args__ = (

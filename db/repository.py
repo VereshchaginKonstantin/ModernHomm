@@ -16,7 +16,7 @@ from .models import (
     # Battle
     Game, GameStatus, Field, BattleUnit,
     # Army
-    Unit, UserUnit
+    GameRace, RaceUnit, Army, ArmyUnit, UserRace, UserRaceUnit
 )
 from decimal import Decimal
 
@@ -571,7 +571,7 @@ class Database:
 
     def get_players_by_army_value(self, telegram_id: int, limit: int = 3, variance: float = 0.3) -> list:
         """
-        Получение игроков с близкой стоимостью армии
+        Получение игроков с близкой стоимостью армии (по армиям, а не отдельным юнитам)
 
         Args:
             telegram_id: ID текущего игрока
@@ -581,8 +581,8 @@ class Database:
         Returns:
             list: Список кортежей (GameUser, army_value)
         """
-        from sqlalchemy import func
         from decimal import Decimal
+        import random
 
         with self.get_session() as session:
             # Получаем текущего игрока
@@ -590,72 +590,28 @@ class Database:
             if not current_player:
                 return []
 
-            # Рассчитываем стоимость армии текущего игрока
-            current_units = session.query(UserUnit).filter_by(game_user_id=current_player.id).all()
-            current_army_value = Decimal('0')
-            for user_unit in current_units:
-                unit = session.query(Unit).filter_by(id=user_unit.unit_type_id).first()
-                if unit:
-                    current_army_value += Decimal(str(unit.price)) * user_unit.count
+            # Получаем всех остальных игроков с армиями
+            all_players = session.query(GameUser).filter(GameUser.telegram_id != telegram_id).all()
+            candidates = []
 
-            # Если у игрока нет юнитов, возвращаем случайных игроков с армией
-            if current_army_value == 0:
-                # Получаем игроков с непустой армией
-                all_players = session.query(GameUser).filter(GameUser.telegram_id != telegram_id).all()
-                candidates_with_army = []
+            for player in all_players:
+                # Проверяем, есть ли у игрока армии через UserRace -> Army
+                user_races = session.query(UserRace).filter_by(user_id=player.id).all()
+                has_army = False
+                for user_race in user_races:
+                    armies = session.query(Army).filter_by(user_race_id=user_race.id).all()
+                    if armies:
+                        has_army = True
+                        break
 
-                for player in all_players:
-                    player_units = session.query(UserUnit).filter_by(game_user_id=player.id).all()
-                    player_army_value = Decimal('0')
-                    for user_unit in player_units:
-                        unit = session.query(Unit).filter_by(id=user_unit.unit_type_id).first()
-                        if unit:
-                            player_army_value += Decimal(str(unit.price)) * user_unit.count
-                    # Только игроки с непустой армией
-                    if player_army_value > 0:
-                        candidates_with_army.append(player)
+                if has_army:
+                    candidates.append(player)
 
-                if candidates_with_army:
-                    import random
-                    random.shuffle(candidates_with_army)
-                    candidates = candidates_with_army[:limit]
-                else:
-                    candidates = []
-            else:
-                # Определяем диапазон стоимости армии
-                min_value = current_army_value * Decimal(str(1 - variance))
-                max_value = current_army_value * Decimal(str(1 + variance))
+            # Выбираем случайных кандидатов
+            if len(candidates) > limit:
+                candidates = random.sample(candidates, limit)
 
-                # Получаем всех игроков (кроме текущего) и их стоимость армии
-                all_players = session.query(GameUser).filter(GameUser.telegram_id != telegram_id).all()
-                candidates_with_value = []
-
-                for player in all_players:
-                    player_units = session.query(UserUnit).filter_by(game_user_id=player.id).all()
-                    player_army_value = Decimal('0')
-                    for user_unit in player_units:
-                        unit = session.query(Unit).filter_by(id=user_unit.unit_type_id).first()
-                        if unit:
-                            player_army_value += Decimal(str(unit.price)) * user_unit.count
-
-                    # Проверяем, попадает ли стоимость армии в диапазон
-                    # И исключаем игроков с пустой армией
-                    if player_army_value > 0 and min_value <= player_army_value <= max_value:
-                        candidates_with_value.append((player, player_army_value))
-
-                # Если нашли подходящих игроков, выбираем 3 случайных
-                if len(candidates_with_value) >= limit:
-                    import random
-                    selected = random.sample(candidates_with_value, limit)
-                    candidates = [player for player, _ in selected]
-                elif candidates_with_value:
-                    # Если меньше чем limit, берем всех
-                    candidates = [player for player, _ in candidates_with_value]
-                else:
-                    # Если не нашли подходящих игроков с армией, возвращаем пустой список
-                    candidates = []
-
-            # Загружаем все атрибуты для каждого пользователя
+            # Загружаем атрибуты
             result = []
             for game_user in candidates:
                 _ = game_user.id
@@ -666,23 +622,14 @@ class Database:
                 _ = game_user.losses
                 _ = game_user.created_at
                 _ = game_user.updated_at
-
-                # Рассчитываем стоимость армии для возврата
-                player_units = session.query(UserUnit).filter_by(game_user_id=game_user.id).all()
-                army_value = Decimal('0')
-                for user_unit in player_units:
-                    unit = session.query(Unit).filter_by(id=user_unit.unit_type_id).first()
-                    if unit:
-                        army_value += Decimal(str(unit.price)) * user_unit.count
-
-                result.append((game_user, army_value))
+                result.append((game_user, Decimal('0')))  # Army value is computed elsewhere
 
             session.expunge_all()
             return result
 
     def get_available_opponents_by_username(self, username: str, limit: int = 3, variance: float = 0.3) -> tuple:
         """
-        Получение противников с близкой стоимостью армии для пользователя по username.
+        Получение противников для пользователя по username.
         Используется в веб-интерфейсе арены.
 
         Args:
@@ -695,8 +642,8 @@ class Database:
                 - current_player_data: dict с данными текущего игрока
                 - opponents_list: list[dict] со списком противников
         """
-        from sqlalchemy import func
         from decimal import Decimal
+        import random
 
         with self.get_session() as session:
             # Получаем текущего игрока по username
@@ -711,66 +658,30 @@ class Database:
                 'name': current_player.username,
                 'balance': float(current_player.balance),
                 'wins': current_player.wins,
-                'losses': current_player.losses
+                'losses': current_player.losses,
+                'army_value': 0  # Calculated when army is selected
             }
 
-            # Рассчитываем стоимость армии текущего игрока
-            current_units = session.query(UserUnit).filter_by(game_user_id=current_player.id).all()
-            current_army_value = Decimal('0')
-            for user_unit in current_units:
-                unit = session.query(Unit).filter_by(id=user_unit.unit_type_id).first()
-                if unit:
-                    current_army_value += Decimal(str(unit.price)) * user_unit.count
+            # Получаем всех остальных игроков с армиями
+            all_players = session.query(GameUser).filter(GameUser.id != current_player.id).all()
+            candidates_with_value = []
 
-            current_player_data['army_value'] = float(current_army_value)
+            for player in all_players:
+                # Проверяем, есть ли у игрока армии через UserRace -> Army
+                user_races = session.query(UserRace).filter_by(user_id=player.id).all()
+                has_army = False
+                for user_race in user_races:
+                    armies = session.query(Army).filter_by(user_race_id=user_race.id).all()
+                    if armies:
+                        has_army = True
+                        break
 
-            # Получаем противников
-            if current_army_value == 0:
-                # Если у игрока нет юнитов, возвращаем игроков с армией
-                all_players = session.query(GameUser).filter(GameUser.id != current_player.id).all()
-                candidates_with_value = []
+                if has_army:
+                    candidates_with_value.append((player, Decimal('0')))
 
-                for player in all_players:
-                    player_units = session.query(UserUnit).filter_by(game_user_id=player.id).all()
-                    player_army_value = Decimal('0')
-                    for user_unit in player_units:
-                        unit = session.query(Unit).filter_by(id=user_unit.unit_type_id).first()
-                        if unit:
-                            player_army_value += Decimal(str(unit.price)) * user_unit.count
-                    # Только игроки с непустой армией
-                    if player_army_value > 0:
-                        candidates_with_value.append((player, player_army_value))
-
-                if len(candidates_with_value) > limit:
-                    import random
-                    candidates_with_value = random.sample(candidates_with_value, limit)
-            else:
-                # Определяем диапазон стоимости армии
-                min_value = current_army_value * Decimal(str(1 - variance))
-                max_value = current_army_value * Decimal(str(1 + variance))
-
-                # Получаем всех игроков (кроме текущего) и их стоимость армии
-                all_players = session.query(GameUser).filter(GameUser.id != current_player.id).all()
-                candidates_with_value = []
-
-                for player in all_players:
-                    player_units = session.query(UserUnit).filter_by(game_user_id=player.id).all()
-                    player_army_value = Decimal('0')
-                    for user_unit in player_units:
-                        unit = session.query(Unit).filter_by(id=user_unit.unit_type_id).first()
-                        if unit:
-                            player_army_value += Decimal(str(unit.price)) * user_unit.count
-
-                    # Проверяем, попадает ли стоимость армии в диапазон
-                    # И исключаем игроков с пустой армией
-                    if player_army_value > 0 and min_value <= player_army_value <= max_value:
-                        candidates_with_value.append((player, player_army_value))
-
-                # Если нашли подходящих игроков, выбираем случайных
-                if len(candidates_with_value) > limit:
-                    import random
-                    candidates_with_value = random.sample(candidates_with_value, limit)
-                # Если не нашли подходящих игроков с армией, список останется пустым
+            # Выбираем случайных кандидатов
+            if len(candidates_with_value) > limit:
+                candidates_with_value = random.sample(candidates_with_value, limit)
 
             # Формируем результат
             opponents = []
@@ -791,398 +702,6 @@ class Database:
                 })
 
             return current_player_data, opponents
-
-    # ===== CRUD методы для UserUnit =====
-
-    def add_unit(self, telegram_id: int, unit_type_id: int, count: int = 1) -> UserUnit:
-        """
-        Добавление юнитов пользователю
-
-        Args:
-            telegram_id: ID пользователя в Telegram
-            unit_type_id: ID типа юнита
-            count: Количество юнитов для добавления
-
-        Returns:
-            UserUnit: Объект юнита пользователя
-        """
-        with self.get_session() as session:
-            # Получаем игрового пользователя
-            game_user = session.query(GameUser).filter_by(telegram_id=telegram_id).first()
-
-            if not game_user:
-                raise ValueError(f"Игровой пользователь с telegram_id={telegram_id} не найден")
-
-            # Проверяем, есть ли уже такой юнит
-            user_unit = session.query(UserUnit).filter_by(
-                game_user_id=game_user.id,
-                unit_type_id=unit_type_id
-            ).first()
-
-            if user_unit:
-                # Увеличиваем количество существующих юнитов
-                user_unit.count += count
-            else:
-                # Создаем новую запись
-                user_unit = UserUnit(
-                    game_user_id=game_user.id,
-                    unit_type_id=unit_type_id,
-                    count=count
-                )
-                session.add(user_unit)
-
-            session.flush()
-            session.refresh(user_unit)
-
-            # Загружаем все атрибуты
-            _ = user_unit.id
-            _ = user_unit.game_user_id
-            _ = user_unit.unit_type_id
-            _ = user_unit.count
-
-            session.expunge_all()
-            return user_unit
-
-    def get_user_units(self, telegram_id: int) -> list:
-        """
-        Получение всех юнитов пользователя
-
-        Args:
-            telegram_id: ID пользователя в Telegram
-
-        Returns:
-            list: Список юнитов пользователя
-        """
-        with self.get_session() as session:
-            # Получаем игрового пользователя
-            game_user = session.query(GameUser).filter_by(telegram_id=telegram_id).first()
-
-            if not game_user:
-                return []
-
-            # Получаем все юниты пользователя
-            units = session.query(UserUnit).filter_by(game_user_id=game_user.id).all()
-
-            # Загружаем все атрибуты
-            for unit in units:
-                _ = unit.id
-                _ = unit.game_user_id
-                _ = unit.unit_type_id
-                _ = unit.count
-
-            session.expunge_all()
-            return units
-
-    def update_unit_count(self, telegram_id: int, unit_type_id: int, count: int) -> UserUnit:
-        """
-        Обновление количества юнитов
-
-        Args:
-            telegram_id: ID пользователя в Telegram
-            unit_type_id: ID типа юнита
-            count: Новое количество юнитов
-
-        Returns:
-            UserUnit: Обновленный объект юнита
-        """
-        with self.get_session() as session:
-            # Получаем игрового пользователя
-            game_user = session.query(GameUser).filter_by(telegram_id=telegram_id).first()
-
-            if not game_user:
-                raise ValueError(f"Игровой пользователь с telegram_id={telegram_id} не найден")
-
-            # Получаем юнит
-            user_unit = session.query(UserUnit).filter_by(
-                game_user_id=game_user.id,
-                unit_type_id=unit_type_id
-            ).first()
-
-            if not user_unit:
-                raise ValueError(f"Юнит с unit_type_id={unit_type_id} не найден")
-
-            user_unit.count = count
-            session.flush()
-            session.refresh(user_unit)
-
-            # Загружаем все атрибуты
-            _ = user_unit.id
-            _ = user_unit.game_user_id
-            _ = user_unit.unit_type_id
-            _ = user_unit.count
-
-            session.expunge_all()
-            return user_unit
-
-    def remove_unit(self, telegram_id: int, unit_type_id: int, count: int = None) -> bool:
-        """
-        Удаление юнитов пользователя
-
-        Args:
-            telegram_id: ID пользователя в Telegram
-            unit_type_id: ID типа юнита
-            count: Количество юнитов для удаления (если None, удаляет всех)
-
-        Returns:
-            bool: True если юниты были удалены, False если не найдены
-        """
-        with self.get_session() as session:
-            # Получаем игрового пользователя
-            game_user = session.query(GameUser).filter_by(telegram_id=telegram_id).first()
-
-            if not game_user:
-                return False
-
-            # Получаем юнит
-            user_unit = session.query(UserUnit).filter_by(
-                game_user_id=game_user.id,
-                unit_type_id=unit_type_id
-            ).first()
-
-            if not user_unit:
-                return False
-
-            if count is None:
-                # Удаляем всех юнитов этого типа
-                session.delete(user_unit)
-            else:
-                # Уменьшаем количество
-                user_unit.count -= count
-                if user_unit.count <= 0:
-                    session.delete(user_unit)
-
-            return True
-
-    def sell_units(self, telegram_id: int, unit_type_id: int):
-        """
-        Продажа всех юнитов указанного типа
-
-        Args:
-            telegram_id: ID пользователя в Telegram
-            unit_type_id: ID типа юнита для продажи
-
-        Returns:
-            tuple: (количество проданных юнитов, полученные деньги) или (0, 0) если нет юнитов
-        """
-        from decimal import Decimal
-
-        with self.get_session() as session:
-            # Получаем игрового пользователя
-            game_user = session.query(GameUser).filter_by(telegram_id=telegram_id).first()
-
-            if not game_user:
-                return (0, Decimal('0'))
-
-            # Получаем юнит
-            user_unit = session.query(UserUnit).filter_by(
-                game_user_id=game_user.id,
-                unit_type_id=unit_type_id
-            ).first()
-
-            if not user_unit or user_unit.count <= 0:
-                return (0, Decimal('0'))
-
-            # Получаем информацию о типе юнита для расчета цены
-            unit = session.query(Unit).filter_by(id=unit_type_id).first()
-            if not unit:
-                return (0, Decimal('0'))
-
-            # Рассчитываем стоимость продажи (70% от цены)
-            count = user_unit.count
-            total_price = unit.price * count
-            sell_price = total_price * Decimal('0.7')
-
-            # Удаляем юниты
-            session.delete(user_unit)
-
-            # Начисляем деньги
-            game_user.balance += sell_price
-            session.flush()
-
-            return (count, sell_price)
-
-    # ===== CRUD методы для Unit =====
-
-    def initialize_base_units(self):
-        """
-        Инициализация базовых юнитов в базе данных
-        Создает юнитов, если они еще не существуют
-        """
-        with self.get_session() as session:
-            base_units = [
-                {
-                    'name': 'Пехота',
-                    'price': 100,
-                    'damage': 10,
-                    'defense': 5,        # Средняя защита
-                    'range': 1,
-                    'health': 50,
-                    'speed': 3,          # Средняя скорость
-                    'luck': 0.05,        # 5% шанс максимального урона
-                    'crit_chance': 0.10  # 10% шанс критического удара
-                },
-                {
-                    'name': 'Снайпер',
-                    'price': 500,
-                    'damage': 50,
-                    'defense': 2,        # Низкая защита
-                    'range': 3,
-                    'health': 50,
-                    'speed': 2,          # Медленный
-                    'luck': 0.15,        # 15% шанс максимального урона
-                    'crit_chance': 0.25  # 25% шанс критического удара
-                }
-            ]
-
-            for unit_data in base_units:
-                # Проверяем, существует ли уже такой юнит
-                existing_unit = session.query(Unit).filter_by(name=unit_data['name']).first()
-                if not existing_unit:
-                    unit = Unit(**unit_data)
-                    session.add(unit)
-
-    def get_all_units(self) -> list:
-        """
-        Получение всех типов юнитов
-
-        Returns:
-            list: Список всех юнитов
-        """
-        with self.get_session() as session:
-            units = session.query(Unit).all()
-
-            # Загружаем все атрибуты
-            for unit in units:
-                _ = unit.id
-                _ = unit.name
-                _ = unit.price
-                _ = unit.damage
-                _ = unit.defense
-                _ = unit.range
-                _ = unit.health
-                _ = unit.speed
-                _ = unit.luck
-                _ = unit.crit_chance
-
-            session.expunge_all()
-            return units
-
-    def get_unit_by_id(self, unit_id: int) -> Unit:
-        """
-        Получение юнита по ID
-
-        Args:
-            unit_id: ID юнита
-
-        Returns:
-            Unit: Объект юнита или None
-        """
-        with self.get_session() as session:
-            unit = session.query(Unit).filter_by(id=unit_id).first()
-
-            if unit:
-                # Загружаем все атрибуты
-                _ = unit.id
-                _ = unit.name
-                _ = unit.price
-                _ = unit.damage
-                _ = unit.defense
-                _ = unit.range
-                _ = unit.health
-                _ = unit.speed
-                _ = unit.luck
-                _ = unit.crit_chance
-
-                session.expunge_all()
-
-            return unit
-
-    def get_unit_by_name(self, name: str) -> Unit:
-        """
-        Получение юнита по имени
-
-        Args:
-            name: Название юнита
-
-        Returns:
-            Unit: Объект юнита или None
-        """
-        with self.get_session() as session:
-            unit = session.query(Unit).filter_by(name=name).first()
-
-            if unit:
-                # Загружаем все атрибуты
-                _ = unit.id
-                _ = unit.name
-                _ = unit.price
-                _ = unit.damage
-                _ = unit.defense
-                _ = unit.range
-                _ = unit.health
-                _ = unit.speed
-                _ = unit.luck
-                _ = unit.crit_chance
-
-                session.expunge_all()
-
-            return unit
-
-    def purchase_units(self, telegram_id: int, unit_id: int, quantity: int) -> tuple:
-        """
-        Покупка юнитов пользователем
-
-        Args:
-            telegram_id: ID пользователя в Telegram
-            unit_id: ID типа юнита
-            quantity: Количество юнитов для покупки
-
-        Returns:
-            tuple: (success: bool, message: str) - результат операции и сообщение
-        """
-        with self.get_session() as session:
-            # Получаем игрового пользователя
-            game_user = session.query(GameUser).filter_by(telegram_id=telegram_id).first()
-            if not game_user:
-                return False, "Игровой профиль не найден. Используйте /play для создания профиля."
-
-            # Получаем информацию о юните
-            unit = session.query(Unit).filter_by(id=unit_id).first()
-            if not unit:
-                return False, "Юнит не найден."
-
-            # Проверяем количество
-            if quantity <= 0:
-                return False, "Количество должно быть больше 0."
-
-            # Вычисляем стоимость
-            total_cost = unit.price * quantity
-
-            # Проверяем баланс
-            if game_user.balance < total_cost:
-                return False, f"Недостаточно средств. Требуется: {format_coins(total_cost)}, доступно: {format_coins(game_user.balance)}"
-
-            # Списываем средства
-            game_user.balance -= total_cost
-
-            # Добавляем юнитов
-            user_unit = session.query(UserUnit).filter_by(
-                game_user_id=game_user.id,
-                unit_type_id=unit_id
-            ).first()
-
-            if user_unit:
-                user_unit.count += quantity
-            else:
-                user_unit = UserUnit(
-                    game_user_id=game_user.id,
-                    unit_type_id=unit_id,
-                    count=quantity
-                )
-                session.add(user_unit)
-
-            session.flush()
-
-            return True, f"Успешно куплено {quantity} x {unit.name} за {format_coins(total_cost)}"
 
     # ===== CRUD методы для Game =====
 

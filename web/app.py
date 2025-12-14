@@ -13,7 +13,7 @@ from functools import wraps
 from flask import Flask, render_template_string, request, redirect, url_for, flash, send_file, session
 from werkzeug.utils import secure_filename
 from db import Database
-from db.models import Unit, GameUser
+from db.models import GameUser, RaceUnit
 from decimal import Decimal
 from web.arena import arena_bp
 from web.races import races_bp
@@ -259,318 +259,84 @@ def logout():
 @app.route('/')
 @login_required
 def index():
-    """Главная страница - полный список юнитов"""
+    """Главная страница - полный список юнитов (теперь RaceUnit)"""
     with db.get_session() as session:
-        units = session.query(Unit).all()
+        units = session.query(RaceUnit).all()
 
-        # Принудительно загружаем все атрибуты перед закрытием сессии
+        # Создаем список словарей с данными юнитов для шаблона
+        units_data = []
         for unit in units:
-            _ = unit.id
-            _ = unit.name
-            _ = unit.icon
-            _ = unit.image_path
-            _ = unit.description
-            _ = unit.price
-            _ = unit.damage
-            _ = unit.defense
-            _ = unit.range
-            _ = unit.health
-            _ = unit.speed
-            _ = unit.luck
-            _ = unit.crit_chance
-            _ = unit.dodge_chance
-            _ = unit.is_kamikaze
-            _ = unit.is_flying
-            _ = unit.counterattack_chance
+            race_name = unit.game_race.name if unit.game_race else "Без расы"
+            level_name = unit.unit_level.name if unit.unit_level else "Без уровня"
+            level_icon = unit.unit_level.icon if unit.unit_level else "⚔️"
+            units_data.append({
+                'id': unit.id,
+                'name': unit.name,
+                'icon': level_icon,
+                'race_name': race_name,
+                'level_name': level_name,
+                'attack': unit.attack,
+                'defense': unit.defense,
+                'min_damage': unit.min_damage,
+                'max_damage': unit.max_damage,
+                'health': unit.health,
+                'speed': unit.speed,
+                'initiative': unit.initiative,
+                'is_shooter': unit.is_shooter,
+                'shots_count': unit.shots_count,
+                'is_flying': unit.is_flying,
+                'has_image': bool(unit.skins)
+            })
 
-        session.expunge_all()
-
-    # Проверить наличие файлов для каждого юнита
-    for unit in units:
-        unit.has_image = unit.image_path and os.path.exists(unit.image_path)
-
-    return render_template_string(COMPREHENSIVE_UNITS_TEMPLATE, units=units, active_page='home')
+    return render_template_string(COMPREHENSIVE_UNITS_TEMPLATE, units=units_data, active_page='home')
 
 
 @app.route('/admin/images')
 @login_required
 def admin_images():
-    """Управление картинками юнитов"""
-    with db.get_session() as session:
-        units = session.query(Unit).all()
-
-        # Принудительно загружаем все атрибуты перед закрытием сессии
-        for unit in units:
-            _ = unit.id
-            _ = unit.name
-            _ = unit.icon
-            _ = unit.image_path
-            _ = unit.price
-            _ = unit.damage
-            _ = unit.defense
-            _ = unit.range
-            _ = unit.health
-            _ = unit.speed
-
-        session.expunge_all()
-
-    # Проверить наличие файлов для каждого юнита
-    for unit in units:
-        unit.has_image = unit.image_path and os.path.exists(unit.image_path)
-
-    # Подсчитать статистику
-    stats = {
-        'total': len(units),
-        'with_images': sum(1 for u in units if u.has_image),
-        'without_images': sum(1 for u in units if not u.has_image)
-    }
-
-    return render_template_string(IMAGES_TEMPLATE, units=units, stats=stats, active_page='images')
+    """УСТАРЕВШИЙ - Картинки теперь управляются через скины юнитов в расах"""
+    flash('Раздел картинок удален. Используйте раздел "Расы" для управления скинами юнитов.', 'info')
+    return redirect(url_for('index'))
 
 
 @app.route('/upload/<int:unit_id>', methods=['POST'])
 @login_required
 def upload_image(unit_id):
-    """Загрузка картинки для юнита"""
-    if 'image' not in request.files:
-        flash('Файл не выбран', 'error')
-        return redirect(url_for('admin_images'))
-
-    file = request.files['image']
-    if file.filename == '':
-        flash('Файл не выбран', 'error')
-        return redirect(url_for('admin_images'))
-
-    if file:
-        # Получить юнит
-        with db.get_session() as session:
-            unit = session.query(Unit).filter_by(id=unit_id).first()
-            if not unit:
-                flash('Юнит не найден', 'error')
-                return redirect(url_for('admin_images'))
-
-            # Создать безопасное имя файла
-            filename = secure_filename(f"unit_{unit_id}_{file.filename}")
-            filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-
-            # Сохранить файл
-            os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
-            file.save(filepath)
-
-            # Обновить путь в базе данных
-            unit.image_path = filepath
-            session.flush()
-
-            unit_name = unit.name
-
-        flash(f'Картинка для {unit_name} успешно загружена!', 'success')
-
-    return redirect(url_for('admin_images'))
+    """УСТАРЕВШИЙ - Загрузка картинок перенесена в скины юнитов"""
+    flash('Загрузка картинок перенесена в раздел "Расы" -> "Скины юнитов".', 'info')
+    return redirect(url_for('index'))
 
 
 @app.route('/delete/<int:unit_id>', methods=['POST'])
 @login_required
 def delete_image(unit_id):
-    """Удаление картинки юнита"""
-    with db.get_session() as session:
-        unit = session.query(Unit).filter_by(id=unit_id).first()
-        if not unit:
-            flash('Юнит не найден', 'error')
-            return redirect(url_for('admin_images'))
-
-        image_path = unit.image_path
-        unit_name = unit.name
-
-        if image_path and os.path.exists(image_path):
-            # Удалить файл
-            os.remove(image_path)
-            flash(f'Картинка для {unit_name} удалена', 'success')
-
-        # Очистить путь в базе данных
-        unit.image_path = None
-        session.flush()
-
-    return redirect(url_for('admin_images'))
+    """УСТАРЕВШИЙ - Удаление картинок перенесено в скины юнитов"""
+    flash('Управление картинками перенесено в раздел "Расы" -> "Скины юнитов".', 'info')
+    return redirect(url_for('index'))
 
 
 @app.route('/admin/units')
 @login_required
 def admin_units_list():
-    """Страница управления юнитами"""
-    username = session.get('username')
-    with db.get_session() as db_session:
-        # Получить текущего пользователя
-        current_user = db_session.query(GameUser).filter_by(username=username).first()
-
-        # Показать базовые юниты (owner_id IS NULL) и юниты текущего пользователя
-        if current_user:
-            units = db_session.query(Unit).filter(
-                (Unit.owner_id == None) | (Unit.owner_id == current_user.id)
-            ).all()
-        else:
-            # Если пользователь не найден, показать только базовые юниты
-            units = db_session.query(Unit).filter(Unit.owner_id == None).all()
-
-        db_session.expunge_all()
-
-    return render_template_string(UNITS_TEMPLATE, units=units, active_page='units', current_user_id=current_user.id if current_user else None, username=username)
+    """Страница управления юнитами - перенаправление на расы"""
+    flash('Управление юнитами перенесено в раздел "Расы". Юниты теперь привязаны к расам.', 'info')
+    return redirect(url_for('races.races_list'))
 
 
 @app.route('/admin/units/create', methods=['GET', 'POST'])
 @login_required
 def admin_create_unit():
-    """Создание нового юнита"""
-    username = session.get('username')
-    if request.method == 'POST':
-        try:
-            with db.get_session() as db_session:
-                # Получить текущего пользователя
-                current_user = db_session.query(GameUser).filter_by(username=username).first()
-
-                # Получить параметры юнита
-                damage = int(request.form['damage'])
-                defense = int(request.form['defense'])
-                health = int(request.form['health'])
-                unit_range = int(request.form['range'])
-                speed = int(request.form['speed'])
-                luck = float(request.form['luck'])
-                crit_chance = float(request.form['crit_chance'])
-                dodge_chance = float(request.form['dodge_chance'])
-                is_kamikaze = 1 if request.form.get('is_kamikaze') else 0
-                is_flying = 1 if request.form.get('is_flying') else 0
-                counterattack_chance = float(request.form['counterattack_chance'])
-
-                # Валидация: dodge_chance не более 0.9
-                if dodge_chance > 0.9:
-                    flash('Ошибка: Шанс уклонения не может быть больше 90% (0.9)', 'error')
-                    return redirect(url_for('admin_create_unit'))
-
-                # Автоматически рассчитать стоимость
-                price = calculate_unit_price(damage, defense, health, unit_range, speed, luck, crit_chance, dodge_chance, is_kamikaze, is_flying, counterattack_chance)
-
-                # Определить owner_id: для okarien - NULL (базовый юнит), для остальных - их ID
-                owner_id = None if username == 'okarien' else (current_user.id if current_user else None)
-
-                unit = Unit(
-                    name=request.form['name'],
-                    icon=request.form['icon'],
-                    description=request.form.get('description', ''),
-                    price=price,
-                    damage=damage,
-                    defense=defense,
-                    health=health,
-                    range=unit_range,
-                    speed=speed,
-                    luck=Decimal(str(luck)),
-                    crit_chance=Decimal(str(crit_chance)),
-                    dodge_chance=Decimal(str(dodge_chance)),
-                    is_kamikaze=is_kamikaze,
-                    is_flying=is_flying,
-                    counterattack_chance=Decimal(str(counterattack_chance)),
-                    owner_id=owner_id
-                )
-                db_session.add(unit)
-                db_session.flush()
-
-            flash(f'Юнит "{request.form["name"]}" успешно создан с автоматически рассчитанной стоимостью {price}!', 'success')
-            return redirect(url_for('admin_units_list'))
-        except Exception as e:
-            flash(f'Ошибка при создании юнита: {str(e)}', 'error')
-
-    return render_template_string(UNIT_FORM_TEMPLATE, unit=None, active_page='units')
+    """УСТАРЕВШИЙ - Создание юнитов перенесено в раздел рас"""
+    flash('Создание юнитов перенесено в раздел "Расы". Юниты теперь привязаны к расам.', 'info')
+    return redirect(url_for('races.races_list'))
 
 
 @app.route('/admin/units/edit/<int:unit_id>', methods=['GET', 'POST'])
 @login_required
 def admin_edit_unit(unit_id):
-    """Редактирование юнита"""
-    username = session.get('username')
-    with db.get_session() as db_session:
-        unit = db_session.query(Unit).filter_by(id=unit_id).first()
-        if not unit:
-            flash('Юнит не найден', 'error')
-            return redirect(url_for('admin_units_list'))
-
-        # Получить текущего пользователя
-        current_user = db_session.query(GameUser).filter_by(username=username).first()
-
-        # Проверить права на редактирование:
-        # - okarien может редактировать базовые юниты (owner_id IS NULL) и свои
-        # - остальные могут редактировать только свои юниты
-        can_edit = False
-        if username == 'okarien':
-            can_edit = (unit.owner_id is None) or (current_user and unit.owner_id == current_user.id)
-        else:
-            can_edit = current_user and unit.owner_id == current_user.id
-
-        if not can_edit:
-            flash('У вас нет прав на редактирование этого юнита', 'error')
-            return redirect(url_for('admin_units_list'))
-
-        if request.method == 'POST':
-            try:
-                # Получить параметры юнита
-                damage = int(request.form['damage'])
-                defense = int(request.form['defense'])
-                health = int(request.form['health'])
-                unit_range = int(request.form['range'])
-                speed = int(request.form['speed'])
-                luck = float(request.form['luck'])
-                crit_chance = float(request.form['crit_chance'])
-                dodge_chance = float(request.form['dodge_chance'])
-                is_kamikaze = 1 if request.form.get('is_kamikaze') else 0
-                is_flying = 1 if request.form.get('is_flying') else 0
-                counterattack_chance = float(request.form['counterattack_chance'])
-
-                # Валидация: dodge_chance не более 0.9
-                if dodge_chance > 0.9:
-                    flash('Ошибка: Шанс уклонения не может быть больше 90% (0.9)', 'error')
-                    return redirect(url_for('admin_edit_unit', unit_id=unit_id))
-
-                # Автоматически рассчитать стоимость
-                price = calculate_unit_price(damage, defense, health, unit_range, speed, luck, crit_chance, dodge_chance, is_kamikaze, is_flying, counterattack_chance)
-
-                unit.name = request.form['name']
-                unit.icon = request.form['icon']
-                unit.description = request.form.get('description', '')
-                unit.price = price
-                unit.damage = damage
-                unit.defense = defense
-                unit.health = health
-                unit.range = unit_range
-                unit.speed = speed
-                unit.luck = Decimal(str(luck))
-                unit.crit_chance = Decimal(str(crit_chance))
-                unit.dodge_chance = Decimal(str(dodge_chance))
-                unit.is_kamikaze = is_kamikaze
-                unit.is_flying = is_flying
-                unit.counterattack_chance = Decimal(str(counterattack_chance))
-                db_session.flush()
-
-                flash(f'Юнит "{unit.name}" успешно обновлен с автоматически рассчитанной стоимостью {price}!', 'success')
-                return redirect(url_for('admin_units_list'))
-            except Exception as e:
-                flash(f'Ошибка при обновлении юнита: {str(e)}', 'error')
-
-        # Принудительно загружаем все атрибуты
-        _ = unit.id
-        _ = unit.name
-        _ = unit.icon
-        _ = unit.price
-        _ = unit.damage
-        _ = unit.defense
-        _ = unit.health
-        _ = unit.range
-        _ = unit.speed
-        _ = unit.luck
-        _ = unit.crit_chance
-        _ = unit.dodge_chance
-        _ = unit.is_kamikaze
-        _ = unit.is_flying
-        _ = unit.counterattack_chance
-        db_session.expunge_all()
-
-    return render_template_string(UNIT_FORM_TEMPLATE, unit=unit, active_page='units')
+    """УСТАРЕВШИЙ - Редактирование юнитов перенесено в раздел рас"""
+    flash('Редактирование юнитов перенесено в раздел "Расы". Юниты теперь привязаны к расам.', 'info')
+    return redirect(url_for('races.races_list'))
 
 
 @app.route('/leaderboard')
@@ -604,13 +370,8 @@ def leaderboard():
             total_games = player.wins + player.losses
             win_rate = (player.wins / total_games * 100) if total_games > 0 else 0
 
-            # Рассчитываем стоимость армии
-            player_units = db_session.query(UserUnit).filter_by(game_user_id=player.id).all()
-            army_value = Decimal('0')
-            for user_unit in player_units:
-                unit = db_session.query(Unit).filter_by(id=user_unit.unit_type_id).first()
-                if unit:
-                    army_value += Decimal(str(unit.price)) * user_unit.count
+            # Используем glory как показатель силы игрока
+            glory = player.glory if hasattr(player, 'glory') else 0
 
             players_data.append({
                 'rank': offset + len(players_data) + 1,
@@ -619,7 +380,7 @@ def leaderboard():
                 'losses': player.losses,
                 'win_rate': win_rate,
                 'balance': float(player.balance),
-                'army_value': float(army_value)
+                'army_value': float(glory)  # Используем glory вместо стоимости армии
             })
 
         db_session.expunge_all()
@@ -646,152 +407,17 @@ def help_page():
 @app.route('/export')
 @login_required
 def export_units():
-    """Экспорт юнитов в ZIP архив"""
-    try:
-        # Создать временную директорию для архива
-        temp_dir = 'temp_export'
-        os.makedirs(temp_dir, exist_ok=True)
-
-        with db.get_session() as session:
-            units = session.query(Unit).all()
-
-            # Создать JSON файл с данными юнитов
-            units_data = []
-            for unit in units:
-                unit_dict = {
-                    'name': unit.name,
-                    'icon': unit.icon,
-                    'price': float(unit.price),
-                    'damage': unit.damage,
-                    'defense': unit.defense,
-                    'health': unit.health,
-                    'range': unit.range,
-                    'speed': unit.speed,
-                    'luck': float(unit.luck),
-                    'crit_chance': float(unit.crit_chance),
-                    'image_filename': os.path.basename(unit.image_path) if unit.image_path else None
-                }
-                units_data.append(unit_dict)
-
-                # Копировать изображение если есть
-                if unit.image_path and os.path.exists(unit.image_path):
-                    image_filename = os.path.basename(unit.image_path)
-                    shutil.copy(unit.image_path, os.path.join(temp_dir, image_filename))
-
-        # Сохранить JSON
-        with open(os.path.join(temp_dir, 'units.json'), 'w', encoding='utf-8') as f:
-            json.dump(units_data, f, ensure_ascii=False, indent=2)
-
-        # Создать ZIP архив
-        memory_file = BytesIO()
-        with zipfile.ZipFile(memory_file, 'w', zipfile.ZIP_DEFLATED) as zipf:
-            for root, dirs, files in os.walk(temp_dir):
-                for file in files:
-                    file_path = os.path.join(root, file)
-                    arcname = os.path.relpath(file_path, temp_dir)
-                    zipf.write(file_path, arcname)
-
-        # Удалить временную директорию
-        shutil.rmtree(temp_dir)
-
-        # Отправить файл
-        memory_file.seek(0)
-        return send_file(
-            memory_file,
-            mimetype='application/zip',
-            as_attachment=True,
-            download_name='units_export.zip'
-        )
-
-    except Exception as e:
-        flash(f'Ошибка при экспорте: {str(e)}', 'error')
-        return redirect(url_for('admin_units_list'))
+    """УСТАРЕВШИЙ - Экспорт перенесен в раздел рас"""
+    flash('Экспорт юнитов перенесен в раздел "Расы". Используйте экспорт рас.', 'info')
+    return redirect(url_for('races.races_list'))
 
 
 @app.route('/import', methods=['GET', 'POST'])
 @login_required
 def import_page():
-    """Импорт юнитов из ZIP архива"""
-    if request.method == 'POST':
-        if 'archive' not in request.files:
-            flash('Файл не выбран', 'error')
-            return redirect(url_for('import_page'))
-
-        file = request.files['archive']
-        if file.filename == '':
-            flash('Файл не выбран', 'error')
-            return redirect(url_for('import_page'))
-
-        try:
-            # Создать временную директорию
-            temp_dir = 'temp_import'
-            os.makedirs(temp_dir, exist_ok=True)
-
-            # Сохранить и распаковать архив
-            zip_path = os.path.join(temp_dir, 'upload.zip')
-            file.save(zip_path)
-
-            with zipfile.ZipFile(zip_path, 'r') as zipf:
-                zipf.extractall(temp_dir)
-
-            # Прочитать JSON с данными юнитов
-            json_path = os.path.join(temp_dir, 'units.json')
-            if not os.path.exists(json_path):
-                flash('Некорректный архив: отсутствует файл units.json', 'error')
-                shutil.rmtree(temp_dir)
-                return redirect(url_for('import_page'))
-
-            with open(json_path, 'r', encoding='utf-8') as f:
-                units_data = json.load(f)
-
-            # Удалить всех существующих юнитов
-            with db.get_session() as session:
-                session.query(Unit).delete()
-                session.flush()
-
-                # Создать новых юнитов
-                for unit_data in units_data:
-                    # Определить путь к изображению
-                    image_path = None
-                    if unit_data.get('image_filename'):
-                        src_image = os.path.join(temp_dir, unit_data['image_filename'])
-                        if os.path.exists(src_image):
-                            # Скопировать изображение в static/unit_images
-                            os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
-                            dest_image = os.path.join(app.config['UPLOAD_FOLDER'], unit_data['image_filename'])
-                            shutil.copy(src_image, dest_image)
-                            image_path = dest_image
-
-                    unit = Unit(
-                        name=unit_data['name'],
-                        icon=unit_data['icon'],
-                        price=Decimal(str(unit_data['price'])),
-                        damage=unit_data['damage'],
-                        defense=unit_data['defense'],
-                        health=unit_data['health'],
-                        range=unit_data['range'],
-                        speed=unit_data['speed'],
-                        luck=Decimal(str(unit_data['luck'])),
-                        crit_chance=Decimal(str(unit_data['crit_chance'])),
-                        image_path=image_path
-                    )
-                    session.add(unit)
-
-                session.flush()
-
-            # Удалить временную директорию
-            shutil.rmtree(temp_dir)
-
-            flash(f'Успешно импортировано {len(units_data)} юнитов!', 'success')
-            return redirect(url_for('admin_units_list'))
-
-        except Exception as e:
-            flash(f'Ошибка при импорте: {str(e)}', 'error')
-            if os.path.exists(temp_dir):
-                shutil.rmtree(temp_dir)
-            return redirect(url_for('import_page'))
-
-    return render_template_string(IMPORT_TEMPLATE, active_page='units')
+    """УСТАРЕВШИЙ - Импорт перенесен в раздел рас"""
+    flash('Импорт юнитов перенесен в раздел "Расы". Используйте импорт рас.', 'info')
+    return redirect(url_for('races.races_list'))
 
 
 def main():

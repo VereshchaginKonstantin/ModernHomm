@@ -14,7 +14,7 @@ from http.server import HTTPServer, BaseHTTPRequestHandler
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, CallbackQueryHandler
 from db import Database
-from db.models import GameUser, Unit, UnitCustomIcon, BattleUnit, Game
+from db.models import GameUser, BattleUnit, Game, RaceUnit
 from decimal import Decimal
 from core.game_engine import GameEngine, coords_to_chess, chess_to_coords
 from core.field_renderer import FieldRenderer
@@ -121,9 +121,6 @@ class SimpleBot:
             db_url = os.getenv('DATABASE_URL', self.config.get('database', {}).get('url'))
             self.db = Database(db_url)
             self.db.create_tables()
-            # Инициализация базовых юнитов
-            self.db.initialize_base_units()
-            logger.info("Базовые юниты инициализированы")
         else:
             self.db = db
 
@@ -497,50 +494,36 @@ class SimpleBot:
                 )
                 return
 
-            # Получаем юнитов пользователя
-            user_units = self.db.get_user_units(user.id)
+            # Получаем армии пользователя через расу
+            armies_text = ""
+            with self.db.get_session() as session:
+                from db.models import UserRace, Army
+                user_races = session.query(UserRace).filter_by(game_user_id=game_user.id).all()
 
-            units_text = ""
-            keyboard = []
-            if user_units:
-                # Фильтруем юнитов с количеством > 0
-                active_units = [u for u in user_units if u.count > 0]
-                if active_units:
-                    units_text = "\n\n🔰 Ваши юниты:\n"
-                    for user_unit in active_units:
-                        # Получаем детали юнита
-                        unit = self.db.get_unit_by_id(user_unit.unit_type_id)
-                        if unit:
-                            total_price = unit.price * user_unit.count
-                            sell_price = total_price * Decimal('0.7')
-                            units_text += (
-                                f"\n{unit.name} x{user_unit.count}\n"
-                                f"  ⚔️ Урон: {unit.damage} | 🛡️ Защита: {unit.defense} | 🎯 Дальность: {unit.range}\n"
-                                f"  ❤️ HP: {unit.health} | 🏃 Скорость: {unit.speed} | 🌀 Уклонение: {float(unit.dodge_chance)*100:.0f}%\n"
-                                f"  💵 Цена продажи: {format_coins(sell_price)}\n"
-                            )
-                            # Добавляем кнопку продажи для этого юнита
-                            keyboard.append([
-                                InlineKeyboardButton(
-                                    f"💰 Продать {unit.name} ({user_unit.count} шт.)",
-                                    callback_data=f"sell_unit_{user_unit.unit_type_id}"
-                                )
-                            ])
+                if user_races:
+                    armies_text = "\n\n⚔️ Ваши армии:\n"
+                    for user_race in user_races:
+                        race_name = user_race.game_race.name if user_race.game_race else "Неизвестная раса"
+                        armies = session.query(Army).filter_by(user_race_id=user_race.id).all()
+                        if armies:
+                            for army in armies:
+                                army_type = "Рейтинговая" if army.army_type == "rated" else "Наемная"
+                                armies_text += f"\n🏰 {army.name} ({army_type})\n"
+                                armies_text += f"  Раса: {race_name}\n"
+                        else:
+                            armies_text += f"\n{race_name}: нет армий\n"
                 else:
-                    units_text = "\n\n🔰 У вас пока нет юнитов. Посетите /shop для покупки!"
-            else:
-                units_text = "\n\n🔰 У вас пока нет юнитов. Посетите /shop для покупки!"
+                    armies_text = "\n\n⚔️ У вас пока нет армий. Создайте армию на веб-сайте!"
 
             response = (
                 f"👤 Профиль игрока @{game_user.username}\n\n"
                 f"💰 Баланс: {format_coins(game_user.balance)}\n"
                 f"🏆 Побед: {game_user.wins}\n"
                 f"💔 Поражений: {game_user.losses}"
-                f"{units_text}"
+                f"{armies_text}"
             )
 
-            reply_markup = InlineKeyboardMarkup(keyboard) if keyboard else None
-            await update.message.reply_text(response, parse_mode=self.parse_mode, reply_markup=reply_markup)
+            await update.message.reply_text(response, parse_mode=self.parse_mode)
 
         except Exception as e:
             logger.error(f"Ошибка при получении профиля: {e}")
@@ -550,58 +533,9 @@ class SimpleBot:
             )
 
     async def sell_unit_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Обработчик callback для продажи юнита"""
+        """Обработчик callback для продажи юнита - УСТАРЕВШИЙ"""
         query = update.callback_query
-        await query.answer()
-
-        # Парсим данные из callback (формат: sell_unit_unit_type_id)
-        data = query.data
-        if not data.startswith('sell_unit_'):
-            return
-
-        unit_type_id = int(data.split('_')[2])
-        user = update.effective_user
-
-        try:
-            # Получаем информацию о юните
-            unit = self.db.get_unit_by_id(unit_type_id)
-            if not unit:
-                await query.edit_message_text(
-                    "❌ Юнит не найден.",
-                    parse_mode=self.parse_mode
-                )
-                return
-
-            # Продаем юниты
-            count, money = self.db.sell_units(user.id, unit_type_id)
-
-            if count == 0:
-                await query.edit_message_text(
-                    "❌ У вас нет этих юнитов для продажи.",
-                    parse_mode=self.parse_mode
-                )
-                return
-
-            # Успешная продажа
-            response = (
-                f"✅ Успешно продано!\n\n"
-                f"🔰 Юнит: {unit.name}\n"
-                f"📦 Количество: {count} шт.\n"
-                f"💰 Получено: {format_coins(money)}\n\n"
-                f"Используйте /profile чтобы увидеть обновленный профиль."
-            )
-
-            await query.edit_message_text(
-                response,
-                parse_mode=self.parse_mode
-            )
-
-        except Exception as e:
-            logger.error(f"Ошибка при продаже юнита: {e}")
-            await query.edit_message_text(
-                "Произошла ошибка при продаже. Попробуйте позже.",
-                parse_mode=self.parse_mode
-            )
+        await query.answer("Эта функция больше недоступна. Управляйте армиями на веб-сайте.", show_alert=True)
 
     async def top_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Обработчик команды /top - рейтинг игроков"""
@@ -621,26 +555,15 @@ class SimpleBot:
             # Подготовка данных для рейтинга
             player_stats = []
             for game_user in all_users:
-                # Получаем юнитов игрока
-                user_units = self.db.get_user_units(game_user.telegram_id)
-
-                # Вычисляем стоимость армии
-                army_cost = Decimal('0')
-                for user_unit in user_units:
-                    if user_unit.count > 0:
-                        unit = self.db.get_unit_by_id(user_unit.unit_type_id)
-                        if unit:
-                            army_cost += unit.price * user_unit.count
-
                 player_stats.append({
                     'name': f"@{game_user.username}",
                     'wins': game_user.wins,
                     'losses': game_user.losses,
-                    'army_cost': army_cost
+                    'glory': game_user.glory
                 })
 
-            # Сортируем по победам (по убыванию), затем по стоимости армии (по убыванию)
-            player_stats.sort(key=lambda x: (x['wins'], x['army_cost']), reverse=True)
+            # Сортируем по победам (по убыванию), затем по славе (по убыванию)
+            player_stats.sort(key=lambda x: (x['wins'], x['glory']), reverse=True)
 
             # Формируем текст рейтинга
             response = "🏆 <b>Рейтинг игроков</b>\n\n"
@@ -659,7 +582,7 @@ class SimpleBot:
                 response += (
                     f"{medal}<b>{html.escape(player['name'])}</b>\n"
                     f"  🏆 Побед: {player['wins']} | 💔 Поражений: {player['losses']}\n"
-                    f"  ⚔️ Стоимость армии: {format_coins(player['army_cost'])}\n\n"
+                    f"  ⭐ Слава: {player['glory']}\n\n"
                 )
 
             await update.message.reply_text(response, parse_mode=self.parse_mode)
@@ -672,244 +595,42 @@ class SimpleBot:
             )
 
     async def shop_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Обработчик команды /shop - магазин юнитов"""
+        """Обработчик команды /shop - перенаправление на веб-интерфейс"""
         user = update.effective_user
         logger.info(f"Команда /shop от пользователя {user.id}")
 
-        try:
-            # Проверяем наличие игрового профиля
-            game_user = self.db.get_game_user(user.id)
-            if not game_user:
-                await update.message.reply_text(
-                    "❌ У вас еще нет игрового профиля.\n"
-                    "Используйте /start для создания профиля.",
-                    parse_mode=self.parse_mode
-                )
-                return
-
-            # Получаем все доступные юниты
-            units = self.db.get_all_units()
-
-            if not units:
-                await update.message.reply_text(
-                    "Магазин пуст. Юниты временно недоступны.",
-                    parse_mode=self.parse_mode
-                )
-                return
-
-            # Формируем сообщение с магазином
-            response = f"🏪 <b>Магазин юнитов</b>\n\n💰 Ваш баланс: {format_coins(game_user.balance)}\n\n"
-            response += "Выберите юнита для покупки:\n"
-
-            # Создаем кнопки для каждого юнита
-            keyboard = []
-            for unit in units:
-                unit_info = (
-                    f"{unit.name} - {format_coins(unit.price)}\n"
-                    f"⚔️ {unit.damage} | 🛡️ {unit.defense} | 🎯 {unit.range} | ❤️ {unit.health} | 🏃 {unit.speed}\n"
-                    f"🍀 {float(unit.luck)*100:.0f}% | 💥 {float(unit.crit_chance)*100:.0f}%"
-                )
-                response += f"\n{unit_info}\n"
-
-                keyboard.append([
-                    InlineKeyboardButton(
-                        f"Купить {unit.name}",
-                        callback_data=f"buy_unit:{unit.id}"
-                    )
-                ])
-
-            await update.message.reply_text(
-                response,
-                parse_mode=self.parse_mode,
-                reply_markup=InlineKeyboardMarkup(keyboard)
-            )
-
-        except Exception as e:
-            logger.error(f"Ошибка при открытии магазина: {e}")
-            await update.message.reply_text(
-                "Произошла ошибка при открытии магазина. Попробуйте позже.",
-                parse_mode=self.parse_mode
-            )
+        await update.message.reply_text(
+            "🏪 <b>Управление армиями</b>\n\n"
+            "Покупка юнитов и создание армий теперь доступны на веб-сайте.\n\n"
+            "Посетите веб-интерфейс для управления армиями:\n"
+            "• Создавайте рейтинговые армии (бесплатно, ограничены славой)\n"
+            "• Создавайте наемные армии (за монеты)\n"
+            "• Добавляйте юнитов в армии\n\n"
+            "Используйте /profile для просмотра ваших армий.",
+            parse_mode=self.parse_mode
+        )
 
     async def buy_unit_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Обработчик callback для выбора юнита в магазине"""
+        """Обработчик callback для покупки юнита - УСТАРЕВШИЙ"""
         query = update.callback_query
-        await query.answer()
-
-        # Парсим данные из callback (формат: buy_unit:unit_id)
-        data = query.data.split(':')
-        if len(data) != 2 or data[0] != 'buy_unit':
-            return
-
-        unit_id = int(data[1])
-        user = update.effective_user
-
-        try:
-            # Получаем информацию о юните
-            unit = self.db.get_unit_by_id(unit_id)
-            if not unit:
-                await query.edit_message_text(
-                    "❌ Юнит не найден.",
-                    parse_mode=self.parse_mode
-                )
-                return
-
-            # Получаем баланс пользователя
-            game_user = self.db.get_game_user(user.id)
-            if not game_user:
-                await query.edit_message_text(
-                    "❌ Игровой профиль не найден.",
-                    parse_mode=self.parse_mode
-                )
-                return
-
-            # Показываем информацию о юните и кнопки для выбора количества
-            response = (
-                f"🛒 <b>Покупка: {unit.name}</b>\n\n"
-                f"💰 Цена за 1 шт: {format_coins(unit.price)}\n"
-                f"💵 Ваш баланс: {format_coins(game_user.balance)}\n\n"
-                f"<b>Характеристики:</b>\n"
-                f"⚔️ Урон: {unit.damage}\n"
-                f"🛡️ Защита: {unit.defense}\n"
-                f"🎯 Дальность: {unit.range}\n"
-                f"❤️ Здоровье: {unit.health}\n"
-                f"🏃 Скорость: {unit.speed}\n"
-                f"🍀 Удача: {float(unit.luck)*100:.0f}%\n"
-                f"💥 Крит: {float(unit.crit_chance)*100:.0f}%\n"
-                f"🌀 Уклонение: {float(unit.dodge_chance)*100:.0f}%\n\n"
-                f"Выберите количество:"
-            )
-
-            # Создаем кнопки для выбора количества
-            keyboard = []
-            quantities = [1, 5, 10]
-            row = []
-            for qty in quantities:
-                total = float(unit.price) * qty
-                if total <= float(game_user.balance):
-                    row.append(InlineKeyboardButton(
-                        f"{qty} шт ({format_coins(total)})",
-                        callback_data=f"confirm_buy:{unit_id}:{qty}"
-                    ))
-            if row:
-                keyboard.append(row)
-
-            keyboard.append([
-                InlineKeyboardButton("◀️ Назад в магазин", callback_data="back_to_shop")
-            ])
-
-            await query.edit_message_text(
-                response,
-                parse_mode=self.parse_mode,
-                reply_markup=InlineKeyboardMarkup(keyboard)
-            )
-
-        except Exception as e:
-            logger.error(f"Ошибка при выборе юнита: {e}")
-            await query.edit_message_text(
-                "Произошла ошибка. Попробуйте позже.",
-                parse_mode=self.parse_mode
-            )
+        await query.answer("Эта функция больше недоступна. Управляйте армиями на веб-сайте.", show_alert=True)
 
     async def confirm_buy_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Обработчик callback для подтверждения покупки"""
+        """Обработчик callback для подтверждения покупки - УСТАРЕВШИЙ"""
         query = update.callback_query
-        await query.answer()
-
-        # Парсим данные из callback (формат: confirm_buy:unit_id:quantity)
-        data = query.data.split(':')
-        if len(data) != 3 or data[0] != 'confirm_buy':
-            return
-
-        unit_id = int(data[1])
-        quantity = int(data[2])
-        user = update.effective_user
-
-        try:
-            # Выполняем покупку
-            success, message = self.db.purchase_units(user.id, unit_id, quantity)
-
-            if success:
-                # Получаем обновленный профиль
-                game_user = self.db.get_game_user(user.id)
-                response = (
-                    f"✅ {message}\n\n"
-                    f"💰 Новый баланс: {format_coins(game_user.balance)}"
-                )
-            else:
-                response = f"❌ {message}"
-
-            # Кнопки для дальнейших действий
-            keyboard = [
-                [
-                    InlineKeyboardButton("🏪 Продолжить покупки", callback_data="back_to_shop"),
-                    InlineKeyboardButton("👤 Профиль", callback_data="show_profile")
-                ]
-            ]
-
-            await query.edit_message_text(
-                response,
-                parse_mode=self.parse_mode,
-                reply_markup=InlineKeyboardMarkup(keyboard)
-            )
-
-        except Exception as e:
-            logger.error(f"Ошибка при покупке юнита: {e}")
-            await query.edit_message_text(
-                f"❌ Произошла ошибка при покупке: {e}",
-                parse_mode=self.parse_mode
-            )
+        await query.answer("Эта функция больше недоступна. Управляйте армиями на веб-сайте.", show_alert=True)
 
     async def back_to_shop_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Обработчик callback для возврата в магазин"""
+        """Обработчик callback для возврата в магазин - УСТАРЕВШИЙ"""
         query = update.callback_query
         await query.answer()
 
-        user = update.effective_user
-
-        try:
-            # Получаем игрового пользователя
-            game_user = self.db.get_game_user(user.id)
-            if not game_user:
-                await query.edit_message_text("❌ Игровой профиль не найден.", parse_mode=self.parse_mode)
-                return
-
-            # Получаем все доступные юниты
-            units = self.db.get_all_units()
-
-            # Формируем сообщение с магазином
-            response = f"🏪 <b>Магазин юнитов</b>\n\n💰 Ваш баланс: {format_coins(game_user.balance)}\n\n"
-            response += "Выберите юнита для покупки:\n"
-
-            # Создаем кнопки для каждого юнита
-            keyboard = []
-            for unit in units:
-                unit_info = (
-                    f"{unit.name} - {format_coins(unit.price)}\n"
-                    f"⚔️ {unit.damage} | 🛡️ {unit.defense} | 🎯 {unit.range} | ❤️ {unit.health} | 🏃 {unit.speed}\n"
-                    f"🍀 {float(unit.luck)*100:.0f}% | 💥 {float(unit.crit_chance)*100:.0f}%"
-                )
-                response += f"\n{unit_info}\n"
-
-                keyboard.append([
-                    InlineKeyboardButton(
-                        f"Купить {unit.name}",
-                        callback_data=f"buy_unit:{unit.id}"
-                    )
-                ])
-
-            await query.edit_message_text(
-                response,
-                parse_mode=self.parse_mode,
-                reply_markup=InlineKeyboardMarkup(keyboard)
-            )
-
-        except Exception as e:
-            logger.error(f"Ошибка при возврате в магазин: {e}")
-            await query.edit_message_text(
-                "Произошла ошибка. Попробуйте позже.",
-                parse_mode=self.parse_mode
-            )
+        await query.edit_message_text(
+            "🏪 <b>Управление армиями</b>\n\n"
+            "Покупка юнитов и создание армий теперь доступны на веб-сайте.\n\n"
+            "Используйте /profile для просмотра ваших армий.",
+            parse_mode='HTML'
+        )
 
     async def show_profile_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Обработчик callback для показа профиля"""
@@ -924,37 +645,38 @@ class SimpleBot:
                 await query.edit_message_text("❌ Игровой профиль не найден.", parse_mode=self.parse_mode)
                 return
 
-            # Получаем юнитов пользователя
-            user_units = self.db.get_user_units(user.id)
+            # Получаем армии пользователя через расу
+            armies_text = ""
+            with self.db.get_session() as session:
+                from db.models import UserRace, Army
+                user_races = session.query(UserRace).filter_by(game_user_id=game_user.id).all()
 
-            units_text = ""
-            if user_units:
-                units_text = "\n\n🔰 Ваши юниты:\n"
-                for user_unit in user_units:
-                    unit = self.db.get_unit_by_id(user_unit.unit_type_id)
-                    if unit:
-                        units_text += (
-                            f"\n{unit.name} x{user_unit.count}\n"
-                            f"  ⚔️ Урон: {unit.damage} | 🛡️ Защита: {unit.defense} | 🎯 Дальность: {unit.range}\n"
-                            f"  ❤️ HP: {unit.health} | 🏃 Скорость: {unit.speed} | 🌀 Уклонение: {float(unit.dodge_chance)*100:.0f}%\n"
-                        )
-            else:
-                units_text = "\n\n🔰 У вас пока нет юнитов. Посетите /shop для покупки!"
+                if user_races:
+                    armies_text = "\n\n⚔️ Ваши армии:\n"
+                    for user_race in user_races:
+                        race_name = user_race.game_race.name if user_race.game_race else "Неизвестная раса"
+                        armies = session.query(Army).filter_by(user_race_id=user_race.id).all()
+                        if armies:
+                            for army in armies:
+                                army_type = "Рейтинговая" if army.army_type == "rated" else "Наемная"
+                                armies_text += f"\n🏰 {army.name} ({army_type})\n"
+                                armies_text += f"  Раса: {race_name}\n"
+                        else:
+                            armies_text += f"\n{race_name}: нет армий\n"
+                else:
+                    armies_text = "\n\n⚔️ У вас пока нет армий. Создайте армию на веб-сайте!"
 
             response = (
                 f"👤 Профиль игрока @{game_user.username}\n\n"
                 f"💰 Баланс: {format_coins(game_user.balance)}\n"
                 f"🏆 Побед: {game_user.wins}\n"
                 f"💔 Поражений: {game_user.losses}"
-                f"{units_text}"
+                f"{armies_text}"
             )
-
-            keyboard = [[InlineKeyboardButton("🏪 Магазин", callback_data="back_to_shop")]]
 
             await query.edit_message_text(
                 response,
-                parse_mode=self.parse_mode,
-                reply_markup=InlineKeyboardMarkup(keyboard)
+                parse_mode=self.parse_mode
             )
 
         except Exception as e:
@@ -1057,24 +779,16 @@ class SimpleBot:
 
     def _calculate_army_cost(self, telegram_id: int) -> Decimal:
         """
-        Вычисление стоимости армии игрока
+        Вычисление стоимости армии игрока - УСТАРЕВШИЙ МЕТОД
 
         Args:
             telegram_id: ID игрока в Telegram
 
         Returns:
-            Decimal: Общая стоимость всех юнитов игрока
+            Decimal: Всегда 0 - стоимость армии теперь рассчитывается по армиям
         """
-        user_units = self.db.get_user_units(telegram_id)
-        army_cost = Decimal('0')
-
-        for user_unit in user_units:
-            if user_unit.count > 0:
-                unit = self.db.get_unit_by_id(user_unit.unit_type_id)
-                if unit:
-                    army_cost += unit.price * user_unit.count
-
-        return army_cost
+        # Старая система юнитов удалена, армии управляются через веб-интерфейс
+        return Decimal('0')
 
     def _format_search_results(self, username: str, messages: list, total_count: int, page: int) -> str:
         """Форматирование результатов поиска"""
@@ -2186,7 +1900,7 @@ class SimpleBot:
 
                         # Получаем информацию о перемещенном юните
                         battle_unit = session.query(BattleUnit).filter_by(id=unit_id).first()
-                        unit_name = battle_unit.user_unit.unit.name if battle_unit and battle_unit.user_unit else "Юнит"
+                        unit_name = battle_unit.army_unit.race_unit.name if battle_unit and battle_unit.army_unit and battle_unit.army_unit.race_unit else "Юнит"
 
                         # Вычисляем старую позицию (берем из message, который содержит старую позицию)
                         # message имеет формат: "Юнит перемещен с (x1, y1) на (x2, y2)"
@@ -3069,52 +2783,54 @@ class SimpleBot:
         user = update.effective_user
 
         try:
-            game = self.db.get_game_by_id(game_id)
-            if not game:
-                await query.answer("❌ Игра не найдена", show_alert=True)
-                return
-
             game_user = self.db.get_game_user(user.id)
             if not game_user:
                 await query.answer("❌ Игровой профиль не найден", show_alert=True)
                 return
 
-            # Определяем, кто противник
-            if game.player2_id == game_user.id:
-                opponent_id = game.player1_id
-            else:
-                await query.answer("❌ Вы не участник этой игры", show_alert=True)
-                return
+            with self.db.get_session() as session:
+                from db.models import Army, ArmyUnit
+                game = session.query(Game).filter_by(id=game_id).first()
+                if not game:
+                    await query.answer("❌ Игра не найдена", show_alert=True)
+                    return
 
-            opponent = self.db.get_game_user_by_id(opponent_id)
-            if not opponent:
-                await query.answer("❌ Противник не найден", show_alert=True)
-                return
+                # Определяем армию противника
+                if game.player2_id == game_user.id:
+                    opponent_army_id = game.player1_army_id
+                    opponent = session.query(GameUser).filter_by(id=game.player1_id).first()
+                else:
+                    await query.answer("❌ Вы не участник этой игры", show_alert=True)
+                    return
 
-            # Получаем юниты противника
-            opponent_units = self.db.get_user_units_by_game_user_id(opponent_id)
+                if not opponent:
+                    await query.answer("❌ Противник не найден", show_alert=True)
+                    return
 
-            if not opponent_units or len(opponent_units) == 0:
-                details_text = f"📊 <b>Армия {html.escape(opponent.username)}</b>\n\nУ противника нет юнитов!"
-            else:
-                details_text = f"📊 <b>Армия {html.escape(opponent.username)}</b>\n\n"
-                total_cost = Decimal('0')
+                if not opponent_army_id:
+                    details_text = f"📊 <b>Армия {html.escape(opponent.username)}</b>\n\nИнформация об армии недоступна."
+                else:
+                    army = session.query(Army).filter_by(id=opponent_army_id).first()
+                    if not army:
+                        details_text = f"📊 <b>Армия {html.escape(opponent.username)}</b>\n\nАрмия не найдена."
+                    else:
+                        army_units = session.query(ArmyUnit).filter_by(army_id=army.id).all()
+                        details_text = f"📊 <b>Армия {html.escape(opponent.username)}</b>\n"
+                        details_text += f"🏰 {army.name}\n\n"
 
-                for user_unit in opponent_units:
-                    if user_unit.count > 0:
-                        unit = self.db.get_unit_by_id(user_unit.unit_type_id)
-                        if unit:
-                            unit_total = unit.price * user_unit.count
-                            total_cost += unit_total
-                            details_text += (
-                                f"{unit.icon} <b>{unit.name}</b> x{user_unit.count}\n"
-                                f"  ⚔️ Урон: {unit.damage} | 🛡️ Защита: {unit.defense} | 🎯 Дальность: {unit.range}\n"
-                                f"  ❤️ HP: {unit.health} | 🏃 Скорость: {unit.speed}\n"
-                                f"  🍀 Удача: {float(unit.luck)*100:.0f}% | 💥 Крит: {float(unit.crit_chance)*100:.0f}% | 🌀 Уклонение: {float(unit.dodge_chance)*100:.0f}%\n"
-                                f"  💰 Стоимость: {format_coins(unit_total)}\n\n"
-                            )
-
-                details_text += f"💵 <b>Общая стоимость армии:</b> {format_coins(total_cost)}"
+                        if not army_units:
+                            details_text += "В армии нет юнитов!"
+                        else:
+                            for army_unit in army_units:
+                                race_unit = army_unit.race_unit
+                                if race_unit and army_unit.count > 0:
+                                    icon = race_unit.unit_level.icon if race_unit.unit_level else "⚔️"
+                                    details_text += (
+                                        f"{icon} <b>{race_unit.name}</b> x{army_unit.count}\n"
+                                        f"  ⚔️ Атака: {race_unit.attack} | 🛡️ Защита: {race_unit.defense}\n"
+                                        f"  💥 Урон: {race_unit.min_damage}-{race_unit.max_damage} | ❤️ HP: {race_unit.health}\n"
+                                        f"  🏃 Скорость: {race_unit.speed} | 🎯 Инициатива: {race_unit.initiative}\n\n"
+                                    )
 
             # Возвращаем клавиатуру с исходными кнопками
             challenge_keyboard = InlineKeyboardMarkup([
@@ -3378,7 +3094,7 @@ class SimpleBot:
                             if success:
                                 # Получаем информацию о перемещенном юните
                                 battle_unit = session.query(BattleUnit).filter_by(id=unit_id).first()
-                                unit_name = battle_unit.user_unit.unit.name if battle_unit and battle_unit.user_unit else "Юнит"
+                                unit_name = battle_unit.army_unit.race_unit.name if battle_unit and battle_unit.army_unit and battle_unit.army_unit.race_unit else "Юнит"
 
                                 # Вычисляем старую и новую позицию
                                 match = re.search(r'\((\d+),\s*(\d+)\)\s+на\s+\((\d+),\s*(\d+)\)', message)
@@ -3418,129 +3134,6 @@ class SimpleBot:
                             parse_mode=self.parse_mode
                         )
                         return
-
-            # Обработка изменения эмодзи юнита
-            if has_user_data and 'editing_icon_unit_id' in context.user_data and self.is_admin(user.username):
-                unit_id = context.user_data['editing_icon_unit_id']
-                unit_name = context.user_data.get('editing_icon_unit_name', 'Юнит')
-                new_icon = user_message.strip()
-
-                logger.info(f"Получен новый эмодзи '{new_icon}' для юнита {unit_name} (ID: {unit_id})")
-
-                with self.db.get_session() as session:
-                    unit = session.query(Unit).filter_by(id=unit_id).first()
-                    if not unit:
-                        await update.message.reply_text("❌ Юнит не найден.")
-                        del context.user_data['editing_icon_unit_id']
-                        if 'editing_icon_unit_name' in context.user_data:
-                            del context.user_data['editing_icon_unit_name']
-                        return
-
-                    # Проверяем, существует ли уже кастомная иконка
-                    custom_icon = session.query(UnitCustomIcon).filter_by(unit_id=unit.id).first()
-
-                    old_icon = custom_icon.custom_icon if custom_icon else unit.icon
-
-                    if custom_icon:
-                        # Обновляем существующую иконку
-                        custom_icon.custom_icon = new_icon
-                        logger.info(f"Обновлена кастомная иконка для {unit.name}: {old_icon} → {new_icon}")
-                    else:
-                        # Создаем новую кастомную иконку
-                        custom_icon = UnitCustomIcon(
-                            unit_id=unit.id,
-                            custom_icon=new_icon
-                        )
-                        session.add(custom_icon)
-                        logger.info(f"Создана новая кастомная иконка для {unit.name}: {unit.icon} → {new_icon}")
-
-                    session.commit()
-
-                await update.message.reply_text(
-                    f"✅ <b>Эмодзи обновлен!</b>\n\n"
-                    f"🎮 Юнит: <b>{unit.name}</b>\n"
-                    f"Старый эмодзи: {old_icon}\n"
-                    f"Новый эмодзи: {new_icon}\n\n"
-                    f"Изменения вступят в силу в новых играх.",
-                    parse_mode='HTML'
-                )
-
-                del context.user_data['editing_icon_unit_id']
-                if 'editing_icon_unit_name' in context.user_data:
-                    del context.user_data['editing_icon_unit_name']
-
-                logger.info(f"Эмодзи для {unit.name} успешно обновлен на {new_icon}")
-                return
-
-            # Обработка создания нового юнита
-            if has_user_data and 'creating_unit' in context.user_data and self.is_admin(user.username):
-                unit_data = context.user_data['creating_unit']
-                step = unit_data['step']
-
-                steps_info = {
-                    'name': ('icon', 'Шаг 2/10: Введите эмодзи для юнита:'),
-                    'icon': ('price', 'Шаг 3/10: Введите цену юнита:'),
-                    'price': ('damage', 'Шаг 4/10: Введите урон юнита:'),
-                    'damage': ('defense', 'Шаг 5/10: Введите защиту юнита:'),
-                    'defense': ('range', 'Шаг 6/10: Введите дальность атаки:'),
-                    'range': ('health', 'Шаг 7/10: Введите здоровье юнита:'),
-                    'health': ('speed', 'Шаг 8/10: Введите скорость юнита:'),
-                    'speed': ('luck', 'Шаг 9/10: Введите удачу (0.0-1.0):'),
-                    'luck': ('crit_chance', 'Шаг 10/10: Введите шанс крита (0.0-1.0):'),
-                    'crit_chance': ('complete', None)
-                }
-
-                # Сохраняем текущее значение
-                unit_data[step] = user_message.strip()
-
-                # Переходим к следующему шагу
-                next_step, next_message = steps_info.get(step, ('complete', None))
-
-                if next_step == 'complete':
-                    # Создаем юнита
-                    try:
-                        with self.db.get_session() as session:
-                            new_unit = Unit(
-                                name=unit_data['name'],
-                                icon=unit_data['icon'],
-                                price=Decimal(unit_data['price']),
-                                damage=int(unit_data['damage']),
-                                defense=int(unit_data['defense']),
-                                range=int(unit_data['range']),
-                                health=int(unit_data['health']),
-                                speed=int(unit_data['speed']),
-                                luck=Decimal(unit_data['luck']),
-                                crit_chance=Decimal(unit_data['crit_chance'])
-                            )
-                            session.add(new_unit)
-                            session.commit()
-
-                        await update.message.reply_text(
-                            f"Новый тип юнита '{unit_data['name']}' успешно создан!\n\n"
-                            f"Характеристики:\n"
-                            f"Эмодзи: {unit_data['icon']}\n"
-                            f"Цена: {format_coins(unit_data['price'])}\n"
-                            f"Урон: {unit_data['damage']}\n"
-                            f"Защита: {unit_data['defense']}\n"
-                            f"Дальность: {unit_data['range']}\n"
-                            f"Здоровье: {unit_data['health']}\n"
-                            f"Скорость: {unit_data['speed']}\n"
-                            f"Удача: {unit_data['luck']}\n"
-                            f"Шанс крита: {unit_data['crit_chance']}"
-                        )
-                        del context.user_data['creating_unit']
-                        return
-                    except Exception as e:
-                        await update.message.reply_text(
-                            f"Ошибка при создании юнита: {e}\n"
-                            "Проверьте правильность введенных данных."
-                        )
-                        del context.user_data['creating_unit']
-                        return
-                else:
-                    unit_data['step'] = next_step
-                    await update.message.reply_text(next_message)
-                    return
 
             # === REGULAR USER PROCESSING ===
             # Проверяем, есть ли у пользователя игровой профиль, и создаем его при необходимости
@@ -3608,15 +3201,13 @@ class SimpleBot:
             await update.message.reply_text("У вас нет доступа к этой команде.")
             return
 
-        keyboard = [
-            [InlineKeyboardButton("Настроить эмодзи юнитов", callback_data='admin_unit_icons')],
-            [InlineKeyboardButton("Создать новый тип юнита", callback_data='admin_create_unit')],
-        ]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-
         await update.message.reply_text(
-            "Панель администратора:",
-            reply_markup=reply_markup
+            "Панель администратора:\n\n"
+            "Управление юнитами и расами теперь осуществляется через веб-интерфейс.\n\n"
+            "Доступные команды:\n"
+            "/addmoney - Добавить монеты игроку\n"
+            "/startRegistrationAmount - Изменить стартовую сумму",
+            parse_mode=self.parse_mode
         )
 
     async def addmoney_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -3976,123 +3567,24 @@ class SimpleBot:
         logger.info(f"Администратор {username} изменил стартовую сумму с {old_amount} на {new_amount} монет")
 
     async def admin_unit_icons_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Показать список юнитов для настройки эмодзи"""
+        """УСТАРЕВШИЙ - Настройка эмодзи теперь через веб-интерфейс"""
         query = update.callback_query
-        await query.answer()
-
-        username = update.effective_user.username
-        if not self.is_admin(username):
-            await query.edit_message_text("У вас нет доступа к этой функции.")
-            return
-
-        with self.db.get_session() as session:
-            units = session.query(Unit).all()
-
-            if not units:
-                await query.edit_message_text("Нет доступных юнитов.")
-                return
-
-            keyboard = []
-            for unit in units:
-                custom_icon = session.query(UnitCustomIcon).filter_by(unit_id=unit.id).first()
-                current_icon = custom_icon.custom_icon if custom_icon else unit.icon
-                keyboard.append([
-                    InlineKeyboardButton(
-                        f"{current_icon} {unit.name}",
-                        callback_data=f'admin_edit_icon:{unit.id}'
-                    )
-                ])
-
-            keyboard.append([InlineKeyboardButton("Назад", callback_data='admin_back')])
-            reply_markup = InlineKeyboardMarkup(keyboard)
-
-            await query.edit_message_text(
-                "Выберите юнита для изменения эмодзи:",
-                reply_markup=reply_markup
-            )
+        await query.answer("Эта функция перенесена в веб-интерфейс.", show_alert=True)
 
     async def admin_edit_icon_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Запросить новый эмодзи для юнита"""
+        """УСТАРЕВШИЙ - Настройка эмодзи теперь через веб-интерфейс"""
         query = update.callback_query
-        await query.answer()
-
-        username = update.effective_user.username
-        logger.info(f"Admin edit icon callback от {username}")
-
-        if not self.is_admin(username):
-            await query.edit_message_text("У вас нет доступа к этой функции.")
-            return
-
-        unit_id = int(query.data.split(':')[1])
-        logger.info(f"Редактирование иконки для юнита ID: {unit_id}")
-
-        unit_name = None
-        current_icon = None
-
-        with self.db.get_session() as session:
-            unit = session.query(Unit).filter_by(id=unit_id).first()
-            if not unit:
-                await query.edit_message_text("Юнит не найден.")
-                return
-
-            unit_name = unit.name
-            custom_icon = session.query(UnitCustomIcon).filter_by(unit_id=unit.id).first()
-            current_icon = custom_icon.custom_icon if custom_icon else unit.icon
-
-        # Сохраняем unit_id и unit_name в user_data для последующего использования
-        context.user_data['editing_icon_unit_id'] = unit_id
-        context.user_data['editing_icon_unit_name'] = unit_name
-
-        logger.info(f"Запрос на ввод нового эмодзи для {unit_name}, текущий: {current_icon}")
-
-        await query.edit_message_text(
-            f"📝 Изменение эмодзи для юнита\n\n"
-            f"🎮 Юнит: <b>{unit_name}</b>\n"
-            f"Текущий эмодзи: {current_icon}\n\n"
-            f"👉 Отправьте новый эмодзи в чат:",
-            parse_mode='HTML'
-        )
+        await query.answer("Эта функция перенесена в веб-интерфейс.", show_alert=True)
 
     async def admin_create_unit_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Начать процесс создания нового юнита"""
+        """УСТАРЕВШИЙ - Создание юнитов теперь через веб-интерфейс"""
         query = update.callback_query
-        await query.answer()
-
-        username = update.effective_user.username
-        if not self.is_admin(username):
-            await query.edit_message_text("У вас нет доступа к этой функции.")
-            return
-
-        # Инициализируем данные для создания юнита
-        context.user_data['creating_unit'] = {
-            'step': 'name'
-        }
-
-        await query.edit_message_text(
-            "Создание нового типа юнита\n\n"
-            "Шаг 1/10: Введите название юнита:"
-        )
+        await query.answer("Эта функция перенесена в веб-интерфейс.", show_alert=True)
 
     async def admin_back_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Вернуться в панель администратора"""
+        """УСТАРЕВШИЙ - Админ-панель упрощена"""
         query = update.callback_query
-        await query.answer()
-
-        username = update.effective_user.username
-        if not self.is_admin(username):
-            await query.edit_message_text("У вас нет доступа к этой функции.")
-            return
-
-        keyboard = [
-            [InlineKeyboardButton("Настроить эмодзи юнитов", callback_data='admin_unit_icons')],
-            [InlineKeyboardButton("Создать новый тип юнита", callback_data='admin_create_unit')],
-        ]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-
-        await query.edit_message_text(
-            "Панель администратора:",
-            reply_markup=reply_markup
-        )
+        await query.answer("Используйте /admin для панели администратора.", show_alert=True)
 
     async def error_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Обработчик ошибок"""

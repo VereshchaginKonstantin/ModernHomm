@@ -8,7 +8,7 @@ import io
 from typing import List, Tuple, Optional
 from PIL import Image, ImageDraw, ImageFont
 from sqlalchemy.orm import Session
-from db.models import Game, BattleUnit, Unit
+from db.models import Game, BattleUnit, RaceUnit, RaceUnitSkin
 
 
 class FieldRenderer:
@@ -134,52 +134,29 @@ class FieldRenderer:
         # Разместить юниты на поле
         for battle_unit in game.battle_units:
             x, y = battle_unit.position_x, battle_unit.position_y
-            unit = battle_unit.user_unit.unit
+            # Получить информацию о юните через army_unit -> race_unit
+            army_unit = battle_unit.army_unit
+            race_unit = army_unit.race_unit if army_unit else None
 
             # Подсчитать живых юнитов
             alive_count = self._count_alive_units(battle_unit)
 
-            if alive_count > 0:
+            if alive_count > 0 and race_unit:
                 # Координаты клетки
                 cell_x = self.LABEL_HEIGHT + x * self.CELL_SIZE
                 cell_y = self.LABEL_HEIGHT + y * self.CELL_SIZE
 
-                # Проверить, есть ли изображение юнита
-                if unit.image_path and os.path.exists(unit.image_path):
-                    # Загрузить и отобразить изображение юнита
-                    unit_img = Image.open(unit.image_path)
+                # Получить иконку уровня юнита
+                icon = race_unit.unit_level.icon if race_unit.unit_level else '?'
 
-                    # Определить, нужно ли зеркалить (для противника)
-                    if battle_unit.player_id == game.player2_id:
-                        unit_img = unit_img.transpose(Image.FLIP_LEFT_RIGHT)
-
-                    # Изменить размер изображения
-                    unit_img = unit_img.resize((self.UNIT_ICON_SIZE, self.UNIT_ICON_SIZE), Image.LANCZOS)
-
-                    # Вычислить позицию для центрирования
-                    icon_x = cell_x + (self.CELL_SIZE - self.UNIT_ICON_SIZE) // 2
-                    icon_y = cell_y + (self.CELL_SIZE - self.UNIT_ICON_SIZE) // 2 - 10  # Сдвиг вверх для текста
-
-                    # Вставить изображение
-                    if unit_img.mode == 'RGBA':
-                        img.paste(unit_img, (icon_x, icon_y), unit_img)
-                    else:
-                        img.paste(unit_img, (icon_x, icon_y))
-                else:
-                    # Если нет изображения, показать иконку и имя юнита
-                    # Получить иконку (из custom_icon или стандартную)
-                    icon = unit.icon
-                    if unit.custom_icon:
-                        icon = unit.custom_icon.custom_icon
-
-                    # Нарисовать текст с иконкой и именем
-                    text = f"{icon}\n{unit.name[:6]}"
-                    bbox = draw.textbbox((0, 0), text, font=font)
-                    text_width = bbox[2] - bbox[0]
-                    text_height = bbox[3] - bbox[1]
-                    text_x = cell_x + (self.CELL_SIZE - text_width) // 2
-                    text_y = cell_y + (self.CELL_SIZE - text_height) // 2 - 10
-                    draw.text((text_x, text_y), text, fill=self.COLOR_TEXT, font=font)
+                # Нарисовать текст с иконкой и именем
+                text = f"{icon}\n{race_unit.name[:6]}"
+                bbox = draw.textbbox((0, 0), text, font=font)
+                text_width = bbox[2] - bbox[0]
+                text_height = bbox[3] - bbox[1]
+                text_x = cell_x + (self.CELL_SIZE - text_width) // 2
+                text_y = cell_y + (self.CELL_SIZE - text_height) // 2 - 10
+                draw.text((text_x, text_y), text, fill=self.COLOR_TEXT, font=font)
 
                 # Нарисовать количество юнитов и индикатор куража внизу клетки
                 count_text = f"x{alive_count}"
@@ -243,16 +220,17 @@ class FieldRenderer:
 
     def check_all_units_have_images(self) -> Tuple[bool, List[str]]:
         """
-        Проверить, что у всех юнитов загружены изображения
+        Проверить, что у всех юнитов загружены изображения (скины)
 
         Returns:
             Tuple[bool, List[str]]: (все_загружены, список_юнитов_без_изображений)
         """
-        units = self.db.query(Unit).all()
+        race_units = self.db.query(RaceUnit).all()
         missing_images = []
 
-        for unit in units:
-            if not unit.image_path or not os.path.exists(unit.image_path):
-                missing_images.append(unit.name)
+        for race_unit in race_units:
+            # Проверяем наличие скинов у юнита
+            if not race_unit.skins:
+                missing_images.append(race_unit.name)
 
         return len(missing_images) == 0, missing_images

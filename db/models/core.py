@@ -69,8 +69,5 @@ class GameUser(Base):
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 
-    # Связь с юнитами (определяется после импорта UserUnit)
-    units = relationship("UserUnit", back_populates="game_user", cascade="all, delete-orphan")
-
     def __repr__(self):
         return f"<GameUser(telegram_id={self.telegram_id}, username={self.username}, balance={self.balance})>"

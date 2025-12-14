@@ -5,7 +5,7 @@
 Модели разделены на три категории:
 - core: базовые модели (User, Message, Config, GameUser)
 - battle: модели боевой системы (Game, BattleUnit, GameLog, Field, Obstacle)
-- army: модели армии и юнитов (Unit, UserUnit, GameRace, RaceUnit, Army, etc.)
+- army: модели армии и рас (GameRace, RaceUnit, Army, ArmyUnit, etc.)
 """
 
 from .base import Base
@@ -16,9 +16,8 @@ from .core import User, Message, Config, GameUser
 # Модели боевой системы
 from .battle import GameStatus, Field, Game, BattleUnit, Obstacle, GameLog
 
-# Модели армии, юнитов и рас
+# Модели армии и рас
 from .army import (
-    Unit, UnitCustomIcon, UserUnit,
     GameRace, RaceUnit, RaceUnitSkin, UnitLevel,
     UserRace, UserRaceUnit,
     Army, ArmyUnit
@@ -31,8 +30,7 @@ __all__ = [
     'User', 'Message', 'Config', 'GameUser',
     # Battle
     'GameStatus', 'Field', 'Game', 'BattleUnit', 'Obstacle', 'GameLog',
-    # Army
-    'Unit', 'UnitCustomIcon', 'UserUnit',
+    # Army & Races
     'GameRace', 'RaceUnit', 'RaceUnitSkin', 'UnitLevel',
     'UserRace', 'UserRaceUnit',
     'Army', 'ArmyUnit'
