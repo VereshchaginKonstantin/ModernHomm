@@ -562,3 +562,105 @@ class TestPrestigeCalculation:
         assert with_more_attack > base
         assert with_more_defense > base
         assert with_more_health > base
+
+    def test_kamikaze_damage_reduced_coefficient(self):
+        """Test that kamikaze units have damage reduced by 1/5."""
+        from web.races import calculate_unit_prestige
+
+        # Base stats for comparison
+        base_prestige = calculate_unit_prestige(
+            attack=10, defense=5, health=20, speed=5,
+            min_damage=5, max_damage=10, initiative=10, range_=1
+        )
+        # Same unit but kamikaze
+        kamikaze_prestige = calculate_unit_prestige(
+            attack=10, defense=5, health=20, speed=5,
+            min_damage=5, max_damage=10, initiative=10, range_=1,
+            is_kamikaze=True
+        )
+        # Kamikaze gets +30 bonus but damage is reduced by 0.8
+        # Damage contribution: (5+10)*3 = 45 normal, 45*0.2 = 9 for kamikaze
+        # Difference = 45 - 9 = 36 reduction, +30 kamikaze bonus = -6 net
+        # So kamikaze should have slightly lower prestige
+        damage_reduction = (5 + 10) * 3 * (1 - 0.2)  # 36
+        kamikaze_bonus = 30
+        expected_diff = kamikaze_bonus - damage_reduction  # -6
+
+        assert kamikaze_prestige == base_prestige + expected_diff
+
+    def test_kamikaze_dodge_reduced_coefficient(self):
+        """Test that kamikaze units have dodge reduced by 1/5."""
+        from web.races import calculate_unit_prestige
+
+        # Base stats with dodge
+        base_prestige = calculate_unit_prestige(
+            attack=10, defense=5, health=20, speed=5,
+            min_damage=0, max_damage=0, initiative=10, range_=1,
+            dodge_chance=0.2  # 20% dodge
+        )
+        # Same unit but kamikaze
+        kamikaze_prestige = calculate_unit_prestige(
+            attack=10, defense=5, health=20, speed=5,
+            min_damage=0, max_damage=0, initiative=10, range_=1,
+            dodge_chance=0.2,
+            is_kamikaze=True
+        )
+        # Dodge contribution: 0.2 * 80 = 16 normal, 16 * 0.2 = 3.2 for kamikaze
+        # Kamikaze bonus = 30
+        dodge_reduction = 0.2 * 80 * (1 - 0.2)  # 12.8
+        kamikaze_bonus = 30
+        expected_diff = round(kamikaze_bonus - dodge_reduction)  # 17
+
+        assert kamikaze_prestige == base_prestige + expected_diff
+
+    def test_kamikaze_full_scenario(self):
+        """Test kamikaze prestige calculation with all reduced stats."""
+        from web.races import calculate_unit_prestige
+
+        # Non-kamikaze unit
+        normal_prestige = calculate_unit_prestige(
+            attack=8, defense=4, health=15, speed=6,
+            min_damage=10, max_damage=20, initiative=12, range_=1,
+            dodge_chance=0.15
+        )
+        # Kamikaze version
+        kamikaze_prestige = calculate_unit_prestige(
+            attack=8, defense=4, health=15, speed=6,
+            min_damage=10, max_damage=20, initiative=12, range_=1,
+            dodge_chance=0.15,
+            is_kamikaze=True
+        )
+
+        # Calculate expected difference
+        # Damage reduction: (10+20)*3*0.8 = 72
+        # Dodge reduction: 0.15*80*0.8 = 9.6
+        # Kamikaze bonus: 30
+        # Net: 30 - 72 - 9.6 = -51.6 ≈ -52
+
+        damage_reduction = (10 + 20) * 3 * 0.8
+        dodge_reduction = 0.15 * 80 * 0.8
+        kamikaze_bonus = 30
+        expected_diff = round(kamikaze_bonus - damage_reduction - dodge_reduction)
+
+        assert kamikaze_prestige == normal_prestige + expected_diff
+
+    def test_kamikaze_prestige_lower_than_normal(self):
+        """Test that kamikaze with high damage has lower prestige than non-kamikaze."""
+        from web.races import calculate_unit_prestige
+
+        # High damage unit
+        normal = calculate_unit_prestige(
+            attack=10, defense=5, health=30, speed=5,
+            min_damage=15, max_damage=25, initiative=10, range_=1,
+            dodge_chance=0.1
+        )
+        kamikaze = calculate_unit_prestige(
+            attack=10, defense=5, health=30, speed=5,
+            min_damage=15, max_damage=25, initiative=10, range_=1,
+            dodge_chance=0.1,
+            is_kamikaze=True
+        )
+        # High damage kamikaze should have LOWER prestige because
+        # damage reduction (40*3*0.8=96) + dodge reduction (0.1*80*0.8=6.4)
+        # exceeds kamikaze bonus (30)
+        assert kamikaze < normal

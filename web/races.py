@@ -48,18 +48,21 @@ def calculate_unit_prestige(
     - defense × 4
     - health × 0.5
     - speed × 8
-    - (min_damage + max_damage) × 3
+    - (min_damage + max_damage) × 3 (×0.2 for kamikaze - they sacrifice after attack)
     - initiative × 3
     - (range - 1) × 20 (ranged bonus)
     - luck × 50
     - crit_chance × 100
-    - dodge_chance × 80
+    - dodge_chance × 80 (×0.2 for kamikaze - they sacrifice after attack)
     - counterattack_chance × 40
     - regeneration_health × 10
     - (poison_damage × poison_turns) × 15
     - is_flying × 50
     - is_kamikaze × 30
     - poison_immunity × 25
+
+    For kamikaze units, damage and dodge are worth 1/5 of normal value
+    because these units sacrifice themselves after attacking.
 
     Args:
         attack: Unit attack stat
@@ -84,17 +87,22 @@ def calculate_unit_prestige(
     Returns:
         Calculated prestige value (integer)
     """
+    # Kamikaze units get reduced coefficient for damage and dodge (1/5)
+    # because they sacrifice themselves after attacking
+    damage_coef = 0.2 if is_kamikaze else 1.0
+    dodge_coef = 0.2 if is_kamikaze else 1.0
+
     prestige = (
         attack * 5 +
         defense * 4 +
         health * 0.5 +
         speed * 8 +
-        (min_damage + max_damage) * 3 +
+        (min_damage + max_damage) * 3 * damage_coef +
         initiative * 3 +
         (range_ - 1) * 20 +
         luck * 50 +
         crit_chance * 100 +
-        dodge_chance * 80 +
+        dodge_chance * 80 * dodge_coef +
         counterattack_chance * 40 +
         regeneration_health * 10 +
         (poison_damage * poison_turns) * 15 +
@@ -660,7 +668,8 @@ EDIT_UNIT_TEMPLATE = """
                 <p>✅ Престиж соответствует уровню юнита</p>
             </div>
             <div class="prestige-formula">
-                <strong>Формула:</strong> <code>престиж = атака×5 + защита×4 + здоровье×0.5 + скорость×8 + (мин_урон+макс_урон)×3 + инициатива×3 + (дальность-1)×20 + удача×50 + крит×100 + уклонение×80 + контратака×40 + регенерация×10 + яд×15 + летающий×50 + камикадзе×30 + иммунитет_яда×25</code>
+                <strong>Формула:</strong> <code>престиж = атака×5 + защита×4 + здоровье×0.5 + скорость×8 + (мин_урон+макс_урон)×3×коэф + инициатива×3 + (дальность-1)×20 + удача×50 + крит×100 + уклонение×80×коэф + контратака×40 + регенерация×10 + яд×15 + летающий×50 + камикадзе×30 + иммунитет_яда×25</code>
+                <br><small style="color: #666;">* Для камикадзе коэф=0.2 (урон и уклонение ×1/5, т.к. юнит жертвует собой после атаки)</small>
             </div>
         </div>
 
@@ -815,18 +824,23 @@ EDIT_UNIT_TEMPLATE = """
         const isKamikaze = document.getElementById('is_kamikaze').checked ? 1 : 0;
         const poisonImmunity = document.getElementById('poison_immunity').checked ? 1 : 0;
 
+        // Kamikaze units get reduced coefficient for damage and dodge (1/5)
+        // because they sacrifice themselves after attacking
+        const damageCoef = isKamikaze ? 0.2 : 1.0;
+        const dodgeCoef = isKamikaze ? 0.2 : 1.0;
+
         // Calculate prestige using formula
         const prestige = Math.round(
             attack * 5 +
             defense * 4 +
             health * 0.5 +
             speed * 8 +
-            (minDamage + maxDamage) * 3 +
+            (minDamage + maxDamage) * 3 * damageCoef +
             initiative * 3 +
             (range - 1) * 20 +
             luck * 50 +
             critChance * 100 +
-            dodgeChance * 80 +
+            dodgeChance * 80 * dodgeCoef +
             counterattackChance * 40 +
             regenerationHealth * 10 +
             (poisonDamage * poisonTurns) * 15 +
