@@ -33,7 +33,6 @@ package "Core" #LightBlue {
     class GameUser {
         +id: Integer <<PK>>
         +telegram_id: BigInteger <<unique>>
-        +name: String(255)
         +username: String(255) <<unique>>
         +balance: Numeric(12,2)
         +crystals: Integer

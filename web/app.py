@@ -13,16 +13,14 @@ from functools import wraps
 from flask import Flask, render_template_string, request, redirect, url_for, flash, send_file, session
 from werkzeug.utils import secure_filename
 from db import Database
-from db.models import GameUser, RaceUnit
+from db.models import GameUser
 from decimal import Decimal
 from web.arena import arena_bp
 from web.races import races_bp
 from web.army import army_bp
 from web.templates import get_web_version, get_bot_version, HEADER_TEMPLATE, BASE_STYLE, FOOTER_TEMPLATE
 from web.app_templates import (
-    IMAGES_TEMPLATE, COMPREHENSIVE_UNITS_TEMPLATE, UNITS_TEMPLATE,
-    UNIT_FORM_TEMPLATE, LEADERBOARD_TEMPLATE, HELP_TEMPLATE,
-    IMPORT_TEMPLATE, LOGIN_TEMPLATE
+    LEADERBOARD_TEMPLATE, HELP_TEMPLATE, LOGIN_TEMPLATE
 )
 
 # Создать Flask приложение
@@ -259,36 +257,8 @@ def logout():
 @app.route('/')
 @login_required
 def index():
-    """Главная страница - полный список юнитов (теперь RaceUnit)"""
-    with db.get_session() as session:
-        units = session.query(RaceUnit).all()
-
-        # Создаем список словарей с данными юнитов для шаблона
-        units_data = []
-        for unit in units:
-            race_name = unit.game_race.name if unit.game_race else "Без расы"
-            level_name = unit.unit_level.name if unit.unit_level else "Без уровня"
-            level_icon = unit.unit_level.icon if unit.unit_level else "⚔️"
-            units_data.append({
-                'id': unit.id,
-                'name': unit.name,
-                'icon': level_icon,
-                'race_name': race_name,
-                'level_name': level_name,
-                'attack': unit.attack,
-                'defense': unit.defense,
-                'min_damage': unit.min_damage,
-                'max_damage': unit.max_damage,
-                'health': unit.health,
-                'speed': unit.speed,
-                'initiative': unit.initiative,
-                'is_shooter': unit.is_shooter,
-                'shots_count': unit.shots_count,
-                'is_flying': unit.is_flying,
-                'has_image': bool(unit.skins)
-            })
-
-    return render_template_string(COMPREHENSIVE_UNITS_TEMPLATE, units=units_data, active_page='home')
+    """Главная страница - перенаправление на арену"""
+    return redirect(url_for('arena.index'))
 
 
 @app.route('/admin/images')
@@ -296,7 +266,7 @@ def index():
 def admin_images():
     """УСТАРЕВШИЙ - Картинки теперь управляются через скины юнитов в расах"""
     flash('Раздел картинок удален. Используйте раздел "Расы" для управления скинами юнитов.', 'info')
-    return redirect(url_for('index'))
+    return redirect(url_for('arena.index'))
 
 
 @app.route('/upload/<int:unit_id>', methods=['POST'])
@@ -304,7 +274,7 @@ def admin_images():
 def upload_image(unit_id):
     """УСТАРЕВШИЙ - Загрузка картинок перенесена в скины юнитов"""
     flash('Загрузка картинок перенесена в раздел "Расы" -> "Скины юнитов".', 'info')
-    return redirect(url_for('index'))
+    return redirect(url_for('arena.index'))
 
 
 @app.route('/delete/<int:unit_id>', methods=['POST'])
@@ -312,7 +282,7 @@ def upload_image(unit_id):
 def delete_image(unit_id):
     """УСТАРЕВШИЙ - Удаление картинок перенесено в скины юнитов"""
     flash('Управление картинками перенесено в раздел "Расы" -> "Скины юнитов".', 'info')
-    return redirect(url_for('index'))
+    return redirect(url_for('arena.index'))
 
 
 @app.route('/admin/units')

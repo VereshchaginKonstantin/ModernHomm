@@ -38,12 +38,17 @@ def db(test_db_url):
             session.execute(text("DELETE FROM game_logs"))
             session.execute(text("DELETE FROM obstacles"))
             session.execute(text("DELETE FROM games"))
+            # Clean army data
+            session.execute(text("DELETE FROM army_units"))
+            session.execute(text("DELETE FROM armies"))
+            # Clean user race data
+            session.execute(text("DELETE FROM user_race_units"))
+            session.execute(text("DELETE FROM user_races"))
+            # Clean game users
             session.execute(text("DELETE FROM game_users"))
             # Clean user data from old simple bot
             session.execute(text("DELETE FROM messages"))
             session.execute(text("DELETE FROM users"))
-            # Clean settings
-            session.execute(text("DELETE FROM settings"))
             session.commit()
     except Exception as e:
         # Tables might not exist yet, that's OK
@@ -57,13 +62,20 @@ def db(test_db_url):
     # Clean up after test
     try:
         with database.get_session() as session:
+            # Clean game-related data (in correct order due to foreign keys)
             session.execute(text("DELETE FROM battle_units"))
             session.execute(text("DELETE FROM game_logs"))
             session.execute(text("DELETE FROM obstacles"))
             session.execute(text("DELETE FROM games"))
+            # Clean army data
+            session.execute(text("DELETE FROM army_units"))
+            session.execute(text("DELETE FROM armies"))
+            # Clean user race data
+            session.execute(text("DELETE FROM user_race_units"))
+            session.execute(text("DELETE FROM user_races"))
+            # Clean game users
             session.execute(text("DELETE FROM game_users"))
-            # Clean settings
-            session.execute(text("DELETE FROM settings"))
+            # Clean user data
             session.execute(text("DELETE FROM messages"))
             session.execute(text("DELETE FROM users"))
             session.commit()

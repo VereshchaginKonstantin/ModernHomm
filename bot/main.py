@@ -356,8 +356,7 @@ class SimpleBot:
             "/version - Показать версию бота\n"
             "/password - Установить пароль для веб-интерфейса\n"
             "/profile - Посмотреть свой игровой профиль\n"
-            "/top - Рейтинг игроков\n"
-            "/shop - Магазин юнитов (покупка армии)\n\n"
+            "/top - Рейтинг игроков\n\n"
             "<b>Игровые команды:</b>\n"
             "/challenge &lt;username&gt; - Вызвать игрока на бой\n"
             "/accept - Принять вызов на бой\n"
@@ -595,18 +594,14 @@ class SimpleBot:
             )
 
     async def shop_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Обработчик команды /shop - перенаправление на веб-интерфейс"""
+        """Обработчик команды /shop - УСТАРЕВШИЙ, команда удалена"""
         user = update.effective_user
-        logger.info(f"Команда /shop от пользователя {user.id}")
+        logger.info(f"Команда /shop (устаревшая) от пользователя {user.id}")
 
         await update.message.reply_text(
-            "🏪 <b>Управление армиями</b>\n\n"
-            "Покупка юнитов и создание армий теперь доступны на веб-сайте.\n\n"
-            "Посетите веб-интерфейс для управления армиями:\n"
-            "• Создавайте рейтинговые армии (бесплатно, ограничены славой)\n"
-            "• Создавайте наемные армии (за монеты)\n"
-            "• Добавляйте юнитов в армии\n\n"
-            "Используйте /profile для просмотра ваших армий.",
+            "❌ <b>Команда /shop удалена</b>\n\n"
+            "Управление армиями теперь доступно только на веб-сайте.\n\n"
+            "Используйте /profile для просмотра профиля.",
             parse_mode=self.parse_mode
         )
 
@@ -3604,7 +3599,7 @@ class SimpleBot:
         application.add_handler(CommandHandler("password", self.password_command))
         application.add_handler(CommandHandler("profile", self.profile_command))
         application.add_handler(CommandHandler("top", self.top_command))
-        application.add_handler(CommandHandler("shop", self.shop_command))
+        # /shop command removed - управление армиями только на веб-сайте
         application.add_handler(CommandHandler("search", self.search_command))
         application.add_handler(CommandHandler("users", self.users_command))
 
