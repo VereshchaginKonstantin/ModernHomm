@@ -942,7 +942,7 @@ def api_players():
         for p in players:
             # Получаем армии игрока через user_races
             armies = []
-            user_races = session_db.query(UserRace).filter_by(game_user_id=p.id).all()
+            user_races = session_db.query(UserRace).filter_by(user_id=p.id).all()
             for user_race in user_races:
                 for army in user_race.armies:
                     army_units = []
@@ -1603,7 +1603,7 @@ def api_public_players():
         for p in players:
             # Получаем армии игрока через user_races
             armies = []
-            user_races = session_db.query(UserRace).filter_by(game_user_id=p.id).all()
+            user_races = session_db.query(UserRace).filter_by(user_id=p.id).all()
             for user_race in user_races:
                 for army in user_race.armies:
                     army_units = []
@@ -1650,7 +1650,7 @@ def api_public_me():
 
         # Получаем армии игрока через user_races
         armies = []
-        user_races = session_db.query(UserRace).filter_by(game_user_id=player.id).all()
+        user_races = session_db.query(UserRace).filter_by(user_id=player.id).all()
         for user_race in user_races:
             for army in user_race.armies:
                 army_units = []
