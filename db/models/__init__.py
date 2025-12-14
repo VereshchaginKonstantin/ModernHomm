@@ -18,7 +18,7 @@ from .battle import GameStatus, Field, Game, BattleUnit, Obstacle, GameLog
 
 # Модели армии и рас
 from .army import (
-    GameRace, RaceUnit, RaceUnitSkin, UnitLevel,
+    GameRace, RaceUnit, RaceUnitSkin, UnitLevel, UserUnitLimit,
     UserRace, UserRaceUnit,
     Army, ArmyUnit
 )
@@ -31,7 +31,7 @@ __all__ = [
     # Battle
     'GameStatus', 'Field', 'Game', 'BattleUnit', 'Obstacle', 'GameLog',
     # Army & Races
-    'GameRace', 'RaceUnit', 'RaceUnitSkin', 'UnitLevel',
+    'GameRace', 'RaceUnit', 'RaceUnitSkin', 'UnitLevel', 'UserUnitLimit',
     'UserRace', 'UserRaceUnit',
     'Army', 'ArmyUnit'
 ]

@@ -121,8 +121,15 @@ class UnitLevel(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     level = Column(Integer, nullable=False, unique=True)  # Уровень (1-7)
     icon = Column(String(10), nullable=False, default='🎮')  # Иконка уровня
-    prestige_min = Column(Integer, nullable=False, default=0)  # Минимальный престиж для найма
-    prestige_max = Column(Integer, nullable=False, default=100)  # Максимальный престиж для найма
+    prestige_min = Column(Integer, nullable=False, default=0)  # Минимальный престиж для найма (для рейтинговой армии)
+    prestige_max = Column(Integer, nullable=False, default=100)  # Максимальный престиж для найма (для расчета стоимости армии)
+
+    # Параметры найма для наемнической армии
+    daily_recruit_speed = Column(Integer, nullable=False, default=1)  # Юнитов в день по умолчанию
+    speed_upgrade_cost = Column(Numeric(12, 2), nullable=False, default=100)  # Стоимость +1 скорости в монетах
+    speed_upgrade_cost_gems = Column(Integer, nullable=False, default=10)  # Стоимость +1 скорости в кристаллах
+    level_access_cost_gems = Column(Integer, nullable=False, default=0)  # Стоимость разблокировки уровня в кристаллах
+
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
     __table_args__ = (
@@ -131,6 +138,34 @@ class UnitLevel(Base):
 
     def __repr__(self):
         return f"<UnitLevel(id={self.id}, level={self.level}, icon={self.icon}, prestige_min={self.prestige_min}, prestige_max={self.prestige_max})>"
+
+
+class UserUnitLimit(Base):
+    """Модель лимитов найма юнитов для пользователя (для наемнической армии)"""
+    __tablename__ = 'user_unit_limits'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey('game_users.id', ondelete='CASCADE'), nullable=False, index=True)
+    unit_level_id = Column(Integer, ForeignKey('unit_levels.id', ondelete='CASCADE'), nullable=False, index=True)
+
+    available_count = Column(Integer, nullable=False, default=0)  # Доступно для найма юнитов
+    daily_speed = Column(Integer, nullable=False, default=1)  # Юнитов в день (может быть увеличена)
+    level_unlocked = Column(Boolean, nullable=False, default=False)  # Уровень разблокирован для найма
+
+    last_reset_at = Column(DateTime, default=datetime.utcnow, nullable=False)  # Когда последний раз обновлялся лимит
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    # Связи
+    user = relationship("GameUser")
+    unit_level = relationship("UnitLevel")
+
+    __table_args__ = (
+        UniqueConstraint('user_id', 'unit_level_id', name='unique_user_unit_limit'),
+    )
+
+    def __repr__(self):
+        return f"<UserUnitLimit(id={self.id}, user_id={self.user_id}, level={self.unit_level_id}, available={self.available_count}, speed={self.daily_speed})>"
 
 
 class UserRace(Base):

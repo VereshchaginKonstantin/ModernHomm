@@ -118,7 +118,23 @@ package "Army" #LightYellow {
         +icon: String(10)
         +prestige_min: Integer
         +prestige_max: Integer
+        +daily_recruit_speed: Integer
+        +speed_upgrade_cost: Numeric(12,2)
+        +speed_upgrade_cost_gems: Integer
+        +level_access_cost_gems: Integer
         +created_at: DateTime
+    }
+
+    class UserUnitLimit {
+        +id: Integer <<PK>>
+        +user_id: Integer <<FK>>
+        +unit_level_id: Integer <<FK>>
+        +available_count: Integer
+        +daily_speed: Integer
+        +level_unlocked: Boolean
+        +last_reset_at: DateTime
+        +created_at: DateTime
+        +updated_at: DateTime
     }
 }
 
@@ -268,5 +284,9 @@ Army "*" --> "1" UserRace : user_race
 Army "1" --> "*" ArmyUnit : army_units
 ArmyUnit "*" --> "1" RaceUnit : race_unit
 ArmyUnit "*" --> "0..1" UnitLevel : unit_level
+
+' UserUnitLimit relationships
+UserUnitLimit "*" --> "1" GameUser : user
+UserUnitLimit "*" --> "1" UnitLevel : unit_level
 
 @enduml
