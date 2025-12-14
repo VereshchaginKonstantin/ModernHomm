@@ -1893,37 +1893,35 @@ def api_public_accept_game(game_id):
     """Публичный эндпоинт - принять игру для Godot"""
     data = request.get_json()
     player_id = data.get('player_id')
-    army_id = data.get('army_id')  # Опциональный выбор армии
+    army_id = data.get('army_id')  # ID армии для боя
 
     with db.get_session() as session_db:
-        game = session_db.query(Game).filter_by(id=game_id).first()
-        if not game:
-            return jsonify({'error': 'Game not found'}), 404
+        # Если армия не указана, берём первую доступную армию игрока
+        if not army_id:
+            user_races = session_db.query(UserRace).filter_by(user_id=player_id).all()
+            for user_race in user_races:
+                for army in user_race.armies:
+                    # Проверяем что в армии есть юниты
+                    army_units = session_db.query(ArmyUnit).filter(
+                        ArmyUnit.army_id == army.id,
+                        ArmyUnit.count > 0
+                    ).first()
+                    if army_units:
+                        army_id = army.id
+                        break
+                if army_id:
+                    break
 
-        if game.status != GameStatus.WAITING:
-            return jsonify({'error': 'Game is not waiting for acceptance'}), 400
+        if not army_id:
+            return jsonify({'error': 'No army available'}), 400
 
-        if game.player2_id != player_id:
-            return jsonify({'error': 'You are not player 2 in this game'}), 403
+        engine = GameEngine(session_db)
+        success, message = engine.accept_game(game_id, player_id, army_id)
 
-        # Если указана армия, устанавливаем её для player2
-        if army_id:
-            army = session_db.query(Army).filter_by(id=army_id).first()
-            if army:
-                # Проверяем, принадлежит ли армия игроку
-                user_race = session_db.query(UserRace).filter_by(id=army.user_race_id).first()
-                if user_race and user_race.user_id == player_id:
-                    game.player2_army_id = army_id
-
-        game.status = GameStatus.IN_PROGRESS
-        game.started_at = datetime.utcnow()
-
-        place_units_on_field(game, session_db)
-        generate_obstacles(game, session_db)
-
-        session_db.commit()
-
-        return jsonify({'status': 'in_progress', 'game_id': game_id})
+        if success:
+            return jsonify({'status': 'in_progress', 'game_id': game_id})
+        else:
+            return jsonify({'error': message}), 400
 
 
 @arena_bp.route('/api/public/games/<int:game_id>/move', methods=['POST'])

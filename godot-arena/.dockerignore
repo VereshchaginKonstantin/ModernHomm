@@ -1,0 +1,12 @@
+# Override root .dockerignore - allow build directory
+!build/
+
+# Ignore source files
+*.gd
+*.tscn
+*.import
+.godot/
+scenes/
+scripts/
+project.godot
+export_presets.cfg
