@@ -123,12 +123,19 @@ func _populate_opponents() -> void:
 	_check_pending_games()
 
 func _check_pending_games() -> void:
+	if OS.has_feature("web"):
+		JavaScriptBridge.eval("console.log('[Main] _check_pending_games called');")
 	if current_player.is_empty():
+		if OS.has_feature("web"):
+			JavaScriptBridge.eval("console.log('[Main] current_player is empty, hiding panel');")
 		pending_panel.visible = false
 		return
 
 	# Загружаем ожидающие игры через API
-	ApiClient.get_pending_games(current_player.get("id", 0))
+	var player_id = current_player.get("id", 0)
+	if OS.has_feature("web"):
+		JavaScriptBridge.eval("console.log('[Main] Loading pending games for player_id: %d');" % player_id)
+	ApiClient.get_pending_games(player_id)
 
 func _on_opponent_selected(index: int) -> void:
 	var opponent_id = opponent_select.get_item_id(index)
@@ -192,11 +199,15 @@ func _on_start_pressed() -> void:
 	)
 
 func _on_api_response(data: Dictionary) -> void:
+	if OS.has_feature("web"):
+		JavaScriptBridge.eval("console.log('[Main] _on_api_response called, keys: ' + Object.keys(%s).join(','));" % JSON.stringify(data))
 	# Обрабатываем ответ на ожидающие игры
 	if data.has("pending_games"):
 		pending_games = data.get("pending_games", [])
 		active_games = data.get("active_games", [])
 		history_games = data.get("history", [])
+		if OS.has_feature("web"):
+			JavaScriptBridge.eval("console.log('[Main] Got pending_games: %d, active: %d, history: %d');" % [pending_games.size(), active_games.size(), history_games.size()])
 		_display_battles_list()
 		return
 
@@ -247,6 +258,8 @@ func _on_error(message: String) -> void:
 	waiting_game_id = 0
 
 func _display_battles_list() -> void:
+	if OS.has_feature("web"):
+		JavaScriptBridge.eval("console.log('[Main] _display_battles_list called');")
 	# Очищаем список
 	for child in pending_list.get_children():
 		child.queue_free()
@@ -336,6 +349,8 @@ func _display_battles_list() -> void:
 		history_shown += 1
 
 	pending_panel.visible = has_battles
+	if OS.has_feature("web"):
+		JavaScriptBridge.eval("console.log('[Main] _display_battles_list done, has_battles=%s, panel.visible=%s');" % [str(has_battles), str(pending_panel.visible)])
 
 func _on_accept_game(game_id: int, army_select: OptionButton) -> void:
 	var selected_idx = army_select.selected
