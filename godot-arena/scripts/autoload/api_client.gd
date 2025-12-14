@@ -77,10 +77,13 @@ func create_game(player1_id: int, opponent_name: String, field_size: String) -> 
 	})
 	_make_request(url, HTTPClient.METHOD_POST, body)
 
-## Принять игру
-func accept_game(game_id: int, player_id: int) -> void:
+## Принять игру с выбором армии
+func accept_game(game_id: int, player_id: int, army_id: int = 0) -> void:
 	var url = api_base + "/games/%d/accept" % game_id
-	var body = JSON.stringify({"player_id": player_id})
+	var body_data = {"player_id": player_id}
+	if army_id > 0:
+		body_data["army_id"] = army_id
+	var body = JSON.stringify(body_data)
 	_make_request(url, HTTPClient.METHOD_POST, body)
 
 ## Отклонить игру

@@ -125,9 +125,10 @@ class TestGodotArenaScripts:
             content = f.read()
 
         # Проверяем наличие основных UI элементов
-        assert 'player_select' in content, "Должен быть player_select"
+        assert 'player_name_label' in content, "Должен быть player_name_label"
         assert 'opponent_select' in content, "Должен быть opponent_select"
         assert 'start_button' in content, "Должен быть start_button"
+        assert 'pending_list' in content, "Должен быть pending_list для списка боев"
 
     def test_game_script_board_rendering(self):
         """Проверка рендеринга доски в game.gd"""

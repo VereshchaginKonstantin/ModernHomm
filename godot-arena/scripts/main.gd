@@ -11,7 +11,7 @@ extends Control
 @onready var start_button: Button = %StartButton
 @onready var status_label: Label = %StatusLabel
 @onready var pending_panel: PanelContainer = %PendingGamesPanel
-@onready var pending_list: VBoxContainer = %PendingList
+@onready var pending_list: VBoxContainer = %PendingList  # Now inside ScrollContainer
 
 var players: Array = []
 var current_player: Dictionary = {}  # Текущий залогиненный игрок
@@ -19,6 +19,9 @@ var selected_opponent: Dictionary = {}
 var selected_field_size: String = "5x5"
 var waiting_game_id: int = 0  # ID игры в ожидании
 var waiting_timer: Timer  # Таймер для polling статуса игры
+var pending_games: Array = []  # Ожидающие игры
+var active_games: Array = []  # Активные игры
+var history_games: Array = []  # История игр
 
 func _ready() -> void:
 	# Подключаем сигналы
@@ -124,8 +127,8 @@ func _check_pending_games() -> void:
 		pending_panel.visible = false
 		return
 
-	# TODO: Реализовать проверку ожидающих игр через API
-	pending_panel.visible = false
+	# Загружаем ожидающие игры через API
+	ApiClient.get_pending_games(current_player.get("id", 0))
 
 func _on_opponent_selected(index: int) -> void:
 	var opponent_id = opponent_select.get_item_id(index)
@@ -189,6 +192,14 @@ func _on_start_pressed() -> void:
 	)
 
 func _on_api_response(data: Dictionary) -> void:
+	# Обрабатываем ответ на ожидающие игры
+	if data.has("pending_games"):
+		pending_games = data.get("pending_games", [])
+		active_games = data.get("active_games", [])
+		history_games = data.get("history", [])
+		_display_battles_list()
+		return
+
 	# Обрабатываем ответ на создание игры
 	if data.has("game_id") and data.has("status"):
 		if data.get("status") == "waiting":
@@ -234,6 +245,114 @@ func _on_error(message: String) -> void:
 	start_button.disabled = false
 	waiting_timer.stop()
 	waiting_game_id = 0
+
+func _display_battles_list() -> void:
+	# Очищаем список
+	for child in pending_list.get_children():
+		child.queue_free()
+
+	var has_battles = false
+
+	# Показываем ожидающие игры (вызовы на бой)
+	for game in pending_games:
+		has_battles = true
+		var hbox = HBoxContainer.new()
+		hbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+
+		var label = Label.new()
+		label.text = "⚔️ %s вызывает вас!" % game.get("player1_name", "???")
+		label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		hbox.add_child(label)
+
+		# Выбор армии
+		var army_select = OptionButton.new()
+		army_select.custom_minimum_size = Vector2(150, 0)
+		var player_armies = game.get("player_armies", [])
+		for i in range(player_armies.size()):
+			var army = player_armies[i]
+			var army_name = army.get("army_name", "Армия")
+			var army_cost = army.get("army_cost", 0)
+			var is_matching = army.get("is_matching", false)
+			var prefix = "✅ " if is_matching else "⚠️ "
+			army_select.add_item(prefix + army_name + " (%.0f)" % army_cost, army.get("army_id", 0))
+		hbox.add_child(army_select)
+
+		var accept_btn = Button.new()
+		accept_btn.text = "Принять"
+		accept_btn.pressed.connect(_on_accept_game.bind(game.get("game_id", 0), army_select))
+		hbox.add_child(accept_btn)
+
+		var decline_btn = Button.new()
+		decline_btn.text = "Отклонить"
+		decline_btn.pressed.connect(_on_decline_game.bind(game.get("game_id", 0)))
+		hbox.add_child(decline_btn)
+
+		pending_list.add_child(hbox)
+
+	# Показываем активные игры
+	for game in active_games:
+		has_battles = true
+		var hbox = HBoxContainer.new()
+		hbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+
+		var opponent_name = game.get("player2_name", "???")
+		if game.get("player2_id") == current_player.get("id"):
+			opponent_name = game.get("player1_name", "???")
+
+		var label = Label.new()
+		var turn_text = " (ваш ход)" if game.get("is_my_turn", false) else ""
+		label.text = "🎮 vs %s%s" % [opponent_name, turn_text]
+		label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		hbox.add_child(label)
+
+		var continue_btn = Button.new()
+		continue_btn.text = "Продолжить"
+		continue_btn.pressed.connect(_on_continue_game.bind(game.get("game_id", 0)))
+		hbox.add_child(continue_btn)
+
+		pending_list.add_child(hbox)
+
+	# Показываем историю (последние 5)
+	var history_shown = 0
+	for game in history_games:
+		if history_shown >= 5:
+			break
+		has_battles = true
+		var hbox = HBoxContainer.new()
+		hbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+
+		var opponent_name = game.get("player2_name", "???")
+		if game.get("player2_id") == current_player.get("id"):
+			opponent_name = game.get("player1_name", "???")
+
+		var result_icon = "🏆" if game.get("winner_id") == current_player.get("id") else "💀"
+		var label = Label.new()
+		label.text = "%s vs %s" % [result_icon, opponent_name]
+		label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		label.modulate = Color(0.6, 0.6, 0.6)
+		hbox.add_child(label)
+
+		pending_list.add_child(hbox)
+		history_shown += 1
+
+	pending_panel.visible = has_battles
+
+func _on_accept_game(game_id: int, army_select: OptionButton) -> void:
+	var selected_idx = army_select.selected
+	var army_id = 0
+	if selected_idx >= 0:
+		army_id = army_select.get_item_id(selected_idx)
+	GameManager.accept_game(game_id, current_player.get("id", 0))
+	ApiClient.accept_game(game_id, current_player.get("id", 0), army_id)
+
+func _on_decline_game(game_id: int) -> void:
+	ApiClient.decline_game(game_id)
+	# Обновляем список
+	_check_pending_games()
+
+func _on_continue_game(game_id: int) -> void:
+	GameManager.current_game_id = game_id
+	get_tree().change_scene_to_file("res://scenes/game.tscn")
 
 func _on_back_pressed() -> void:
 	waiting_timer.stop()

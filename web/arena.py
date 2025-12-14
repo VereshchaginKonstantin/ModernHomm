@@ -1594,6 +1594,29 @@ def get_game_full_data(game_id):
 # ==================== Public API Endpoints for Godot ====================
 # Эти эндпоинты не требуют авторизации для использования из Godot WebGL
 
+
+def _calculate_army_cost(session_db, army):
+    """Вычисление стоимости армии"""
+    total_value = 0.0
+    for au in army.army_units:
+        if au.count <= 0 or not au.race_unit:
+            continue
+        race_unit = au.race_unit
+        # Базовая мощь юнита
+        unit_power = (
+            race_unit.attack +
+            race_unit.defense +
+            (race_unit.min_damage + race_unit.max_damage) / 2 +
+            race_unit.health / 10 +
+            race_unit.speed +
+            race_unit.initiative
+        )
+        # Множитель престижа
+        prestige_mult = race_unit.unit_level.prestige_max if race_unit.unit_level else 100
+        total_value += unit_power * prestige_mult * au.count / 100
+    return total_value
+
+
 @arena_bp.route('/api/public/players')
 def api_public_players():
     """Публичный эндпоинт - получить список игроков для Godot"""
@@ -1603,21 +1626,29 @@ def api_public_players():
         for p in players:
             # Получаем армии игрока через user_races
             armies = []
+            max_army_cost = 0.0
+            all_units = []  # Для совместимости с Godot
             user_races = session_db.query(UserRace).filter_by(user_id=p.id).all()
             for user_race in user_races:
                 for army in user_race.armies:
                     army_units = []
+                    army_cost = _calculate_army_cost(session_db, army)
+                    if army_cost > max_army_cost:
+                        max_army_cost = army_cost
                     for au in army.army_units:
                         if au.race_unit and au.count > 0:
-                            army_units.append({
+                            unit_data = {
                                 'unit_id': au.race_unit.id,
                                 'name': au.race_unit.name,
                                 'icon': au.race_unit.unit_level.icon if au.race_unit.unit_level else '?',
                                 'count': au.count
-                            })
+                            }
+                            army_units.append(unit_data)
+                            all_units.append(unit_data)
                     armies.append({
                         'army_id': army.id,
                         'army_name': army.name,
+                        'army_cost': army_cost,
                         'units': army_units
                     })
 
@@ -1629,7 +1660,9 @@ def api_public_players():
                 'wins': p.wins,
                 'losses': p.losses,
                 'glory': p.glory,
-                'armies': armies
+                'armies': armies,
+                'army_cost': max_army_cost,  # Для совместимости с Godot
+                'units': all_units  # Для совместимости с Godot
             })
 
     # Возвращаем в формате {"players": [...]} для совместимости с Godot
@@ -1650,10 +1683,14 @@ def api_public_me():
 
         # Получаем армии игрока через user_races
         armies = []
+        max_army_cost = 0.0
         user_races = session_db.query(UserRace).filter_by(user_id=player.id).all()
         for user_race in user_races:
             for army in user_race.armies:
                 army_units = []
+                army_cost = _calculate_army_cost(session_db, army)
+                if army_cost > max_army_cost:
+                    max_army_cost = army_cost
                 for au in army.army_units:
                     if au.race_unit and au.count > 0:
                         army_units.append({
@@ -1665,6 +1702,7 @@ def api_public_me():
                 armies.append({
                     'army_id': army.id,
                     'army_name': army.name,
+                    'army_cost': army_cost,
                     'units': army_units
                 })
 
@@ -1677,8 +1715,95 @@ def api_public_me():
                 'wins': player.wins,
                 'losses': player.losses,
                 'glory': player.glory,
-                'armies': armies
+                'armies': armies,
+                'army_cost': max_army_cost
             }
+        })
+
+
+@arena_bp.route('/api/public/games/pending')
+def api_public_pending_games():
+    """Публичный эндпоинт - получить ожидающие игры для игрока"""
+    player_id = request.args.get('player_id', type=int)
+    if not player_id:
+        return jsonify({"pending_games": [], "active_games": [], "history": []})
+
+    with db.get_session() as session_db:
+        player = session_db.query(GameUser).filter_by(id=player_id).first()
+        if not player:
+            return jsonify({"pending_games": [], "active_games": [], "history": []})
+
+        # Ожидающие игры (где игрок - player2 и статус waiting)
+        pending = session_db.query(Game).filter(
+            Game.player2_id == player_id,
+            Game.status == GameStatus.WAITING
+        ).all()
+
+        # Активные игры
+        active = session_db.query(Game).filter(
+            (Game.player1_id == player_id) | (Game.player2_id == player_id),
+            Game.status == GameStatus.IN_PROGRESS
+        ).all()
+
+        # История (завершённые игры)
+        history = session_db.query(Game).filter(
+            (Game.player1_id == player_id) | (Game.player2_id == player_id),
+            Game.status == GameStatus.COMPLETED
+        ).order_by(Game.completed_at.desc()).limit(10).all()
+
+        def game_to_dict(game, is_pending=False):
+            p1 = session_db.query(GameUser).filter_by(id=game.player1_id).first()
+            p2 = session_db.query(GameUser).filter_by(id=game.player2_id).first() if game.player2_id else None
+
+            result = {
+                'game_id': game.id,
+                'status': game.status.value if hasattr(game.status, 'value') else str(game.status),
+                'player1_id': game.player1_id,
+                'player1_name': p1.username if p1 else 'Unknown',
+                'player2_id': game.player2_id,
+                'player2_name': p2.username if p2 else 'Unknown',
+                'field_size': f"{game.field.width}x{game.field.height}" if game.field else "5x5",
+                'created_at': game.created_at.isoformat() if game.created_at else None,
+                'is_my_turn': game.current_player_id == player_id
+            }
+
+            # Для ожидающих игр - добавляем информацию об армиях
+            if is_pending and game.player1_army_id:
+                army = session_db.query(Army).filter_by(id=game.player1_army_id).first()
+                if army:
+                    result['challenger_army'] = {
+                        'army_id': army.id,
+                        'army_name': army.name,
+                        'army_cost': _calculate_army_cost(session_db, army)
+                    }
+                # Получаем подходящие армии игрока
+                player_armies = []
+                user_races = session_db.query(UserRace).filter_by(user_id=player_id).all()
+                challenger_cost = _calculate_army_cost(session_db, army) if army else 0
+                for user_race in user_races:
+                    for player_army in user_race.armies:
+                        player_army_cost = _calculate_army_cost(session_db, player_army)
+                        # Показываем армии в диапазоне ±50% от армии вызывающего
+                        is_matching = abs(player_army_cost - challenger_cost) <= challenger_cost * 0.5 if challenger_cost > 0 else True
+                        player_armies.append({
+                            'army_id': player_army.id,
+                            'army_name': player_army.name,
+                            'army_cost': player_army_cost,
+                            'is_matching': is_matching
+                        })
+                result['player_armies'] = player_armies
+
+            if game.winner_id:
+                winner = session_db.query(GameUser).filter_by(id=game.winner_id).first()
+                result['winner_id'] = game.winner_id
+                result['winner_name'] = winner.username if winner else 'Unknown'
+
+            return result
+
+        return jsonify({
+            "pending_games": [game_to_dict(g, is_pending=True) for g in pending],
+            "active_games": [game_to_dict(g) for g in active],
+            "history": [game_to_dict(g) for g in history]
         })
 
 
@@ -1766,6 +1891,7 @@ def api_public_accept_game(game_id):
     """Публичный эндпоинт - принять игру для Godot"""
     data = request.get_json()
     player_id = data.get('player_id')
+    army_id = data.get('army_id')  # Опциональный выбор армии
 
     with db.get_session() as session_db:
         game = session_db.query(Game).filter_by(id=game_id).first()
@@ -1777,6 +1903,15 @@ def api_public_accept_game(game_id):
 
         if game.player2_id != player_id:
             return jsonify({'error': 'You are not player 2 in this game'}), 403
+
+        # Если указана армия, устанавливаем её для player2
+        if army_id:
+            army = session_db.query(Army).filter_by(id=army_id).first()
+            if army:
+                # Проверяем, принадлежит ли армия игроку
+                user_race = session_db.query(UserRace).filter_by(id=army.user_race_id).first()
+                if user_race and user_race.user_id == player_id:
+                    game.player2_army_id = army_id
 
         game.status = GameStatus.IN_PROGRESS
         game.started_at = datetime.utcnow()
