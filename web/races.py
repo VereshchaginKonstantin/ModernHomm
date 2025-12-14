@@ -1019,6 +1019,15 @@ EDIT_SKIN_TEMPLATE = """
         .info-box { background: #1a3a5c; border-left: 4px solid #3498db; padding: 12px 15px; margin-bottom: 20px; border-radius: 0 5px 5px 0; }
         .info-box h4 { color: #3498db; margin: 0 0 8px 0; font-size: 14px; }
         .info-box p { color: #aaa; margin: 0; font-size: 13px; line-height: 1.5; }
+        .status-box { background: #1a3a1a; border: 1px solid #2ecc71; padding: 15px; border-radius: 8px; margin-bottom: 20px; }
+        .status-box h3 { color: #2ecc71; margin: 0 0 10px 0; font-size: 16px; }
+        .status-item { display: flex; align-items: center; margin: 8px 0; }
+        .status-icon { margin-right: 10px; font-size: 18px; }
+        .status-ok { color: #2ecc71; }
+        .status-missing { color: #e74c3c; }
+        .status-label { color: #aaa; min-width: 180px; }
+        .status-value { color: #fff; word-break: break-all; }
+        .status-value code { background: #333; padding: 2px 6px; border-radius: 3px; font-family: monospace; }
     </style>
 </head>
 <body>
@@ -1026,6 +1035,62 @@ EDIT_SKIN_TEMPLATE = """
     <div class="content">
         <h1>✏️ Редактировать скин уровня расы: {{ skin.name }}</h1>
         <p style="color: #aaa;">Юнит: {{ unit.unit_level.icon if unit.unit_level else '🎮' }} {{ unit.name }} | Раса: {{ race.name }}</p>
+
+        <div class="status-box">
+            <h3>📊 Статус загруженных ассетов</h3>
+            <div class="status-item">
+                <span class="status-icon {% if skin.image_data %}status-ok{% else %}status-missing{% endif %}">
+                    {% if skin.image_data %}✅{% else %}❌{% endif %}
+                </span>
+                <span class="status-label">Текстура (статичная):</span>
+                <span class="status-value">
+                    {% if skin.image_data %}
+                        Загружена ({{ (skin.image_data|length / 1024)|round(1) }} KB)
+                    {% else %}
+                        Не загружена
+                    {% endif %}
+                </span>
+            </div>
+            <div class="status-item">
+                <span class="status-icon {% if skin.sprite_frames_data %}status-ok{% else %}status-missing{% endif %}">
+                    {% if skin.sprite_frames_data %}✅{% else %}❌{% endif %}
+                </span>
+                <span class="status-label">Спрайт-лист (анимация):</span>
+                <span class="status-value">
+                    {% if skin.sprite_frames_data %}
+                        Загружен ({{ (skin.sprite_frames_data|length / 1024)|round(1) }} KB, {{ skin.sprite_frame_count }} кадров, {{ skin.sprite_fps }} FPS)
+                    {% else %}
+                        Не загружен
+                    {% endif %}
+                </span>
+            </div>
+            <div class="status-item">
+                <span class="status-icon {% if skin.godot_texture_path %}status-ok{% else %}status-missing{% endif %}">
+                    {% if skin.godot_texture_path %}✅{% else %}❌{% endif %}
+                </span>
+                <span class="status-label">Путь к текстуре Godot:</span>
+                <span class="status-value">
+                    {% if skin.godot_texture_path %}
+                        <code>{{ skin.godot_texture_path }}</code>
+                    {% else %}
+                        Не указан
+                    {% endif %}
+                </span>
+            </div>
+            <div class="status-item">
+                <span class="status-icon {% if skin.godot_sprite_path %}status-ok{% else %}status-missing{% endif %}">
+                    {% if skin.godot_sprite_path %}✅{% else %}❌{% endif %}
+                </span>
+                <span class="status-label">Путь к спрайту Godot:</span>
+                <span class="status-value">
+                    {% if skin.godot_sprite_path %}
+                        <code>{{ skin.godot_sprite_path }}</code>
+                    {% else %}
+                        Не указан
+                    {% endif %}
+                </span>
+            </div>
+        </div>
 
         <form method="POST" enctype="multipart/form-data">
             <div class="section">
