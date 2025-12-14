@@ -83,7 +83,7 @@ class GameState:
                             'defense': race_unit.defense,
                             'hp': race_unit.health,
                             'speed': race_unit.speed,
-                            'attack_range': race_unit.attack_range
+                            'attack_range': race_unit.range
                         }
                     })
 
