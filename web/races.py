@@ -20,6 +20,123 @@ from web.templates import HEADER_TEMPLATE, BASE_STYLE, FOOTER_TEMPLATE
 logger = logging.getLogger(__name__)
 
 
+def calculate_unit_prestige(
+    attack: int = 0,
+    defense: int = 0,
+    health: int = 0,
+    speed: int = 0,
+    min_damage: int = 0,
+    max_damage: int = 0,
+    initiative: int = 0,
+    range_: int = 1,
+    luck: float = 0.0,
+    crit_chance: float = 0.0,
+    dodge_chance: float = 0.0,
+    counterattack_chance: float = 0.0,
+    regeneration_health: int = 0,
+    poison_damage: int = 0,
+    poison_turns: int = 0,
+    is_flying: bool = False,
+    is_kamikaze: bool = False,
+    poison_immunity: bool = False
+) -> int:
+    """
+    Calculate unit prestige based on its combat stats.
+
+    Prestige formula:
+    - attack × 5
+    - defense × 4
+    - health × 0.5
+    - speed × 8
+    - (min_damage + max_damage) × 3
+    - initiative × 3
+    - (range - 1) × 20 (ranged bonus)
+    - luck × 50
+    - crit_chance × 100
+    - dodge_chance × 80
+    - counterattack_chance × 40
+    - regeneration_health × 10
+    - (poison_damage × poison_turns) × 15
+    - is_flying × 50
+    - is_kamikaze × 30
+    - poison_immunity × 25
+
+    Args:
+        attack: Unit attack stat
+        defense: Unit defense stat
+        health: Unit health points
+        speed: Unit movement speed
+        min_damage: Minimum damage per attack
+        max_damage: Maximum damage per attack
+        initiative: Turn order priority
+        range_: Attack range (1 = melee)
+        luck: Lucky hit chance (0.0-1.0)
+        crit_chance: Critical hit chance (0.0-1.0)
+        dodge_chance: Dodge chance (0.0-1.0)
+        counterattack_chance: Counterattack chance (0.0-1.0)
+        regeneration_health: HP regenerated per turn
+        poison_damage: Poison damage per turn
+        poison_turns: Number of poison turns
+        is_flying: Whether unit can fly
+        is_kamikaze: Whether unit is kamikaze
+        poison_immunity: Whether unit is immune to poison
+
+    Returns:
+        Calculated prestige value (integer)
+    """
+    prestige = (
+        attack * 5 +
+        defense * 4 +
+        health * 0.5 +
+        speed * 8 +
+        (min_damage + max_damage) * 3 +
+        initiative * 3 +
+        (range_ - 1) * 20 +
+        luck * 50 +
+        crit_chance * 100 +
+        dodge_chance * 80 +
+        counterattack_chance * 40 +
+        regeneration_health * 10 +
+        (poison_damage * poison_turns) * 15 +
+        (50 if is_flying else 0) +
+        (30 if is_kamikaze else 0) +
+        (25 if poison_immunity else 0)
+    )
+    return round(prestige)
+
+
+def calculate_race_unit_prestige(unit: RaceUnit) -> int:
+    """
+    Calculate prestige for a RaceUnit instance.
+
+    Args:
+        unit: RaceUnit model instance
+
+    Returns:
+        Calculated prestige value (integer)
+    """
+    return calculate_unit_prestige(
+        attack=unit.attack or 0,
+        defense=unit.defense or 0,
+        health=unit.health or 0,
+        speed=unit.speed or 0,
+        min_damage=unit.min_damage or 0,
+        max_damage=unit.max_damage or 0,
+        initiative=unit.initiative or 0,
+        range_=unit.range or 1,
+        luck=float(unit.luck or 0),
+        crit_chance=float(unit.crit_chance or 0),
+        dodge_chance=float(unit.dodge_chance or 0),
+        counterattack_chance=float(unit.counterattack_chance or 0),
+        regeneration_health=unit.regeneration_health or 0,
+        poison_damage=unit.poison_damage or 0,
+        poison_turns=unit.poison_turns or 0,
+        is_flying=bool(unit.is_flying),
+        is_kamikaze=bool(unit.is_kamikaze),
+        poison_immunity=bool(unit.poison_immunity)
+    )
+
+
 # Placeholder sprite colors for different unit levels
 LEVEL_COLORS = [
     (139, 69, 19),    # Level 1 - Brown (peasant)
@@ -502,12 +619,50 @@ EDIT_UNIT_TEMPLATE = """
         .section { background: #2a2a2a; padding: 15px; border-radius: 8px; margin-bottom: 20px; }
         .section h3 { color: #3498db; margin-top: 0; margin-bottom: 15px; font-size: 16px; }
         .help-text { color: #888; font-size: 11px; margin-top: 3px; }
+        .prestige-box { background: #1a3a5c; border: 2px solid #3498db; border-radius: 10px; padding: 20px; margin-bottom: 20px; }
+        .prestige-box h2 { color: #3498db; margin: 0 0 15px 0; font-size: 18px; }
+        .prestige-value { font-size: 48px; font-weight: bold; color: #ffd700; margin: 10px 0; }
+        .prestige-range { color: #aaa; font-size: 14px; }
+        .prestige-warning { background: #5c1a1a; border: 2px solid #e74c3c; border-radius: 8px; padding: 15px; margin-top: 15px; display: none; }
+        .prestige-warning.show { display: block; }
+        .prestige-warning h4 { color: #e74c3c; margin: 0 0 10px 0; }
+        .prestige-warning p { color: #ffaaaa; margin: 0; }
+        .prestige-ok { background: #1a5c2a; border: 2px solid #2ecc71; border-radius: 8px; padding: 15px; margin-top: 15px; display: none; }
+        .prestige-ok.show { display: block; }
+        .prestige-ok p { color: #aaffaa; margin: 0; }
+        .prestige-formula { background: #333; padding: 10px; border-radius: 5px; margin-top: 15px; font-size: 12px; color: #888; }
+        .prestige-formula code { color: #ffd700; }
     </style>
 </head>
 <body>
     """ + HEADER_TEMPLATE + """
     <div class="content">
         <h1>✏️ Редактировать Юнит расы: {{ race.name }}</h1>
+
+        <!-- Prestige Calculation Box -->
+        <div class="prestige-box">
+            <h2>📊 Расчёт престижа юнита</h2>
+            <div class="prestige-value" id="prestigeValue">0</div>
+            <div class="prestige-range">
+                {% if unit.unit_level %}
+                Допустимый диапазон для уровня {{ unit.unit_level.level }}:
+                <strong id="prestigeMin">{{ unit.unit_level.prestige_min }}</strong> -
+                <strong id="prestigeMax">{{ unit.unit_level.prestige_max }}</strong>
+                {% else %}
+                Уровень не задан
+                {% endif %}
+            </div>
+            <div class="prestige-warning" id="prestigeWarning">
+                <h4>⚠️ Внимание! Престиж выходит за рамки уровня</h4>
+                <p id="prestigeWarningText">Престиж юнита не соответствует его уровню.</p>
+            </div>
+            <div class="prestige-ok" id="prestigeOk">
+                <p>✅ Престиж соответствует уровню юнита</p>
+            </div>
+            <div class="prestige-formula">
+                <strong>Формула:</strong> <code>престиж = атака×5 + защита×4 + здоровье×0.5 + скорость×8 + (мин_урон+макс_урон)×3 + инициатива×3 + (дальность-1)×20 + удача×50 + крит×100 + уклонение×80 + контратака×40 + регенерация×10 + яд×15 + летающий×50 + камикадзе×30 + иммунитет_яда×25</code>
+            </div>
+        </div>
 
         <form method="POST">
             <div class="section">
@@ -636,6 +791,90 @@ EDIT_UNIT_TEMPLATE = """
         </form>
     </div>
     """ + FOOTER_TEMPLATE + """
+
+    <script>
+    // Prestige calculation function
+    function calculatePrestige() {
+        // Get values from form fields
+        const attack = parseFloat(document.querySelector('input[name="attack"]').value) || 0;
+        const defense = parseFloat(document.querySelector('input[name="defense"]').value) || 0;
+        const health = parseFloat(document.querySelector('input[name="health"]').value) || 0;
+        const speed = parseFloat(document.querySelector('input[name="speed"]').value) || 0;
+        const minDamage = parseFloat(document.querySelector('input[name="min_damage"]').value) || 0;
+        const maxDamage = parseFloat(document.querySelector('input[name="max_damage"]').value) || 0;
+        const initiative = parseFloat(document.querySelector('input[name="initiative"]').value) || 0;
+        const range = parseFloat(document.querySelector('input[name="range"]').value) || 1;
+        const luck = parseFloat(document.querySelector('input[name="luck"]').value) || 0;
+        const critChance = parseFloat(document.querySelector('input[name="crit_chance"]').value) || 0;
+        const dodgeChance = parseFloat(document.querySelector('input[name="dodge_chance"]').value) || 0;
+        const counterattackChance = parseFloat(document.querySelector('input[name="counterattack_chance"]').value) || 0;
+        const regenerationHealth = parseFloat(document.querySelector('input[name="regeneration_health"]').value) || 0;
+        const poisonDamage = parseFloat(document.querySelector('input[name="poison_damage"]').value) || 0;
+        const poisonTurns = parseFloat(document.querySelector('input[name="poison_turns"]').value) || 0;
+        const isFlying = document.getElementById('is_flying').checked ? 1 : 0;
+        const isKamikaze = document.getElementById('is_kamikaze').checked ? 1 : 0;
+        const poisonImmunity = document.getElementById('poison_immunity').checked ? 1 : 0;
+
+        // Calculate prestige using formula
+        const prestige = Math.round(
+            attack * 5 +
+            defense * 4 +
+            health * 0.5 +
+            speed * 8 +
+            (minDamage + maxDamage) * 3 +
+            initiative * 3 +
+            (range - 1) * 20 +
+            luck * 50 +
+            critChance * 100 +
+            dodgeChance * 80 +
+            counterattackChance * 40 +
+            regenerationHealth * 10 +
+            (poisonDamage * poisonTurns) * 15 +
+            isFlying * 50 +
+            isKamikaze * 30 +
+            poisonImmunity * 25
+        );
+
+        // Update prestige display
+        document.getElementById('prestigeValue').textContent = prestige;
+
+        // Check against level limits
+        const prestigeMin = parseInt(document.getElementById('prestigeMin')?.textContent) || 0;
+        const prestigeMax = parseInt(document.getElementById('prestigeMax')?.textContent) || 999999;
+
+        const warningEl = document.getElementById('prestigeWarning');
+        const okEl = document.getElementById('prestigeOk');
+        const warningText = document.getElementById('prestigeWarningText');
+
+        if (prestige < prestigeMin) {
+            warningEl.classList.add('show');
+            okEl.classList.remove('show');
+            warningText.textContent = `Престиж (${prestige}) ниже минимума (${prestigeMin}) для этого уровня. Юнит слишком слабый.`;
+        } else if (prestige > prestigeMax) {
+            warningEl.classList.add('show');
+            okEl.classList.remove('show');
+            warningText.textContent = `Престиж (${prestige}) выше максимума (${prestigeMax}) для этого уровня. Юнит слишком сильный.`;
+        } else {
+            warningEl.classList.remove('show');
+            okEl.classList.add('show');
+        }
+
+        return prestige;
+    }
+
+    // Add event listeners to all form inputs
+    document.addEventListener('DOMContentLoaded', function() {
+        // Initial calculation
+        calculatePrestige();
+
+        // Listen to all inputs
+        const inputs = document.querySelectorAll('input[type="number"], input[type="checkbox"]');
+        inputs.forEach(input => {
+            input.addEventListener('input', calculatePrestige);
+            input.addEventListener('change', calculatePrestige);
+        });
+    });
+    </script>
 </body>
 </html>
 """

@@ -394,3 +394,171 @@ class TestRaceUnitDefaultStats:
         )
         assert unit.regeneration_health == 5
         assert unit.poison_immunity is True
+
+
+class TestPrestigeCalculation:
+    """Tests for unit prestige calculation."""
+
+    def test_calculate_prestige_basic_stats(self):
+        """Test prestige calculation with basic stats only."""
+        from web.races import calculate_unit_prestige
+
+        # Level 1 peasant-like stats
+        prestige = calculate_unit_prestige(
+            attack=2, defense=1, health=3, speed=4,
+            min_damage=1, max_damage=2, initiative=8, range_=1
+        )
+        # Expected: 2*5 + 1*4 + 3*0.5 + 4*8 + (1+2)*3 + 8*3 + (1-1)*20
+        #         = 10 + 4 + 1.5 + 32 + 9 + 24 + 0 = 80.5 ≈ 80
+        assert prestige == 80
+
+    def test_calculate_prestige_with_flying(self):
+        """Test prestige calculation with flying bonus."""
+        from web.races import calculate_unit_prestige
+
+        base_prestige = calculate_unit_prestige(
+            attack=10, defense=10, health=50, speed=6,
+            min_damage=5, max_damage=10, initiative=12, range_=1
+        )
+        flying_prestige = calculate_unit_prestige(
+            attack=10, defense=10, health=50, speed=6,
+            min_damage=5, max_damage=10, initiative=12, range_=1,
+            is_flying=True
+        )
+        assert flying_prestige == base_prestige + 50
+
+    def test_calculate_prestige_with_ranged(self):
+        """Test prestige calculation with ranged attack bonus."""
+        from web.races import calculate_unit_prestige
+
+        melee_prestige = calculate_unit_prestige(
+            attack=5, defense=3, health=10, speed=5,
+            min_damage=2, max_damage=4, initiative=10, range_=1
+        )
+        ranged_prestige = calculate_unit_prestige(
+            attack=5, defense=3, health=10, speed=5,
+            min_damage=2, max_damage=4, initiative=10, range_=6
+        )
+        # Range bonus = (6-1) * 20 = 100
+        assert ranged_prestige == melee_prestige + 100
+
+    def test_calculate_prestige_with_chances(self):
+        """Test prestige calculation with luck/crit/dodge/counterattack."""
+        from web.races import calculate_unit_prestige
+
+        base_prestige = calculate_unit_prestige(
+            attack=10, defense=5, health=20, speed=5,
+            min_damage=3, max_damage=6, initiative=10, range_=1
+        )
+        # Add 10% luck, 5% crit, 8% dodge, 20% counterattack
+        with_chances = calculate_unit_prestige(
+            attack=10, defense=5, health=20, speed=5,
+            min_damage=3, max_damage=6, initiative=10, range_=1,
+            luck=0.1, crit_chance=0.05, dodge_chance=0.08, counterattack_chance=0.2
+        )
+        # Bonus = 0.1*50 + 0.05*100 + 0.08*80 + 0.2*40 = 5 + 5 + 6.4 + 8 = 24.4 ≈ 24
+        assert with_chances == base_prestige + 24
+
+    def test_calculate_prestige_with_poison(self):
+        """Test prestige calculation with poison ability."""
+        from web.races import calculate_unit_prestige
+
+        base_prestige = calculate_unit_prestige(
+            attack=8, defense=6, health=30, speed=5,
+            min_damage=4, max_damage=8, initiative=10, range_=1
+        )
+        with_poison = calculate_unit_prestige(
+            attack=8, defense=6, health=30, speed=5,
+            min_damage=4, max_damage=8, initiative=10, range_=1,
+            poison_damage=3, poison_turns=2
+        )
+        # Poison bonus = (3 * 2) * 15 = 90
+        assert with_poison == base_prestige + 90
+
+    def test_calculate_prestige_with_regeneration(self):
+        """Test prestige calculation with regeneration."""
+        from web.races import calculate_unit_prestige
+
+        base_prestige = calculate_unit_prestige(
+            attack=15, defense=15, health=100, speed=8,
+            min_damage=10, max_damage=20, initiative=15, range_=1
+        )
+        with_regen = calculate_unit_prestige(
+            attack=15, defense=15, health=100, speed=8,
+            min_damage=10, max_damage=20, initiative=15, range_=1,
+            regeneration_health=10
+        )
+        # Regen bonus = 10 * 10 = 100
+        assert with_regen == base_prestige + 100
+
+    def test_calculate_prestige_level1_peasant_in_range(self):
+        """Test that level 1 peasant stats produce prestige within level 1 range (0-100)."""
+        from web.races import calculate_unit_prestige
+
+        # Actual level 1 default stats
+        prestige = calculate_unit_prestige(
+            attack=2, defense=1, health=3, speed=4,
+            min_damage=1, max_damage=2, initiative=8, range_=1,
+            luck=0.0, crit_chance=0.02, dodge_chance=0.05, counterattack_chance=0.1
+        )
+        # Should be within level 1 range: 0-100
+        assert 0 <= prestige <= 100
+
+    def test_calculate_prestige_level7_angel_high(self):
+        """Test that level 7 angel stats produce significantly higher prestige than level 1."""
+        from web.races import calculate_unit_prestige
+
+        # Level 1 peasant stats
+        level1_prestige = calculate_unit_prestige(
+            attack=2, defense=1, health=3, speed=4,
+            min_damage=1, max_damage=2, initiative=8, range_=1
+        )
+
+        # Level 7 angel stats
+        level7_prestige = calculate_unit_prestige(
+            attack=25, defense=25, health=200, speed=10,
+            min_damage=15, max_damage=30, initiative=18, range_=1,
+            luck=0.2, crit_chance=0.15, dodge_chance=0.15, counterattack_chance=0.5,
+            regeneration_health=10, poison_immunity=True, is_flying=True
+        )
+        # Level 7 should have much higher prestige than level 1
+        assert level7_prestige > level1_prestige * 5  # At least 5x stronger
+        # Verify the specific calculated value
+        assert level7_prestige == 826  # Calculated expected value
+
+    def test_calculate_race_unit_prestige(self):
+        """Test calculate_race_unit_prestige function with RaceUnit instance."""
+        from web.races import calculate_race_unit_prestige
+
+        unit = RaceUnit(
+            race_id=1,
+            unit_level_id=1,
+            name="Test Unit",
+            attack=10,
+            defense=5,
+            health=20,
+            speed=5,
+            min_damage=3,
+            max_damage=6,
+            initiative=10,
+            range=1,
+            is_flying=False,
+            is_kamikaze=False
+        )
+        prestige = calculate_race_unit_prestige(unit)
+        # Expected: 10*5 + 5*4 + 20*0.5 + 5*8 + (3+6)*3 + 10*3 + 0
+        #         = 50 + 20 + 10 + 40 + 27 + 30 + 0 = 177
+        assert prestige == 177
+
+    def test_prestige_increases_with_stats(self):
+        """Test that prestige increases when stats increase."""
+        from web.races import calculate_unit_prestige
+
+        base = calculate_unit_prestige(attack=10, defense=10, health=50)
+        with_more_attack = calculate_unit_prestige(attack=15, defense=10, health=50)
+        with_more_defense = calculate_unit_prestige(attack=10, defense=15, health=50)
+        with_more_health = calculate_unit_prestige(attack=10, defense=10, health=100)
+
+        assert with_more_attack > base
+        assert with_more_defense > base
+        assert with_more_health > base
