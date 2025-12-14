@@ -1768,22 +1768,24 @@ def api_public_pending_games():
             }
 
             # Для ожидающих игр - добавляем информацию об армиях
-            if is_pending and game.player1_army_id:
-                army = session_db.query(Army).filter_by(id=game.player1_army_id).first()
-                if army:
-                    result['challenger_army'] = {
-                        'army_id': army.id,
-                        'army_name': army.name,
-                        'army_cost': _calculate_army_cost(session_db, army)
-                    }
-                # Получаем подходящие армии игрока
+            if is_pending:
+                challenger_cost = 0
+                if game.player1_army_id:
+                    army = session_db.query(Army).filter_by(id=game.player1_army_id).first()
+                    if army:
+                        challenger_cost = _calculate_army_cost(session_db, army)
+                        result['challenger_army'] = {
+                            'army_id': army.id,
+                            'army_name': army.name,
+                            'army_cost': challenger_cost
+                        }
+                # Получаем подходящие армии игрока (всегда показываем список)
                 player_armies = []
                 user_races = session_db.query(UserRace).filter_by(user_id=player_id).all()
-                challenger_cost = _calculate_army_cost(session_db, army) if army else 0
                 for user_race in user_races:
                     for player_army in user_race.armies:
                         player_army_cost = _calculate_army_cost(session_db, player_army)
-                        # Показываем армии в диапазоне ±50% от армии вызывающего
+                        # Показываем армии в диапазоне ±50% от армии вызывающего (или все если нет армии)
                         is_matching = abs(player_army_cost - challenger_cost) <= challenger_cost * 0.5 if challenger_cost > 0 else True
                         player_armies.append({
                             'army_id': player_army.id,

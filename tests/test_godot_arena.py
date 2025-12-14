@@ -219,6 +219,17 @@ class TestGodotArenaPublicAPI:
         assert '@login_required' not in public_api_code, \
             "Публичные API эндпоинты не должны использовать @login_required"
 
+    def test_pending_games_api_returns_player_armies(self):
+        """Проверка что API pending games всегда возвращает player_armies для ожидающих игр"""
+        import os
+        arena_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'web', 'arena.py')
+        with open(arena_path, 'r') as f:
+            content = f.read()
+
+        # Проверяем что player_armies добавляется для всех pending игр (не только с player1_army_id)
+        assert "if is_pending:" in content, "Должна быть проверка is_pending для добавления player_armies"
+        assert "result['player_armies'] = player_armies" in content, "player_armies должен добавляться в результат"
+
 
 class TestGodotArenaIntegration:
     """Интеграционные тесты для Godot Arena"""
