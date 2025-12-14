@@ -496,19 +496,29 @@ class SimpleBot:
             # Получаем армии пользователя через расу
             armies_text = ""
             with self.db.get_session() as session:
-                from db.models import UserRace, Army
-                user_races = session.query(UserRace).filter_by(game_user_id=game_user.id).all()
+                from db.models import UserRace, Army, ArmyUnit
+                user_races = session.query(UserRace).filter_by(user_id=game_user.id).all()
 
                 if user_races:
                     armies_text = "\n\n⚔️ Ваши армии:\n"
                     for user_race in user_races:
-                        race_name = user_race.game_race.name if user_race.game_race else "Неизвестная раса"
+                        race_name = user_race.race.name if user_race.race else "Неизвестная раса"
                         armies = session.query(Army).filter_by(user_race_id=user_race.id).all()
                         if armies:
                             for army in armies:
                                 army_type = "Рейтинговая" if army.army_type == "rated" else "Наемная"
-                                armies_text += f"\n🏰 {army.name} ({army_type})\n"
+                                armies_text += f"\n🏰 <b>{army.name}</b> ({army_type})\n"
                                 armies_text += f"  Раса: {race_name}\n"
+                                # Показываем состав армии
+                                army_units = session.query(ArmyUnit).filter_by(army_id=army.id).all()
+                                if army_units:
+                                    armies_text += "  Состав:\n"
+                                    for unit in army_units:
+                                        unit_name = unit.race_unit.name if unit.race_unit else "Неизвестный юнит"
+                                        level_icon = unit.unit_level.icon if unit.unit_level else ""
+                                        armies_text += f"    {level_icon} {unit_name} x{unit.count}\n"
+                                else:
+                                    armies_text += "  <i>Армия пуста</i>\n"
                         else:
                             armies_text += f"\n{race_name}: нет армий\n"
                 else:
@@ -643,19 +653,29 @@ class SimpleBot:
             # Получаем армии пользователя через расу
             armies_text = ""
             with self.db.get_session() as session:
-                from db.models import UserRace, Army
-                user_races = session.query(UserRace).filter_by(game_user_id=game_user.id).all()
+                from db.models import UserRace, Army, ArmyUnit
+                user_races = session.query(UserRace).filter_by(user_id=game_user.id).all()
 
                 if user_races:
                     armies_text = "\n\n⚔️ Ваши армии:\n"
                     for user_race in user_races:
-                        race_name = user_race.game_race.name if user_race.game_race else "Неизвестная раса"
+                        race_name = user_race.race.name if user_race.race else "Неизвестная раса"
                         armies = session.query(Army).filter_by(user_race_id=user_race.id).all()
                         if armies:
                             for army in armies:
                                 army_type = "Рейтинговая" if army.army_type == "rated" else "Наемная"
-                                armies_text += f"\n🏰 {army.name} ({army_type})\n"
+                                armies_text += f"\n🏰 <b>{army.name}</b> ({army_type})\n"
                                 armies_text += f"  Раса: {race_name}\n"
+                                # Показываем состав армии
+                                army_units = session.query(ArmyUnit).filter_by(army_id=army.id).all()
+                                if army_units:
+                                    armies_text += "  Состав:\n"
+                                    for unit in army_units:
+                                        unit_name = unit.race_unit.name if unit.race_unit else "Неизвестный юнит"
+                                        level_icon = unit.unit_level.icon if unit.unit_level else ""
+                                        armies_text += f"    {level_icon} {unit_name} x{unit.count}\n"
+                                else:
+                                    armies_text += "  <i>Армия пуста</i>\n"
                         else:
                             armies_text += f"\n{race_name}: нет армий\n"
                 else:
