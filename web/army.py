@@ -483,6 +483,59 @@ EDIT_USER_RACE_UNIT_TEMPLATE = '''
             border-radius: 8px;
             text-align: center;
         }
+        .final-stats-box {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            border-radius: 12px;
+            margin-bottom: 20px;
+            box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+        }
+        .final-stats-box h3 {
+            margin-top: 0;
+            margin-bottom: 15px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .final-stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+            gap: 10px;
+        }
+        .final-stat-item {
+            background: rgba(255,255,255,0.15);
+            padding: 10px;
+            border-radius: 8px;
+            text-align: center;
+        }
+        .final-stat-label {
+            font-size: 12px;
+            opacity: 0.9;
+            margin-bottom: 5px;
+        }
+        .final-stat-value {
+            font-size: 18px;
+            font-weight: bold;
+        }
+        .final-stat-formula {
+            font-size: 10px;
+            opacity: 0.7;
+            margin-top: 3px;
+        }
+        .boost-input-group {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+        .boost-input-group .base-value {
+            color: #666;
+            font-size: 13px;
+            white-space: nowrap;
+        }
+        .boost-input-group input {
+            width: 80px;
+        }
     </style>
 </head>
 <body>
@@ -502,6 +555,53 @@ EDIT_USER_RACE_UNIT_TEMPLATE = '''
             <a href="{{ url_for('army.edit_user_race', user_race_id=user_race_id) }}" class="btn btn-secondary">← Назад к расе</a>
         </p>
 
+        <!-- Итоговые характеристики -->
+        <div class="final-stats-box">
+            <h3>📊 Итоговые характеристики</h3>
+            <div class="final-stats-grid">
+                <div class="final-stat-item">
+                    <div class="final-stat-label">⚔️ Атака</div>
+                    <div class="final-stat-value" id="final-attack">{{ race_unit.attack + (user_unit.attack_boost if user_unit else 0) }}</div>
+                    <div class="final-stat-formula"><span id="base-attack">{{ race_unit.attack }}</span> + <span id="boost-attack-display">{{ user_unit.attack_boost if user_unit else 0 }}</span></div>
+                </div>
+                <div class="final-stat-item">
+                    <div class="final-stat-label">🛡️ Защита</div>
+                    <div class="final-stat-value" id="final-defense">{{ race_unit.defense + (user_unit.defense_boost if user_unit else 0) }}</div>
+                    <div class="final-stat-formula"><span id="base-defense">{{ race_unit.defense }}</span> + <span id="boost-defense-display">{{ user_unit.defense_boost if user_unit else 0 }}</span></div>
+                </div>
+                <div class="final-stat-item">
+                    <div class="final-stat-label">💥 Мин. урон</div>
+                    <div class="final-stat-value" id="final-min_damage">{{ race_unit.min_damage + (user_unit.min_damage_boost if user_unit else 0) }}</div>
+                    <div class="final-stat-formula"><span id="base-min_damage">{{ race_unit.min_damage }}</span> + <span id="boost-min_damage-display">{{ user_unit.min_damage_boost if user_unit else 0 }}</span></div>
+                </div>
+                <div class="final-stat-item">
+                    <div class="final-stat-label">💥 Макс. урон</div>
+                    <div class="final-stat-value" id="final-max_damage">{{ race_unit.max_damage + (user_unit.max_damage_boost if user_unit else 0) }}</div>
+                    <div class="final-stat-formula"><span id="base-max_damage">{{ race_unit.max_damage }}</span> + <span id="boost-max_damage-display">{{ user_unit.max_damage_boost if user_unit else 0 }}</span></div>
+                </div>
+                <div class="final-stat-item">
+                    <div class="final-stat-label">❤️ Здоровье</div>
+                    <div class="final-stat-value" id="final-health">{{ race_unit.health + (user_unit.health_boost if user_unit else 0) }}</div>
+                    <div class="final-stat-formula"><span id="base-health">{{ race_unit.health }}</span> + <span id="boost-health-display">{{ user_unit.health_boost if user_unit else 0 }}</span></div>
+                </div>
+                <div class="final-stat-item">
+                    <div class="final-stat-label">👟 Скорость</div>
+                    <div class="final-stat-value" id="final-speed">{{ race_unit.speed + (user_unit.speed_boost if user_unit else 0) }}</div>
+                    <div class="final-stat-formula"><span id="base-speed">{{ race_unit.speed }}</span> + <span id="boost-speed-display">{{ user_unit.speed_boost if user_unit else 0 }}</span></div>
+                </div>
+                <div class="final-stat-item">
+                    <div class="final-stat-label">⚡ Инициатива</div>
+                    <div class="final-stat-value" id="final-initiative">{{ race_unit.initiative + (user_unit.initiative_boost if user_unit else 0) }}</div>
+                    <div class="final-stat-formula"><span id="base-initiative">{{ race_unit.initiative }}</span> + <span id="boost-initiative-display">{{ user_unit.initiative_boost if user_unit else 0 }}</span></div>
+                </div>
+                <div class="final-stat-item">
+                    <div class="final-stat-label">🎯 Дальность</div>
+                    <div class="final-stat-value" id="final-range">{{ race_unit.range + (user_unit.range_boost if user_unit else 0) }}</div>
+                    <div class="final-stat-formula"><span id="base-range">{{ race_unit.range }}</span> + <span id="boost-range-display">{{ user_unit.range_boost if user_unit else 0 }}</span></div>
+                </div>
+            </div>
+        </div>
+
         {% if skins %}
         <form method="POST">
             <h2>🎨 Выберите скин</h2>
@@ -519,37 +619,65 @@ EDIT_USER_RACE_UNIT_TEMPLATE = '''
             </div>
 
             <div class="stats-form">
-                <h3>⚔️ Характеристики юнита</h3>
-                <p style="color: #666; margin-bottom: 15px;">Эти характеристики применяются к вашему юниту в бою</p>
+                <h3>📈 Бусты характеристик</h3>
+                <p style="color: #666; margin-bottom: 15px;">Бусты добавляются к базовым характеристикам юнита расы. По умолчанию все бусты равны 0.</p>
 
                 <div class="stats-grid">
                     <div class="form-group">
-                        <label>⚔️ Атака:</label>
-                        <input type="number" name="attack" class="form-control" value="{{ user_unit.attack if user_unit else 10 }}" min="1" max="100" required>
+                        <label>⚔️ Буст атаки:</label>
+                        <div class="boost-input-group">
+                            <span class="base-value">(база: {{ race_unit.attack }})</span>
+                            <input type="number" name="attack_boost" id="attack_boost" class="form-control" value="{{ user_unit.attack_boost if user_unit else 0 }}" min="-100" max="100" onchange="updateFinalStats()">
+                        </div>
                     </div>
                     <div class="form-group">
-                        <label>🛡️ Защита:</label>
-                        <input type="number" name="defense" class="form-control" value="{{ user_unit.defense if user_unit else 5 }}" min="0" max="100" required>
+                        <label>🛡️ Буст защиты:</label>
+                        <div class="boost-input-group">
+                            <span class="base-value">(база: {{ race_unit.defense }})</span>
+                            <input type="number" name="defense_boost" id="defense_boost" class="form-control" value="{{ user_unit.defense_boost if user_unit else 0 }}" min="-100" max="100" onchange="updateFinalStats()">
+                        </div>
                     </div>
                     <div class="form-group">
-                        <label>💥 Мин. урон:</label>
-                        <input type="number" name="min_damage" class="form-control" value="{{ user_unit.min_damage if user_unit else 1 }}" min="1" max="1000" required>
+                        <label>💥 Буст мин. урона:</label>
+                        <div class="boost-input-group">
+                            <span class="base-value">(база: {{ race_unit.min_damage }})</span>
+                            <input type="number" name="min_damage_boost" id="min_damage_boost" class="form-control" value="{{ user_unit.min_damage_boost if user_unit else 0 }}" min="-1000" max="1000" onchange="updateFinalStats()">
+                        </div>
                     </div>
                     <div class="form-group">
-                        <label>💥 Макс. урон:</label>
-                        <input type="number" name="max_damage" class="form-control" value="{{ user_unit.max_damage if user_unit else 3 }}" min="1" max="1000" required>
+                        <label>💥 Буст макс. урона:</label>
+                        <div class="boost-input-group">
+                            <span class="base-value">(база: {{ race_unit.max_damage }})</span>
+                            <input type="number" name="max_damage_boost" id="max_damage_boost" class="form-control" value="{{ user_unit.max_damage_boost if user_unit else 0 }}" min="-1000" max="1000" onchange="updateFinalStats()">
+                        </div>
                     </div>
                     <div class="form-group">
-                        <label>❤️ Здоровье:</label>
-                        <input type="number" name="health" class="form-control" value="{{ user_unit.health if user_unit else 10 }}" min="1" max="10000" required>
+                        <label>❤️ Буст здоровья:</label>
+                        <div class="boost-input-group">
+                            <span class="base-value">(база: {{ race_unit.health }})</span>
+                            <input type="number" name="health_boost" id="health_boost" class="form-control" value="{{ user_unit.health_boost if user_unit else 0 }}" min="-10000" max="10000" onchange="updateFinalStats()">
+                        </div>
                     </div>
                     <div class="form-group">
-                        <label>👟 Скорость:</label>
-                        <input type="number" name="speed" class="form-control" value="{{ user_unit.speed if user_unit else 4 }}" min="1" max="20" required>
+                        <label>👟 Буст скорости:</label>
+                        <div class="boost-input-group">
+                            <span class="base-value">(база: {{ race_unit.speed }})</span>
+                            <input type="number" name="speed_boost" id="speed_boost" class="form-control" value="{{ user_unit.speed_boost if user_unit else 0 }}" min="-20" max="20" onchange="updateFinalStats()">
+                        </div>
                     </div>
                     <div class="form-group">
-                        <label>⚡ Инициатива:</label>
-                        <input type="number" name="initiative" class="form-control" value="{{ user_unit.initiative if user_unit else 10 }}" min="1" max="100" required>
+                        <label>⚡ Буст инициативы:</label>
+                        <div class="boost-input-group">
+                            <span class="base-value">(база: {{ race_unit.initiative }})</span>
+                            <input type="number" name="initiative_boost" id="initiative_boost" class="form-control" value="{{ user_unit.initiative_boost if user_unit else 0 }}" min="-100" max="100" onchange="updateFinalStats()">
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label>🎯 Буст дальности:</label>
+                        <div class="boost-input-group">
+                            <span class="base-value">(база: {{ race_unit.range }})</span>
+                            <input type="number" name="range_boost" id="range_boost" class="form-control" value="{{ user_unit.range_boost if user_unit else 0 }}" min="-10" max="10" onchange="updateFinalStats()">
+                        </div>
                     </div>
                 </div>
             </div>
@@ -559,6 +687,39 @@ EDIT_USER_RACE_UNIT_TEMPLATE = '''
                 <a href="{{ url_for('army.edit_user_race', user_race_id=user_race_id) }}" class="btn btn-secondary">Отмена</a>
             </div>
         </form>
+
+        <script>
+            // Базовые значения из race_unit
+            const baseStats = {
+                attack: {{ race_unit.attack }},
+                defense: {{ race_unit.defense }},
+                min_damage: {{ race_unit.min_damage }},
+                max_damage: {{ race_unit.max_damage }},
+                health: {{ race_unit.health }},
+                speed: {{ race_unit.speed }},
+                initiative: {{ race_unit.initiative }},
+                range: {{ race_unit.range }}
+            };
+
+            function updateFinalStats() {
+                const stats = ['attack', 'defense', 'min_damage', 'max_damage', 'health', 'speed', 'initiative', 'range'];
+
+                stats.forEach(stat => {
+                    const boostInput = document.getElementById(stat + '_boost');
+                    const boost = parseInt(boostInput.value) || 0;
+                    const base = baseStats[stat];
+                    const final = base + boost;
+
+                    document.getElementById('final-' + stat).textContent = final;
+                    document.getElementById('boost-' + stat + '-display').textContent = boost >= 0 ? boost : boost;
+                });
+            }
+
+            // Привязываем обновление к изменению любого буста
+            document.querySelectorAll('input[name$="_boost"]').forEach(input => {
+                input.addEventListener('input', updateFinalStats);
+            });
+        </script>
         {% else %}
         <div class="no-skins-warning">
             <h3>⚠️ Нет доступных скинов</h3>
@@ -668,9 +829,42 @@ def create_user_race(race_id):
         # Создаём пользовательскую расу
         user_race = UserRace(user_id=game_user.id, race_id=race_id)
         session_db.add(user_race)
+        session_db.flush()  # Получаем ID user_race
+
+        # Получаем все юниты расы и создаём для каждого UserRaceUnit с дефолтным скином
+        race_units = session_db.query(RaceUnit).filter(RaceUnit.race_id == race_id).all()
+        units_created = 0
+
+        for race_unit in race_units:
+            # Ищем первый (дефолтный) скин для этого юнита расы
+            default_skin = session_db.query(RaceUnitSkin).filter(
+                RaceUnitSkin.race_unit_id == race_unit.id
+            ).first()
+
+            if default_skin:
+                # Создаём UserRaceUnit с дефолтным скином и нулевыми бустами
+                user_race_unit = UserRaceUnit(
+                    user_race_id=user_race.id,
+                    race_unit_id=race_unit.id,
+                    skin_id=default_skin.id,
+                    attack_boost=0,
+                    defense_boost=0,
+                    min_damage_boost=0,
+                    max_damage_boost=0,
+                    health_boost=0,
+                    speed_boost=0,
+                    initiative_boost=0,
+                    range_boost=0
+                )
+                session_db.add(user_race_unit)
+                units_created += 1
+
         session_db.commit()
 
-        flash(f'Раса "{race.name}" успешно выбрана! Теперь настройте юнитов.', 'success')
+        if units_created > 0:
+            flash(f'Раса "{race.name}" успешно выбрана! Создано {units_created} юнитов с дефолтными скинами.', 'success')
+        else:
+            flash(f'Раса "{race.name}" успешно выбрана! Настройте скины для юнитов.', 'success')
         return redirect(url_for('army.edit_user_race', user_race_id=user_race.id))
 
 
@@ -777,38 +971,41 @@ def edit_user_race_unit(user_race_id, race_unit_id):
                 flash('Выбранный скин недоступен', 'error')
                 return redirect(url_for('army.edit_user_race_unit', user_race_id=user_race_id, race_unit_id=race_unit_id))
 
-            # Получаем характеристики из формы
-            attack = int(request.form.get('attack', 10))
-            defense = int(request.form.get('defense', 5))
-            min_damage = int(request.form.get('min_damage', 1))
-            max_damage = int(request.form.get('max_damage', 3))
-            health = int(request.form.get('health', 10))
-            speed = int(request.form.get('speed', 4))
-            initiative = int(request.form.get('initiative', 10))
+            # Получаем бусты из формы (по умолчанию 0)
+            attack_boost = int(request.form.get('attack_boost', 0))
+            defense_boost = int(request.form.get('defense_boost', 0))
+            min_damage_boost = int(request.form.get('min_damage_boost', 0))
+            max_damage_boost = int(request.form.get('max_damage_boost', 0))
+            health_boost = int(request.form.get('health_boost', 0))
+            speed_boost = int(request.form.get('speed_boost', 0))
+            initiative_boost = int(request.form.get('initiative_boost', 0))
+            range_boost = int(request.form.get('range_boost', 0))
 
             if user_unit:
                 # Обновляем существующего юнита
                 user_unit.skin_id = skin_id
-                user_unit.attack = attack
-                user_unit.defense = defense
-                user_unit.min_damage = min_damage
-                user_unit.max_damage = max_damage
-                user_unit.health = health
-                user_unit.speed = speed
-                user_unit.initiative = initiative
+                user_unit.attack_boost = attack_boost
+                user_unit.defense_boost = defense_boost
+                user_unit.min_damage_boost = min_damage_boost
+                user_unit.max_damage_boost = max_damage_boost
+                user_unit.health_boost = health_boost
+                user_unit.speed_boost = speed_boost
+                user_unit.initiative_boost = initiative_boost
+                user_unit.range_boost = range_boost
             else:
                 # Создаём нового юнита
                 user_unit = UserRaceUnit(
                     user_race_id=user_race_id,
                     race_unit_id=race_unit_id,
                     skin_id=skin_id,
-                    attack=attack,
-                    defense=defense,
-                    min_damage=min_damage,
-                    max_damage=max_damage,
-                    health=health,
-                    speed=speed,
-                    initiative=initiative
+                    attack_boost=attack_boost,
+                    defense_boost=defense_boost,
+                    min_damage_boost=min_damage_boost,
+                    max_damage_boost=max_damage_boost,
+                    health_boost=health_boost,
+                    speed_boost=speed_boost,
+                    initiative_boost=initiative_boost,
+                    range_boost=range_boost
                 )
                 session_db.add(user_unit)
 
