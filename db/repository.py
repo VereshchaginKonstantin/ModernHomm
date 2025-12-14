@@ -16,7 +16,7 @@ from .models import (
     # Battle
     Game, GameStatus, Field, BattleUnit,
     # Army
-    GameRace, RaceUnit, Army, ArmyUnit, UserRace, UserRaceUnit
+    GameRace, RaceUnit, Army, ArmyUnit, UserRace, UserRaceUnit, UnitLevel
 )
 from decimal import Decimal
 
@@ -627,9 +627,79 @@ class Database:
             session.expunge_all()
             return result
 
+    def _calculate_army_value(self, session, army: Army) -> float:
+        """
+        Вычисление стоимости армии на основе юнитов.
+
+        Формула: sum of (unit_power * prestige_max * count) for each unit
+        unit_power = attack + defense + (min_damage + max_damage) / 2 + health / 10 + speed + initiative
+
+        Args:
+            session: DB session
+            army: Army object
+
+        Returns:
+            float: Total army value
+        """
+        total_value = 0.0
+
+        army_units = session.query(ArmyUnit).filter_by(army_id=army.id).all()
+        for army_unit in army_units:
+            if army_unit.count <= 0:
+                continue
+
+            race_unit = army_unit.race_unit
+            if not race_unit:
+                continue
+
+            # Базовая мощь юнита
+            unit_power = (
+                race_unit.attack +
+                race_unit.defense +
+                (race_unit.min_damage + race_unit.max_damage) / 2 +
+                race_unit.health / 10 +
+                race_unit.speed +
+                race_unit.initiative
+            )
+
+            # Множитель престижа (чем выше уровень, тем больше престиж)
+            prestige_multiplier = 1.0
+            if race_unit.unit_level:
+                prestige_multiplier = race_unit.unit_level.prestige_max / 100.0 if race_unit.unit_level.prestige_max else 1.0
+
+            # Стоимость стека = мощь × престиж × количество
+            stack_value = unit_power * prestige_multiplier * army_unit.count
+            total_value += stack_value
+
+        return total_value
+
+    def _get_player_max_army_value(self, session, player_id: int) -> float:
+        """
+        Получение максимальной стоимости армии игрока.
+
+        Args:
+            session: DB session
+            player_id: ID игрока
+
+        Returns:
+            float: Максимальная стоимость армии (или 0 если армий нет)
+        """
+        max_value = 0.0
+
+        user_races = session.query(UserRace).filter_by(user_id=player_id).all()
+        for user_race in user_races:
+            armies = session.query(Army).filter_by(user_race_id=user_race.id).all()
+            for army in armies:
+                army_value = self._calculate_army_value(session, army)
+                if army_value > max_value:
+                    max_value = army_value
+
+        return max_value
+
     def get_available_opponents_by_username(self, username: str, limit: int = 3, variance: float = 0.3) -> tuple:
         """
         Получение противников для пользователя по username.
+        Фильтрует противников по близкой стоимости армии (±variance).
         Используется в веб-интерфейсе арены.
 
         Args:
@@ -651,33 +721,44 @@ class Database:
             if not current_player:
                 return None, []
 
+            # Вычисляем стоимость армии текущего игрока
+            current_army_value = self._get_player_max_army_value(session, current_player.id)
+
             # Данные текущего игрока
             current_player_data = {
                 'id': current_player.id,
                 'telegram_id': current_player.telegram_id,
+                'username': current_player.username,
                 'name': current_player.username,
                 'balance': float(current_player.balance),
                 'wins': current_player.wins,
                 'losses': current_player.losses,
-                'army_value': 0  # Calculated when army is selected
+                'army_value': current_army_value
             }
+
+            # Диапазон допустимой стоимости армии противника
+            min_army_value = current_army_value * (1 - variance)
+            max_army_value = current_army_value * (1 + variance)
 
             # Получаем всех остальных игроков с армиями
             all_players = session.query(GameUser).filter(GameUser.id != current_player.id).all()
             candidates_with_value = []
 
             for player in all_players:
-                # Проверяем, есть ли у игрока армии через UserRace -> Army
-                user_races = session.query(UserRace).filter_by(user_id=player.id).all()
-                has_army = False
-                for user_race in user_races:
-                    armies = session.query(Army).filter_by(user_race_id=user_race.id).all()
-                    if armies:
-                        has_army = True
-                        break
+                # Получаем стоимость армии игрока
+                player_army_value = self._get_player_max_army_value(session, player.id)
 
-                if has_army:
-                    candidates_with_value.append((player, Decimal('0')))
+                # Пропускаем игроков без армии
+                if player_army_value == 0:
+                    continue
+
+                # Фильтруем по допустимому диапазону стоимости
+                # Если у текущего игрока нет армии, показываем всех
+                if current_army_value > 0:
+                    if player_army_value < min_army_value or player_army_value > max_army_value:
+                        continue
+
+                candidates_with_value.append((player, player_army_value))
 
             # Выбираем случайных кандидатов
             if len(candidates_with_value) > limit:
@@ -697,7 +778,7 @@ class Database:
                     'balance': float(player.balance),
                     'wins': player.wins,
                     'losses': player.losses,
-                    'army_value': float(army_value),
+                    'army_value': army_value,
                     'win_rate': win_rate
                 })
 

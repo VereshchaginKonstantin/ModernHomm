@@ -1027,24 +1027,31 @@ def api_game_detail(game_id):
 @arena_bp.route('/api/games/create', methods=['POST'])
 @login_required
 def api_create_game():
-    """Создать новую игру"""
+    """Создать новую игру с выбранной армией"""
     data = request.json
     player1_id = data.get('player1_id')
     player2_name = data.get('player2_name')
-    field_size = data.get('field_size', '5x5')
+    army_id = data.get('army_id')  # ID армии для боя
+    field_size = data.get('field_size', '7x7')
+
+    if not army_id:
+        return jsonify({'success': False, 'message': 'Выберите армию для боя'}), 400
 
     with db.get_session() as session_db:
         engine = GameEngine(session_db)
 
-        game, message = engine.create_game(player1_id, player2_name, field_size)
+        game, message = engine.create_game(player1_id, player2_name, army_id, field_size)
 
         if game:
-            # Отправляем уведомление противнику в Telegram
+            # Получаем информацию об армии для уведомления
             player1 = session_db.query(GameUser).filter_by(id=player1_id).first()
             player2 = session_db.query(GameUser).filter_by(id=game.player2_id).first()
+            army = session_db.query(Army).filter_by(id=army_id).first()
+            army_type_text = "⭐ Рейтинговый бой" if army and army.army_type == "rated" else "💰 Наемный бой"
 
             if player2 and player2.telegram_id:
                 challenger_name = (player1.username) if player1 else 'Неизвестный'
+                army_name = army.name if army else 'Неизвестная армия'
                 reply_markup = {
                     'inline_keyboard': [
                         [
@@ -1060,6 +1067,8 @@ def api_create_game():
                     player2.telegram_id,
                     f"⚔️ <b>Вызов на бой!</b>\n\n"
                     f"<b>{challenger_name}</b> вызывает вас на бой!\n"
+                    f"Армия: {army_name}\n"
+                    f"Тип: {army_type_text}\n"
                     f"Размер поля: {field_size}\n"
                     f"Игра #{game.id}",
                     reply_markup
@@ -1080,14 +1089,18 @@ def api_create_game():
 @arena_bp.route('/api/games/<int:game_id>/accept', methods=['POST'])
 @login_required
 def api_accept_game(game_id):
-    """Принять игру"""
+    """Принять игру с выбранной армией"""
     data = request.json
     player_id = data.get('player_id')
+    army_id = data.get('army_id')  # ID армии для боя
+
+    if not army_id:
+        return jsonify({'success': False, 'message': 'Выберите армию для боя'}), 400
 
     with db.get_session() as session_db:
         engine = GameEngine(session_db)
 
-        success, message = engine.accept_game(game_id, player_id)
+        success, message = engine.accept_game(game_id, player_id, army_id)
 
         if success:
             # Отправляем уведомление создателю игры о принятии
@@ -1095,8 +1108,10 @@ def api_accept_game(game_id):
             if game:
                 player1 = session_db.query(GameUser).filter_by(id=game.player1_id).first()
                 player2 = session_db.query(GameUser).filter_by(id=game.player2_id).first()
+                army = session_db.query(Army).filter_by(id=army_id).first()
                 if player1 and player1.telegram_id:
                     opponent_name = (player2.username) if player2 else 'Противник'
+                    army_name = army.name if army else 'Армия'
                     reply_markup = {
                         'inline_keyboard': [[
                             {'text': '🎮 К игре', 'callback_data': f'show_game:{game_id}'}
@@ -1104,7 +1119,9 @@ def api_accept_game(game_id):
                     }
                     send_telegram_notification(
                         player1.telegram_id,
-                        f"✅ <b>{opponent_name}</b> принял ваш вызов!\n\nИгра #{game_id} началась!",
+                        f"✅ <b>{opponent_name}</b> принял ваш вызов!\n"
+                        f"Армия противника: {army_name}\n\n"
+                        f"Игра #{game_id} началась!",
                         reply_markup
                     )
 
