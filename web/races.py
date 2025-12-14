@@ -4,16 +4,148 @@
 """
 
 import os
+import io
 import logging
+import random
+import requests
 from datetime import datetime
 from flask import Blueprint, render_template_string, request, jsonify, session, redirect, url_for, Response
 from functools import wraps
+from PIL import Image
 
 from db.models import Base, GameUser, GameRace, RaceUnit, RaceUnitSkin, UnitLevel, UserRace, UserRaceUnit, Army, ArmyUnit
 from db.repository import Database
 from web.templates import HEADER_TEMPLATE, BASE_STYLE, FOOTER_TEMPLATE
 
 logger = logging.getLogger(__name__)
+
+
+# Placeholder sprite colors for different unit levels
+LEVEL_COLORS = [
+    (139, 69, 19),    # Level 1 - Brown (peasant)
+    (34, 139, 34),    # Level 2 - Green (archer)
+    (255, 215, 0),    # Level 3 - Gold (griffin)
+    (192, 192, 192),  # Level 4 - Silver (swordsman)
+    (255, 255, 255),  # Level 5 - White (monk)
+    (70, 130, 180),   # Level 6 - Steel blue (cavalier)
+    (255, 223, 0),    # Level 7 - Bright gold (angel)
+]
+
+
+def generate_placeholder_sprite(level: int, size: int = 64) -> bytes:
+    """
+    Generate a placeholder sprite image for a unit level.
+    Creates a simple colored square with the level number.
+
+    Args:
+        level: Unit level (1-7)
+        size: Image size in pixels
+
+    Returns:
+        PNG image data as bytes
+    """
+    # Get color for this level
+    color = LEVEL_COLORS[min(level - 1, len(LEVEL_COLORS) - 1)]
+
+    # Create image
+    img = Image.new('RGBA', (size, size), (0, 0, 0, 0))
+
+    # Draw a simple unit shape (circle with level indicator)
+    from PIL import ImageDraw, ImageFont
+    draw = ImageDraw.Draw(img)
+
+    # Draw filled circle
+    margin = size // 8
+    draw.ellipse([margin, margin, size - margin, size - margin], fill=color, outline=(0, 0, 0))
+
+    # Draw level number in center
+    text = str(level)
+    try:
+        # Try to use a font if available
+        font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", size // 3)
+    except Exception:
+        font = ImageFont.load_default()
+
+    # Get text bounding box
+    bbox = draw.textbbox((0, 0), text, font=font)
+    text_width = bbox[2] - bbox[0]
+    text_height = bbox[3] - bbox[1]
+
+    # Center text
+    x = (size - text_width) // 2
+    y = (size - text_height) // 2 - margin // 2
+
+    # Draw text with outline for visibility
+    draw.text((x-1, y-1), text, fill=(0, 0, 0), font=font)
+    draw.text((x+1, y-1), text, fill=(0, 0, 0), font=font)
+    draw.text((x-1, y+1), text, fill=(0, 0, 0), font=font)
+    draw.text((x+1, y+1), text, fill=(0, 0, 0), font=font)
+    draw.text((x, y), text, fill=(255, 255, 255), font=font)
+
+    # Save to bytes
+    output = io.BytesIO()
+    img.save(output, format='PNG')
+    return output.getvalue()
+
+
+def try_download_kenney_asset() -> tuple:
+    """
+    Try to download a random sprite from Kenney.nl free assets.
+    Returns tuple of (image_data, mime_type) or (None, None) if failed.
+    """
+    # Kenney provides free game assets - we'll use their asset packs
+    # These are direct download links to some of their free sprite sheets
+    kenney_urls = [
+        "https://kenney.nl/content/3-assets/5-platformer-art-pixel-redux/sample.png",
+        "https://kenney.nl/content/3-assets/78-pixel-shmup/sample.png",
+        "https://kenney.nl/content/3-assets/60-tiny-dungeon/sample.png",
+    ]
+
+    for url in random.sample(kenney_urls, len(kenney_urls)):
+        try:
+            response = requests.get(url, timeout=5)
+            if response.status_code == 200 and response.content:
+                return response.content, 'image/png'
+        except Exception as e:
+            logger.warning(f"Failed to download from {url}: {e}")
+            continue
+
+    return None, None
+
+
+def create_default_skin_for_unit(race_unit, level: int) -> RaceUnitSkin:
+    """
+    Create a default skin with placeholder sprite for a race unit.
+
+    Args:
+        race_unit: RaceUnit instance
+        level: Unit level (1-7)
+
+    Returns:
+        RaceUnitSkin instance with placeholder image
+    """
+    # Generate placeholder sprite
+    image_data = generate_placeholder_sprite(level, size=64)
+
+    # Create skin with default values
+    skin = RaceUnitSkin(
+        race_unit_id=race_unit.id,
+        name=f"Базовый скин",
+        image_data=image_data,
+        image_mime_type='image/png',
+        description=f"Стандартный скин для юнита уровня {level}",
+        sprite_scale_x=1.0,
+        sprite_scale_y=1.0,
+        sprite_offset_x=0,
+        sprite_offset_y=0,
+        sprite_rotation=0,
+        sprite_frame_count=1,
+        sprite_fps=10,
+        sprite_columns=1,
+        sprite_rows=1
+    )
+
+    return skin
 
 # Blueprint для рас
 races_bp = Blueprint('races', __name__, url_prefix='/admin/races')
@@ -424,6 +556,11 @@ def create_race():
                     is_kamikaze=False
                 )
                 session_db.add(unit)
+                session_db.flush()  # Получаем ID юнита для создания скина
+
+                # Создаём дефолтный скин для каждого юнита
+                default_skin = create_default_skin_for_unit(unit, level)
+                session_db.add(default_skin)
 
             session_db.commit()
             return redirect(url_for('races.edit_race', race_id=race.id))
