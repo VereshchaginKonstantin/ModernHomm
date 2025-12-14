@@ -239,3 +239,158 @@ class TestUnitLevels:
         levels = db_session.query(UnitLevel).order_by(UnitLevel.level).all()
         for i, level in enumerate(levels, start=1):
             assert level.level == i
+
+
+class TestRaceUnitDefaultStats:
+    """Tests for RaceUnit default stats values."""
+
+    def test_race_unit_has_all_combat_stats(self):
+        """Test that RaceUnit model has all combat stat fields."""
+        unit = RaceUnit(
+            race_id=1,
+            unit_level_id=1,
+            name="Test Unit",
+            attack=10,
+            defense=5,
+            min_damage=2,
+            max_damage=4,
+            health=20,
+            speed=5,
+            initiative=10,
+            range=1,
+            luck=0.1,
+            crit_chance=0.05,
+            dodge_chance=0.08,
+            counterattack_chance=0.2
+        )
+        assert unit.attack == 10
+        assert unit.defense == 5
+        assert unit.min_damage == 2
+        assert unit.max_damage == 4
+        assert unit.health == 20
+        assert unit.speed == 5
+        assert unit.initiative == 10
+        assert unit.range == 1
+        assert float(unit.luck) == 0.1
+        assert float(unit.crit_chance) == 0.05
+        assert float(unit.dodge_chance) == 0.08
+        assert float(unit.counterattack_chance) == 0.2
+
+    def test_race_unit_has_special_abilities(self):
+        """Test that RaceUnit model has special ability fields."""
+        unit = RaceUnit(
+            race_id=1,
+            unit_level_id=1,
+            name="Test Unit",
+            is_flying=True,
+            is_kamikaze=False,
+            regeneration_health=5,
+            poison_damage=3,
+            poison_turns=2,
+            poison_immunity=True
+        )
+        assert unit.is_flying is True
+        assert unit.is_kamikaze is False
+        assert unit.regeneration_health == 5
+        assert unit.poison_damage == 3
+        assert unit.poison_turns == 2
+        assert unit.poison_immunity is True
+
+    def test_race_unit_default_values(self):
+        """Test that RaceUnit has sensible default values."""
+        unit = RaceUnit(
+            race_id=1,
+            unit_level_id=1,
+            name="Test Unit",
+            is_flying=False,
+            is_kamikaze=False,
+            attack=10,
+            defense=5,
+            regeneration_health=0,
+            poison_damage=0,
+            poison_turns=0,
+            poison_immunity=False
+        )
+        # Check that values are set correctly
+        assert unit.is_flying is False
+        assert unit.is_kamikaze is False
+        assert unit.attack == 10
+        assert unit.defense == 5
+        assert unit.regeneration_health == 0
+        assert unit.poison_damage == 0
+        assert unit.poison_turns == 0
+        assert unit.poison_immunity is False
+
+    def test_level1_unit_stats_are_weakest(self):
+        """Test that level 1 unit has lowest stats."""
+        # Expected stats for level 1 (Крестьянин)
+        level1_stats = {
+            'attack': 2, 'defense': 1, 'min_damage': 1, 'max_damage': 2,
+            'health': 3, 'speed': 4, 'initiative': 8, 'range': 1
+        }
+        unit = RaceUnit(
+            race_id=1,
+            unit_level_id=1,
+            name="Крестьянин",
+            **level1_stats
+        )
+        assert unit.attack == 2
+        assert unit.defense == 1
+        assert unit.health == 3
+        assert unit.min_damage == 1
+        assert unit.max_damage == 2
+
+    def test_level7_unit_stats_are_strongest(self):
+        """Test that level 7 unit has highest stats."""
+        # Expected stats for level 7 (Ангел)
+        level7_stats = {
+            'attack': 25, 'defense': 25, 'min_damage': 15, 'max_damage': 30,
+            'health': 200, 'speed': 10, 'initiative': 18, 'range': 1,
+            'is_flying': True, 'regeneration_health': 10, 'poison_immunity': True
+        }
+        unit = RaceUnit(
+            race_id=1,
+            unit_level_id=7,
+            name="Ангел",
+            **level7_stats
+        )
+        assert unit.attack == 25
+        assert unit.defense == 25
+        assert unit.health == 200
+        assert unit.min_damage == 15
+        assert unit.max_damage == 30
+        assert unit.is_flying is True
+        assert unit.regeneration_health == 10
+        assert unit.poison_immunity is True
+
+    def test_archer_has_high_range(self):
+        """Test that archer (level 2) has ranged attack."""
+        unit = RaceUnit(
+            race_id=1,
+            unit_level_id=2,
+            name="Лучник",
+            range=6
+        )
+        assert unit.range == 6
+
+    def test_griffin_is_flying(self):
+        """Test that griffin (level 3) is a flying unit."""
+        unit = RaceUnit(
+            race_id=1,
+            unit_level_id=3,
+            name="Грифон",
+            is_flying=True
+        )
+        assert unit.is_flying is True
+
+    def test_monk_has_regeneration_and_poison_immunity(self):
+        """Test that monk (level 5) has regeneration and poison immunity."""
+        unit = RaceUnit(
+            race_id=1,
+            unit_level_id=5,
+            name="Монах",
+            regeneration_health=5,
+            poison_immunity=True
+        )
+        assert unit.regeneration_health == 5
+        assert unit.poison_immunity is True

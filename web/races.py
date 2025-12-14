@@ -645,18 +645,91 @@ def create_race():
             unit_levels_by_level = {ul.level: ul for ul in unit_levels}
 
             # Автоматически создаём 7 юнитов (по одному на каждый уровень)
-            default_unit_names = [
-                'Крестьянин', 'Лучник', 'Грифон', 'Мечник',
-                'Монах', 'Всадник', 'Ангел'
+            # Дефолтные характеристики юнитов по уровням (прототипные значения)
+            default_units = [
+                # Level 1 - Крестьянин (слабый, дешёвый)
+                {
+                    'name': 'Крестьянин', 'is_flying': False, 'is_kamikaze': False,
+                    'attack': 2, 'defense': 1, 'min_damage': 1, 'max_damage': 2,
+                    'health': 3, 'speed': 4, 'initiative': 8, 'range': 1,
+                    'luck': 0.0, 'crit_chance': 0.02, 'dodge_chance': 0.05, 'counterattack_chance': 0.1,
+                    'regeneration_health': 0, 'poison_damage': 0, 'poison_turns': 0, 'poison_immunity': False
+                },
+                # Level 2 - Лучник (дальнобойный)
+                {
+                    'name': 'Лучник', 'is_flying': False, 'is_kamikaze': False,
+                    'attack': 5, 'defense': 3, 'min_damage': 2, 'max_damage': 4,
+                    'health': 8, 'speed': 4, 'initiative': 9, 'range': 6,
+                    'luck': 0.05, 'crit_chance': 0.05, 'dodge_chance': 0.08, 'counterattack_chance': 0.0,
+                    'regeneration_health': 0, 'poison_damage': 0, 'poison_turns': 0, 'poison_immunity': False
+                },
+                # Level 3 - Грифон (летающий)
+                {
+                    'name': 'Грифон', 'is_flying': True, 'is_kamikaze': False,
+                    'attack': 8, 'defense': 6, 'min_damage': 3, 'max_damage': 6,
+                    'health': 25, 'speed': 6, 'initiative': 12, 'range': 1,
+                    'luck': 0.1, 'crit_chance': 0.08, 'dodge_chance': 0.1, 'counterattack_chance': 0.5,
+                    'regeneration_health': 0, 'poison_damage': 0, 'poison_turns': 0, 'poison_immunity': False
+                },
+                # Level 4 - Мечник (танк)
+                {
+                    'name': 'Мечник', 'is_flying': False, 'is_kamikaze': False,
+                    'attack': 10, 'defense': 12, 'min_damage': 4, 'max_damage': 8,
+                    'health': 40, 'speed': 4, 'initiative': 10, 'range': 1,
+                    'luck': 0.05, 'crit_chance': 0.05, 'dodge_chance': 0.05, 'counterattack_chance': 0.3,
+                    'regeneration_health': 0, 'poison_damage': 0, 'poison_turns': 0, 'poison_immunity': False
+                },
+                # Level 5 - Монах (регенерация, хилер)
+                {
+                    'name': 'Монах', 'is_flying': False, 'is_kamikaze': False,
+                    'attack': 12, 'defense': 8, 'min_damage': 5, 'max_damage': 10,
+                    'health': 35, 'speed': 5, 'initiative': 11, 'range': 1,
+                    'luck': 0.15, 'crit_chance': 0.1, 'dodge_chance': 0.08, 'counterattack_chance': 0.2,
+                    'regeneration_health': 5, 'poison_damage': 0, 'poison_turns': 0, 'poison_immunity': True
+                },
+                # Level 6 - Всадник (быстрый, мощный)
+                {
+                    'name': 'Всадник', 'is_flying': False, 'is_kamikaze': False,
+                    'attack': 15, 'defense': 14, 'min_damage': 8, 'max_damage': 15,
+                    'health': 80, 'speed': 7, 'initiative': 14, 'range': 1,
+                    'luck': 0.1, 'crit_chance': 0.12, 'dodge_chance': 0.1, 'counterattack_chance': 0.4,
+                    'regeneration_health': 0, 'poison_damage': 0, 'poison_turns': 0, 'poison_immunity': False
+                },
+                # Level 7 - Ангел (топ юнит, летающий, регенерация)
+                {
+                    'name': 'Ангел', 'is_flying': True, 'is_kamikaze': False,
+                    'attack': 25, 'defense': 25, 'min_damage': 15, 'max_damage': 30,
+                    'health': 200, 'speed': 10, 'initiative': 18, 'range': 1,
+                    'luck': 0.2, 'crit_chance': 0.15, 'dodge_chance': 0.15, 'counterattack_chance': 0.5,
+                    'regeneration_health': 10, 'poison_damage': 0, 'poison_turns': 0, 'poison_immunity': True
+                },
             ]
+
             for level in range(1, 8):
                 unit_level = unit_levels_by_level.get(level)
+                unit_data = default_units[level - 1]
                 unit = RaceUnit(
                     race_id=race.id,
                     unit_level_id=unit_level.id if unit_level else None,
-                    name=default_unit_names[level - 1],
-                    is_flying=False,
-                    is_kamikaze=False
+                    name=unit_data['name'],
+                    is_flying=unit_data['is_flying'],
+                    is_kamikaze=unit_data['is_kamikaze'],
+                    attack=unit_data['attack'],
+                    defense=unit_data['defense'],
+                    min_damage=unit_data['min_damage'],
+                    max_damage=unit_data['max_damage'],
+                    health=unit_data['health'],
+                    speed=unit_data['speed'],
+                    initiative=unit_data['initiative'],
+                    range=unit_data['range'],
+                    luck=unit_data['luck'],
+                    crit_chance=unit_data['crit_chance'],
+                    dodge_chance=unit_data['dodge_chance'],
+                    counterattack_chance=unit_data['counterattack_chance'],
+                    regeneration_health=unit_data['regeneration_health'],
+                    poison_damage=unit_data['poison_damage'],
+                    poison_turns=unit_data['poison_turns'],
+                    poison_immunity=unit_data['poison_immunity']
                 )
                 session_db.add(unit)
                 session_db.flush()  # Получаем ID юнита для создания скина
