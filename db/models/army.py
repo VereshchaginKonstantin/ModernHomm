@@ -159,6 +159,26 @@ class RaceUnitSkin(Base):
     image_data = Column(LargeBinary, nullable=True)  # Бинарные данные изображения
     image_mime_type = Column(String(50), nullable=True)  # MIME тип изображения (image/png, image/jpeg)
     description = Column(Text, nullable=True)  # Описание скина
+
+    # Параметры Sprite/TextureRect для Godot
+    sprite_scale_x = Column(Numeric(10, 4), nullable=False, default=1.0)  # Масштаб по X (1.0 = 100%)
+    sprite_scale_y = Column(Numeric(10, 4), nullable=False, default=1.0)  # Масштаб по Y (1.0 = 100%)
+    sprite_offset_x = Column(Integer, nullable=False, default=0)  # Смещение по X в пикселях
+    sprite_offset_y = Column(Integer, nullable=False, default=0)  # Смещение по Y в пикселях
+    sprite_rotation = Column(Numeric(10, 4), nullable=False, default=0)  # Вращение в градусах
+
+    # Анимированный спрайт (для AnimatedSprite2D в Godot)
+    sprite_frames_data = Column(LargeBinary, nullable=True)  # Спрайт-лист или анимированный спрайт (PNG)
+    sprite_frames_mime_type = Column(String(50), nullable=True)  # MIME тип спрайт-листа
+    sprite_frame_count = Column(Integer, nullable=False, default=1)  # Количество кадров анимации
+    sprite_fps = Column(Integer, nullable=False, default=10)  # Кадров в секунду для анимации
+    sprite_columns = Column(Integer, nullable=False, default=1)  # Количество столбцов в спрайт-листе
+    sprite_rows = Column(Integer, nullable=False, default=1)  # Количество строк в спрайт-листе
+
+    # Путь к файлам в Godot assets (генерируется при экспорте)
+    godot_texture_path = Column(String(512), nullable=True)  # Путь к текстуре в Godot (res://assets/...)
+    godot_sprite_path = Column(String(512), nullable=True)  # Путь к спрайту в Godot (res://assets/...)
+
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
     # Связь

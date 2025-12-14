@@ -515,13 +515,21 @@ ADD_SKIN_TEMPLATE = """
     <style>
         .form-group { margin-bottom: 15px; }
         .form-group label { display: block; margin-bottom: 5px; color: #ffd700; }
-        .form-group input, .form-group textarea { width: 100%; padding: 10px; border: 1px solid #444; background: #2a2a2a; color: white; border-radius: 5px; }
+        .form-group input, .form-group textarea, .form-group select { width: 100%; padding: 10px; border: 1px solid #444; background: #2a2a2a; color: white; border-radius: 5px; }
         .form-group input[type="file"] { padding: 8px; }
+        .form-group input[type="number"] { width: 120px; }
         .form-group textarea { min-height: 80px; }
         .btn { padding: 10px 20px; border: none; border-radius: 5px; cursor: pointer; text-decoration: none; display: inline-block; margin-right: 10px; }
         .btn-success { background: #2ecc71; color: white; }
         .btn-secondary { background: #666; color: white; }
         .image-preview { max-width: 200px; max-height: 200px; margin-top: 10px; border: 2px solid #444; border-radius: 5px; }
+        .form-row { display: grid; grid-template-columns: repeat(2, 1fr); gap: 15px; }
+        .section { background: #2a2a2a; padding: 15px; border-radius: 8px; margin-bottom: 20px; }
+        .section h3 { color: #3498db; margin-top: 0; margin-bottom: 15px; font-size: 16px; }
+        .help-text { color: #888; font-size: 12px; margin-top: 5px; line-height: 1.4; }
+        .info-box { background: #1a3a5c; border-left: 4px solid #3498db; padding: 12px 15px; margin-bottom: 20px; border-radius: 0 5px 5px 0; }
+        .info-box h4 { color: #3498db; margin: 0 0 8px 0; font-size: 14px; }
+        .info-box p { color: #aaa; margin: 0; font-size: 13px; line-height: 1.5; }
     </style>
 </head>
 <body>
@@ -531,20 +539,121 @@ ADD_SKIN_TEMPLATE = """
         <p style="color: #aaa;">Раса: {{ race.name }} | Уровень: {{ unit.unit_level.level if unit.unit_level else '?' }}</p>
 
         <form method="POST" enctype="multipart/form-data">
-            <div class="form-group">
-                <label>Название скина</label>
-                <input type="text" name="name" required placeholder="Базовый скин">
+            <div class="section">
+                <h3>Основные данные</h3>
+                <div class="form-group">
+                    <label>Название скина</label>
+                    <input type="text" name="name" required placeholder="Базовый скин">
+                </div>
+
+                <div class="form-group">
+                    <label>Изображение скина (PNG, JPG до 5MB)</label>
+                    <input type="file" name="image" accept="image/png,image/jpeg,image/gif,image/webp" onchange="previewImage(this)">
+                    <img id="imagePreview" class="image-preview" style="display: none;">
+                </div>
+
+                <div class="form-group">
+                    <label>Описание</label>
+                    <textarea name="description" placeholder="Описание скина (необязательно)"></textarea>
+                </div>
             </div>
 
-            <div class="form-group">
-                <label>Изображение скина (PNG, JPG до 5MB)</label>
-                <input type="file" name="image" accept="image/png,image/jpeg,image/gif,image/webp" onchange="previewImage(this)">
-                <img id="imagePreview" class="image-preview" style="display: none;">
+            <div class="section">
+                <h3>Параметры спрайта для Godot</h3>
+
+                <div class="info-box">
+                    <h4>Для чего нужны эти параметры?</h4>
+                    <p>Эти настройки определяют, как изображение скина будет отображаться в игровом клиенте Godot.
+                    <br>• <b>Масштаб</b> — размер спрайта относительно оригинала (1.0 = 100%)
+                    <br>• <b>Смещение</b> — позиция спрайта относительно центра клетки (в пикселях)
+                    <br>• <b>Поворот</b> — угол поворота спрайта (в градусах)
+                    <br>Для анимированных юнитов загрузите спрайт-лист и укажите количество кадров.</p>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Масштаб X</label>
+                        <input type="number" name="sprite_scale_x" value="1.0" step="0.1" min="0.1" max="10">
+                        <p class="help-text">Масштаб по горизонтали (1.0 = оригинальный размер)</p>
+                    </div>
+                    <div class="form-group">
+                        <label>Масштаб Y</label>
+                        <input type="number" name="sprite_scale_y" value="1.0" step="0.1" min="0.1" max="10">
+                        <p class="help-text">Масштаб по вертикали</p>
+                    </div>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Смещение X (пиксели)</label>
+                        <input type="number" name="sprite_offset_x" value="0">
+                        <p class="help-text">Смещение от центра клетки по горизонтали</p>
+                    </div>
+                    <div class="form-group">
+                        <label>Смещение Y (пиксели)</label>
+                        <input type="number" name="sprite_offset_y" value="0">
+                        <p class="help-text">Смещение от центра клетки по вертикали</p>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label>Поворот (градусы)</label>
+                    <input type="number" name="sprite_rotation" value="0" step="1" min="-360" max="360" style="width: 120px;">
+                    <p class="help-text">Угол поворота спрайта (0-360 градусов)</p>
+                </div>
             </div>
 
-            <div class="form-group">
-                <label>Описание</label>
-                <textarea name="description" placeholder="Описание скина (необязательно)"></textarea>
+            <div class="section">
+                <h3>Анимированный спрайт (опционально)</h3>
+
+                <div class="info-box">
+                    <h4>Спрайт-листы для анимации</h4>
+                    <p>Если вы загружаете спрайт-лист (изображение с несколькими кадрами анимации),
+                    укажите количество кадров, колонок и строк в листе. Godot использует эти данные для
+                    создания AnimatedSprite2D.</p>
+                </div>
+
+                <div class="form-group">
+                    <label>Спрайт-лист анимации (PNG)</label>
+                    <input type="file" name="sprite_frames" accept="image/png">
+                    <p class="help-text">Загрузите спрайт-лист с кадрами анимации</p>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Количество кадров</label>
+                        <input type="number" name="sprite_frame_count" value="1" min="1" max="100">
+                    </div>
+                    <div class="form-group">
+                        <label>Скорость (FPS)</label>
+                        <input type="number" name="sprite_fps" value="10" min="1" max="60">
+                    </div>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Колонок в спрайт-листе</label>
+                        <input type="number" name="sprite_columns" value="1" min="1" max="20">
+                    </div>
+                    <div class="form-group">
+                        <label>Строк в спрайт-листе</label>
+                        <input type="number" name="sprite_rows" value="1" min="1" max="20">
+                    </div>
+                </div>
+            </div>
+
+            <div class="section">
+                <h3>Пути в Godot проекте (опционально)</h3>
+                <div class="form-group">
+                    <label>Путь к текстуре в Godot</label>
+                    <input type="text" name="godot_texture_path" placeholder="res://assets/units/knight.png">
+                    <p class="help-text">Путь к файлу текстуры в проекте Godot</p>
+                </div>
+                <div class="form-group">
+                    <label>Путь к спрайту в Godot</label>
+                    <input type="text" name="godot_sprite_path" placeholder="res://scenes/units/knight.tscn">
+                    <p class="help-text">Путь к сцене спрайта в проекте Godot</p>
+                </div>
             </div>
 
             <button type="submit" class="btn btn-success">Создать</button>
@@ -598,12 +707,43 @@ def add_unit_skin(race_id, unit_id):
                         image_data = file.read()
                         image_mime_type = file.content_type or 'image/png'
 
+            # Обработка спрайт-листа
+            sprite_frames_data = None
+            sprite_frames_mime_type = None
+
+            if 'sprite_frames' in request.files:
+                file = request.files['sprite_frames']
+                if file and file.filename:
+                    file.seek(0, 2)
+                    size = file.tell()
+                    file.seek(0)
+
+                    if size <= 10 * 1024 * 1024:  # 10MB для спрайт-листов
+                        sprite_frames_data = file.read()
+                        sprite_frames_mime_type = file.content_type or 'image/png'
+
             skin = RaceUnitSkin(
                 race_unit_id=unit_id,
                 name=request.form.get('name'),
                 image_data=image_data,
                 image_mime_type=image_mime_type,
-                description=request.form.get('description') or None
+                description=request.form.get('description') or None,
+                # Параметры спрайта
+                sprite_scale_x=float(request.form.get('sprite_scale_x', 1.0) or 1.0),
+                sprite_scale_y=float(request.form.get('sprite_scale_y', 1.0) or 1.0),
+                sprite_offset_x=int(request.form.get('sprite_offset_x', 0) or 0),
+                sprite_offset_y=int(request.form.get('sprite_offset_y', 0) or 0),
+                sprite_rotation=float(request.form.get('sprite_rotation', 0) or 0),
+                # Анимация
+                sprite_frames_data=sprite_frames_data,
+                sprite_frames_mime_type=sprite_frames_mime_type,
+                sprite_frame_count=int(request.form.get('sprite_frame_count', 1) or 1),
+                sprite_fps=int(request.form.get('sprite_fps', 10) or 10),
+                sprite_columns=int(request.form.get('sprite_columns', 1) or 1),
+                sprite_rows=int(request.form.get('sprite_rows', 1) or 1),
+                # Godot пути
+                godot_texture_path=request.form.get('godot_texture_path') or None,
+                godot_sprite_path=request.form.get('godot_sprite_path') or None
             )
             session_db.add(skin)
             session_db.commit()
@@ -624,6 +764,7 @@ EDIT_SKIN_TEMPLATE = """
         .form-group label { display: block; margin-bottom: 5px; color: #ffd700; }
         .form-group input, .form-group textarea { width: 100%; padding: 10px; border: 1px solid #444; background: #2a2a2a; color: white; border-radius: 5px; }
         .form-group input[type="file"] { padding: 8px; }
+        .form-group input[type="number"] { width: 120px; }
         .form-group textarea { min-height: 80px; }
         .btn { padding: 10px 20px; border: none; border-radius: 5px; cursor: pointer; text-decoration: none; display: inline-block; margin-right: 10px; }
         .btn-success { background: #2ecc71; color: white; }
@@ -631,6 +772,13 @@ EDIT_SKIN_TEMPLATE = """
         .btn-danger { background: #e74c3c; color: white; }
         .current-image { max-width: 200px; max-height: 200px; margin: 10px 0; border: 2px solid #444; border-radius: 5px; }
         .image-preview { max-width: 200px; max-height: 200px; margin-top: 10px; border: 2px solid #444; border-radius: 5px; }
+        .form-row { display: grid; grid-template-columns: repeat(2, 1fr); gap: 15px; }
+        .section { background: #2a2a2a; padding: 15px; border-radius: 8px; margin-bottom: 20px; }
+        .section h3 { color: #3498db; margin-top: 0; margin-bottom: 15px; font-size: 16px; }
+        .help-text { color: #888; font-size: 12px; margin-top: 5px; line-height: 1.4; }
+        .info-box { background: #1a3a5c; border-left: 4px solid #3498db; padding: 12px 15px; margin-bottom: 20px; border-radius: 0 5px 5px 0; }
+        .info-box h4 { color: #3498db; margin: 0 0 8px 0; font-size: 14px; }
+        .info-box p { color: #aaa; margin: 0; font-size: 13px; line-height: 1.5; }
     </style>
 </head>
 <body>
@@ -640,35 +788,149 @@ EDIT_SKIN_TEMPLATE = """
         <p style="color: #aaa;">Юнит: {{ unit.unit_level.icon if unit.unit_level else '🎮' }} {{ unit.name }} | Раса: {{ race.name }}</p>
 
         <form method="POST" enctype="multipart/form-data">
-            <div class="form-group">
-                <label>Название скина</label>
-                <input type="text" name="name" required value="{{ skin.name }}">
-            </div>
-
-            <div class="form-group">
-                <label>Текущее изображение</label>
-                {% if skin.image_data %}
-                <div>
-                    <img src="{{ url_for('races.skin_image', skin_id=skin.id) }}" class="current-image" alt="Текущий скин">
-                    <br>
-                    <label style="color: #aaa;">
-                        <input type="checkbox" name="delete_image"> Удалить текущее изображение
-                    </label>
+            <div class="section">
+                <h3>Основные данные</h3>
+                <div class="form-group">
+                    <label>Название скина</label>
+                    <input type="text" name="name" required value="{{ skin.name }}">
                 </div>
-                {% else %}
-                <p style="color: #666;">Изображение не загружено</p>
+
+                <div class="form-group">
+                    <label>Текущее изображение</label>
+                    {% if skin.image_data %}
+                    <div>
+                        <img src="{{ url_for('races.skin_image', skin_id=skin.id) }}" class="current-image" alt="Текущий скин">
+                        <br>
+                        <label style="color: #aaa;">
+                            <input type="checkbox" name="delete_image"> Удалить текущее изображение
+                        </label>
+                    </div>
+                    {% else %}
+                    <p style="color: #666;">Изображение не загружено</p>
+                    {% endif %}
+                </div>
+
+                <div class="form-group">
+                    <label>Загрузить новое изображение (PNG, JPG до 5MB)</label>
+                    <input type="file" name="image" accept="image/png,image/jpeg,image/gif,image/webp" onchange="previewImage(this)">
+                    <img id="imagePreview" class="image-preview" style="display: none;">
+                </div>
+
+                <div class="form-group">
+                    <label>Описание</label>
+                    <textarea name="description">{{ skin.description or '' }}</textarea>
+                </div>
+            </div>
+
+            <div class="section">
+                <h3>Параметры спрайта для Godot</h3>
+
+                <div class="info-box">
+                    <h4>Для чего нужны эти параметры?</h4>
+                    <p>Эти настройки определяют, как изображение скина будет отображаться в игровом клиенте Godot.
+                    <br>• <b>Масштаб</b> — размер спрайта относительно оригинала (1.0 = 100%)
+                    <br>• <b>Смещение</b> — позиция спрайта относительно центра клетки (в пикселях)
+                    <br>• <b>Поворот</b> — угол поворота спрайта (в градусах)
+                    <br>Для анимированных юнитов загрузите спрайт-лист и укажите количество кадров.</p>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Масштаб X</label>
+                        <input type="number" name="sprite_scale_x" value="{{ skin.sprite_scale_x or 1.0 }}" step="0.1" min="0.1" max="10">
+                        <p class="help-text">Масштаб по горизонтали (1.0 = оригинальный размер)</p>
+                    </div>
+                    <div class="form-group">
+                        <label>Масштаб Y</label>
+                        <input type="number" name="sprite_scale_y" value="{{ skin.sprite_scale_y or 1.0 }}" step="0.1" min="0.1" max="10">
+                        <p class="help-text">Масштаб по вертикали</p>
+                    </div>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Смещение X (пиксели)</label>
+                        <input type="number" name="sprite_offset_x" value="{{ skin.sprite_offset_x or 0 }}">
+                        <p class="help-text">Смещение от центра клетки по горизонтали</p>
+                    </div>
+                    <div class="form-group">
+                        <label>Смещение Y (пиксели)</label>
+                        <input type="number" name="sprite_offset_y" value="{{ skin.sprite_offset_y or 0 }}">
+                        <p class="help-text">Смещение от центра клетки по вертикали</p>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label>Поворот (градусы)</label>
+                    <input type="number" name="sprite_rotation" value="{{ skin.sprite_rotation or 0 }}" step="1" min="-360" max="360" style="width: 120px;">
+                    <p class="help-text">Угол поворота спрайта (0-360 градусов)</p>
+                </div>
+            </div>
+
+            <div class="section">
+                <h3>Анимированный спрайт (опционально)</h3>
+
+                <div class="info-box">
+                    <h4>Спрайт-листы для анимации</h4>
+                    <p>Если вы загружаете спрайт-лист (изображение с несколькими кадрами анимации),
+                    укажите количество кадров, колонок и строк в листе. Godot использует эти данные для
+                    создания AnimatedSprite2D.</p>
+                </div>
+
+                {% if skin.sprite_frames_data %}
+                <div class="form-group">
+                    <label>Текущий спрайт-лист</label>
+                    <div>
+                        <img src="{{ url_for('races.skin_sprite_frames', skin_id=skin.id) }}" class="current-image" alt="Спрайт-лист">
+                        <br>
+                        <label style="color: #aaa;">
+                            <input type="checkbox" name="delete_sprite_frames"> Удалить спрайт-лист
+                        </label>
+                    </div>
+                </div>
                 {% endif %}
+
+                <div class="form-group">
+                    <label>{% if skin.sprite_frames_data %}Загрузить новый{% else %}Загрузить{% endif %} спрайт-лист анимации (PNG)</label>
+                    <input type="file" name="sprite_frames" accept="image/png">
+                    <p class="help-text">Загрузите спрайт-лист с кадрами анимации</p>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Количество кадров</label>
+                        <input type="number" name="sprite_frame_count" value="{{ skin.sprite_frame_count or 1 }}" min="1" max="100">
+                    </div>
+                    <div class="form-group">
+                        <label>Скорость (FPS)</label>
+                        <input type="number" name="sprite_fps" value="{{ skin.sprite_fps or 10 }}" min="1" max="60">
+                    </div>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Колонок в спрайт-листе</label>
+                        <input type="number" name="sprite_columns" value="{{ skin.sprite_columns or 1 }}" min="1" max="20">
+                    </div>
+                    <div class="form-group">
+                        <label>Строк в спрайт-листе</label>
+                        <input type="number" name="sprite_rows" value="{{ skin.sprite_rows or 1 }}" min="1" max="20">
+                    </div>
+                </div>
             </div>
 
-            <div class="form-group">
-                <label>Загрузить новое изображение (PNG, JPG до 5MB)</label>
-                <input type="file" name="image" accept="image/png,image/jpeg,image/gif,image/webp" onchange="previewImage(this)">
-                <img id="imagePreview" class="image-preview" style="display: none;">
-            </div>
-
-            <div class="form-group">
-                <label>Описание</label>
-                <textarea name="description">{{ skin.description or '' }}</textarea>
+            <div class="section">
+                <h3>Пути в Godot проекте (опционально)</h3>
+                <div class="form-group">
+                    <label>Путь к текстуре в Godot</label>
+                    <input type="text" name="godot_texture_path" value="{{ skin.godot_texture_path or '' }}" placeholder="res://assets/units/knight.png">
+                    <p class="help-text">Путь к файлу текстуры в проекте Godot</p>
+                </div>
+                <div class="form-group">
+                    <label>Путь к спрайту в Godot</label>
+                    <input type="text" name="godot_sprite_path" value="{{ skin.godot_sprite_path or '' }}" placeholder="res://scenes/units/knight.tscn">
+                    <p class="help-text">Путь к сцене спрайта в проекте Godot</p>
+                </div>
             </div>
 
             <button type="submit" class="btn btn-success">💾 Сохранить</button>
@@ -728,6 +990,40 @@ def edit_unit_skin(race_id, unit_id, skin_id):
                         skin.image_data = file.read()
                         skin.image_mime_type = file.content_type or 'image/png'
 
+            # Обновление параметров спрайта
+            skin.sprite_scale_x = float(request.form.get('sprite_scale_x', 1.0) or 1.0)
+            skin.sprite_scale_y = float(request.form.get('sprite_scale_y', 1.0) or 1.0)
+            skin.sprite_offset_x = int(request.form.get('sprite_offset_x', 0) or 0)
+            skin.sprite_offset_y = int(request.form.get('sprite_offset_y', 0) or 0)
+            skin.sprite_rotation = float(request.form.get('sprite_rotation', 0) or 0)
+
+            # Параметры анимации
+            skin.sprite_frame_count = int(request.form.get('sprite_frame_count', 1) or 1)
+            skin.sprite_fps = int(request.form.get('sprite_fps', 10) or 10)
+            skin.sprite_columns = int(request.form.get('sprite_columns', 1) or 1)
+            skin.sprite_rows = int(request.form.get('sprite_rows', 1) or 1)
+
+            # Godot пути
+            skin.godot_texture_path = request.form.get('godot_texture_path') or None
+            skin.godot_sprite_path = request.form.get('godot_sprite_path') or None
+
+            # Удаление спрайт-листа
+            if request.form.get('delete_sprite_frames') == 'on':
+                skin.sprite_frames_data = None
+                skin.sprite_frames_mime_type = None
+
+            # Загрузка спрайт-листа
+            if 'sprite_frames' in request.files:
+                file = request.files['sprite_frames']
+                if file and file.filename:
+                    file.seek(0, 2)
+                    size = file.tell()
+                    file.seek(0)
+
+                    if size <= 10 * 1024 * 1024:  # 10MB
+                        skin.sprite_frames_data = file.read()
+                        skin.sprite_frames_mime_type = file.content_type or 'image/png'
+
             session_db.commit()
             return redirect(url_for('races.unit_skins', race_id=race_id, unit_id=unit_id))
 
@@ -756,6 +1052,22 @@ def skin_image(skin_id):
             return Response(
                 skin.image_data,
                 mimetype=skin.image_mime_type or 'image/png',
+                headers={'Cache-Control': 'public, max-age=3600'}
+            )
+        # Возвращаем пустую картинку 1x1 PNG если изображение не найдено
+        empty_png = b'\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\x06\x00\x00\x00\x1f\x15\xc4\x89\x00\x00\x00\nIDATx\x9cc\x00\x01\x00\x00\x05\x00\x01\r\n-\xb4\x00\x00\x00\x00IEND\xaeB`\x82'
+        return Response(empty_png, mimetype='image/png', status=404)
+
+
+@races_bp.route('/skin/<int:skin_id>/sprite-frames')
+def skin_sprite_frames(skin_id):
+    """Отдача спрайт-листа скина из БД"""
+    with db.get_session() as session_db:
+        skin = session_db.query(RaceUnitSkin).filter_by(id=skin_id).first()
+        if skin and skin.sprite_frames_data:
+            return Response(
+                skin.sprite_frames_data,
+                mimetype=skin.sprite_frames_mime_type or 'image/png',
                 headers={'Cache-Control': 'public, max-age=3600'}
             )
         # Возвращаем пустую картинку 1x1 PNG если изображение не найдено

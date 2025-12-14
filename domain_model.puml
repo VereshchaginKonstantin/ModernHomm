@@ -206,6 +206,19 @@ package "Race" #LightPink {
         +image_data: LargeBinary
         +image_mime_type: String(50)
         +description: Text
+        +sprite_scale_x: Numeric(10,4)
+        +sprite_scale_y: Numeric(10,4)
+        +sprite_offset_x: Integer
+        +sprite_offset_y: Integer
+        +sprite_rotation: Numeric(10,4)
+        +sprite_frames_data: LargeBinary
+        +sprite_frames_mime_type: String(50)
+        +sprite_frame_count: Integer
+        +sprite_fps: Integer
+        +sprite_columns: Integer
+        +sprite_rows: Integer
+        +godot_texture_path: String(512)
+        +godot_sprite_path: String(512)
         +created_at: DateTime
     }
 
