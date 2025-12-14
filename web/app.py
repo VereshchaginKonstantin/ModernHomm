@@ -103,11 +103,12 @@ def inject_static_version():
 
     return {'versioned_static': versioned_static}
 
-def calculate_unit_price(damage: int, defense: int, health: int, unit_range: int, speed: int, luck: float, crit_chance: float, dodge_chance: float, is_kamikaze: int = 0, is_flying: int = 0, counterattack_chance: float = 0) -> Decimal:
+def calculate_unit_price(damage: int, defense: int, health: int, unit_range: int, speed: int, luck: float, crit_chance: float, dodge_chance: float, is_kamikaze: int = 0, is_flying: int = 0, counterattack_chance: float = 0, regeneration_health: int = 0, poison_damage: int = 0, poison_turns: int = 0) -> Decimal:
     """
     Автоматический расчет стоимости юнита по формуле:
     (Урон + Защита + Здоровье + 2*Дальность*(Урон + Защита) + Скорость*(Урон + Защита) +
-     2*Летающий*(Урон + Защита) + 2*Удача*Урон + 2*Крит*Урон + 10*Уклонение*(Урон + Защита) + 10*Контратака*Урон)
+     2*Летающий*(Урон + Защита) + 2*Удача*Урон + 2*Крит*Урон + 10*Уклонение*(Урон + Защита) + 10*Контратака*Урон +
+     10*Регенерация + 10*ЯдУрон*ЯдХодов)
     Для камикадзе: Урон/5 и Уклонение/50
 
     Args:
@@ -122,6 +123,9 @@ def calculate_unit_price(damage: int, defense: int, health: int, unit_range: int
         is_kamikaze: Юнит-камикадзе (0 или 1)
         is_flying: Летающий юнит (0 или 1)
         counterattack_chance: Доля контратаки (0-1)
+        regeneration_health: Здоровье, восстанавливаемое за ход
+        poison_damage: Урон яда за ход
+        poison_turns: Количество ходов действия яда
 
     Returns:
         Decimal: Рассчитанная стоимость
@@ -133,6 +137,10 @@ def calculate_unit_price(damage: int, defense: int, health: int, unit_range: int
     # Бонус для летающих юнитов (могут двигаться через препятствия)
     flying_bonus = 2 * (damage_value + defense) if is_flying else 0
 
+    # Бонус за регенерацию и отравление
+    regeneration_bonus = 10 * regeneration_health
+    poison_bonus = 10 * poison_damage * poison_turns
+
     price = (
         damage_value +
         defense +
@@ -143,7 +151,9 @@ def calculate_unit_price(damage: int, defense: int, health: int, unit_range: int
         2 * luck * damage_value +
         2 * crit_chance * damage_value +
         10 * dodge_value * (damage_value + defense) +
-        10 * counterattack_chance * damage_value
+        10 * counterattack_chance * damage_value +
+        regeneration_bonus +
+        poison_bonus
     )
 
     return Decimal(str(round(price, 2)))

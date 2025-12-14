@@ -547,6 +547,12 @@ class GameEngine:
         else:
             attacker.fatigue = min(float(attacker.fatigue) + 10, 100)
 
+        # Применить эффект отравления (если атакующий имеет способность отравления)
+        if target.total_count > 0 and damage > 0:
+            poison_msg = self._apply_poison_effect(attacker, target)
+            if poison_msg:
+                combat_log += poison_msg
+
         # Удалить мёртвый юнит из базы (если все юниты убиты)
         if target.total_count == 0:
             logger.info(f"Удаление мёртвого юнита: id={target.id}, position=({target.position_x}, {target.position_y})")
@@ -1264,10 +1270,147 @@ class GameEngine:
             unit.has_moved = 0
             unit.deferred = 0
 
+        # Применить эффекты начала хода для всех юнитов нового игрока
+        self._apply_turn_start_effects(game, game.current_player_id)
+
         # Добавить запись в лог о смене хода
         current_player = self.db.query(GameUser).filter_by(id=game.current_player_id).first()
         player_name = current_player.username if current_player else "Игрок"
         self._log_event(game.id, "turn_switch", f"🔄 Ход переходит к {player_name}")
+
+    def _apply_turn_start_effects(self, game: Game, player_id: int):
+        """
+        Применить эффекты начала хода для всех юнитов игрока (регенерация и яд)
+
+        Args:
+            game: Игра
+            player_id: ID игрока
+        """
+        units = self.db.query(BattleUnit).filter(
+            BattleUnit.game_id == game.id,
+            BattleUnit.player_id == player_id
+        ).all()
+
+        for battle_unit in units:
+            if battle_unit.total_count <= 0:
+                continue
+
+            unit_type = battle_unit.user_unit.unit
+
+            # Применить регенерацию
+            regeneration = getattr(unit_type, 'regeneration_health', 0) or 0
+            if regeneration > 0:
+                self._apply_regeneration(battle_unit, regeneration)
+
+            # Применить яд
+            if battle_unit.poison_remaining_turns > 0:
+                self._apply_poison_damage(game, battle_unit)
+
+    def _apply_regeneration(self, battle_unit: BattleUnit, regeneration_health: int):
+        """
+        Применить регенерацию к юниту (увеличить количество юнитов)
+
+        Args:
+            battle_unit: Юнит в бою
+            regeneration_health: Количество здоровья для регенерации
+        """
+        if battle_unit.total_count <= 0 or regeneration_health <= 0:
+            return
+
+        unit_type = battle_unit.user_unit.unit
+        max_health = unit_type.health
+
+        # Добавляем здоровье к remaining_hp
+        old_hp = battle_unit.remaining_hp
+        old_count = battle_unit.total_count
+
+        # Регенерация добавляет HP
+        new_hp = battle_unit.remaining_hp + regeneration_health
+
+        # Если HP превышает максимум одного юнита, добавляем новых юнитов
+        if new_hp > max_health:
+            extra_units = new_hp // max_health
+            battle_unit.total_count += extra_units
+            battle_unit.remaining_hp = new_hp % max_health
+            if battle_unit.remaining_hp == 0:
+                battle_unit.remaining_hp = max_health
+                battle_unit.total_count -= 1
+        else:
+            battle_unit.remaining_hp = new_hp
+
+        # Логирование регенерации
+        if battle_unit.total_count > old_count or battle_unit.remaining_hp > old_hp:
+            units_gained = battle_unit.total_count - old_count
+            hp_gained = battle_unit.remaining_hp - old_hp if battle_unit.total_count == old_count else regeneration_health
+            logger.info(f"Регенерация: {unit_type.name} восстановил {regeneration_health} HP (+{units_gained} юнитов)")
+
+    def _apply_poison_damage(self, game: Game, battle_unit: BattleUnit):
+        """
+        Применить урон от яда к юниту
+
+        Args:
+            game: Игра
+            battle_unit: Юнит в бою
+        """
+        if battle_unit.poison_remaining_turns <= 0 or battle_unit.poison_damage_per_turn <= 0:
+            return
+
+        unit_type = battle_unit.user_unit.unit
+        poison_damage = battle_unit.poison_damage_per_turn
+
+        # Применить урон от яда
+        units_killed = self._apply_damage(battle_unit, poison_damage)
+
+        # Уменьшить счетчик ходов яда
+        battle_unit.poison_remaining_turns -= 1
+
+        # Логирование
+        log_msg = f"☠️ ЯД: {unit_type.name} получает {poison_damage} урона от отравления"
+        if units_killed > 0:
+            log_msg += f", погибло юнитов: {units_killed}"
+        if battle_unit.poison_remaining_turns > 0:
+            log_msg += f" (осталось ходов: {battle_unit.poison_remaining_turns})"
+        else:
+            log_msg += " (яд рассеялся)"
+
+        self._log_event(game.id, "poison", log_msg)
+
+        # Удалить юнит, если все погибли
+        if battle_unit.total_count <= 0:
+            logger.info(f"Удаление мёртвого юнита от яда: id={battle_unit.id}")
+            self.db.delete(battle_unit)
+
+    def _apply_poison_effect(self, attacker: BattleUnit, target: BattleUnit) -> str:
+        """
+        Применить эффект отравления при атаке
+
+        Args:
+            attacker: Атакующий юнит
+            target: Цель
+
+        Returns:
+            str: Сообщение о применении яда
+        """
+        attacker_unit = attacker.user_unit.unit
+        target_unit = target.user_unit.unit
+
+        # Проверить, есть ли у атакующего способность отравления
+        poison_damage = getattr(attacker_unit, 'poison_damage', 0) or 0
+        poison_turns = getattr(attacker_unit, 'poison_turns', 0) or 0
+
+        if poison_damage <= 0 or poison_turns <= 0:
+            return ""
+
+        # Проверить иммунитет к яду у цели
+        poison_immunity = getattr(target_unit, 'poison_immunity', 0) or 0
+        if poison_immunity:
+            return f"\n\n🛡️ {target_unit.name} имеет иммунитет к яду!"
+
+        # Применить отравление к цели
+        target.poison_damage_per_turn = poison_damage
+        target.poison_remaining_turns = poison_turns
+
+        return f"\n\n☠️ ОТРАВЛЕНИЕ! {target_unit.name} отравлен на {poison_turns} ходов ({poison_damage} урона/ход)"
 
     def _check_game_over(self, game: Game) -> Optional[int]:
         """

@@ -31,6 +31,10 @@ class Unit(Base):
     is_kamikaze = Column(Integer, nullable=False, default=0)  # Флаг камикадзе (0 - нет, 1 - да): наносит урон 1 юнитом и уменьшается на 1 после атаки
     is_flying = Column(Integer, nullable=False, default=0)  # Флаг летающий (0 - нет, 1 - да): может двигаться через препятствия
     counterattack_chance = Column(Numeric(5, 4), nullable=False, default=0)  # Доля контратаки (0-1): при получении урона наносит ответный урон с этим коэффициентом
+    regeneration_health = Column(Integer, nullable=False, default=0)  # Здоровье, восстанавливаемое в начале хода
+    poison_damage = Column(Integer, nullable=False, default=0)  # Урон от яда за ход
+    poison_turns = Column(Integer, nullable=False, default=0)  # Количество ходов действия яда при атаке
+    poison_immunity = Column(Integer, nullable=False, default=0)  # Иммунитет к яду (0 - нет, 1 - да)
     effective_against_unit_id = Column(Integer, ForeignKey('units.id'), nullable=True)  # Юнит, против которого эффективен (x1.5 урона)
     owner_id = Column(Integer, ForeignKey('game_users.id'), nullable=True)  # Владелец юнита (None - базовый юнит, иначе - пользовательский)
 
@@ -108,6 +112,27 @@ class RaceUnit(Base):
     name = Column(String(255), nullable=False)
     is_flying = Column(Boolean, nullable=False, default=False)  # Летающий юнит
     is_kamikaze = Column(Boolean, nullable=False, default=False)  # Камикадзе
+
+    # Боевые характеристики (перенесены из UserRaceUnit)
+    attack = Column(Integer, nullable=False, default=10)  # Атака
+    defense = Column(Integer, nullable=False, default=5)  # Защита
+    min_damage = Column(Integer, nullable=False, default=1)  # Минимальный урон
+    max_damage = Column(Integer, nullable=False, default=3)  # Максимальный урон
+    health = Column(Integer, nullable=False, default=10)  # Здоровье
+    speed = Column(Integer, nullable=False, default=4)  # Скорость
+    initiative = Column(Integer, nullable=False, default=10)  # Инициатива
+    luck = Column(Numeric(5, 4), nullable=False, default=0)  # Удача (0-1)
+    crit_chance = Column(Numeric(5, 4), nullable=False, default=0)  # Шанс крита (0-1)
+    dodge_chance = Column(Numeric(5, 4), nullable=False, default=0)  # Шанс уклонения (0-1)
+    counterattack_chance = Column(Numeric(5, 4), nullable=False, default=0)  # Шанс контратаки (0-1)
+    range = Column(Integer, nullable=False, default=1)  # Дальность атаки
+
+    # Регенерация и отравление
+    regeneration_health = Column(Integer, nullable=False, default=0)  # Здоровье, восстанавливаемое в начале хода
+    poison_damage = Column(Integer, nullable=False, default=0)  # Урон от яда за ход
+    poison_turns = Column(Integer, nullable=False, default=0)  # Количество ходов действия яда
+    poison_immunity = Column(Boolean, nullable=False, default=False)  # Иммунитет к отравлению
+
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
     # Уникальность: один уровень на расу (не может быть двух юнитов одного уровня в расе)
@@ -186,7 +211,7 @@ class UserRace(Base):
 
 
 class UserRaceUnit(Base):
-    """Модель пользовательского юнита расы (с боевыми характеристиками)"""
+    """Модель пользовательского юнита расы (бусты к базовым характеристикам из RaceUnit)"""
     __tablename__ = 'user_race_units'
 
     id = Column(Integer, primary_key=True, autoincrement=True)
@@ -194,14 +219,22 @@ class UserRaceUnit(Base):
     race_unit_id = Column(Integer, ForeignKey('race_units.id', ondelete='CASCADE'), nullable=False, index=True)
     skin_id = Column(Integer, ForeignKey('race_unit_skins.id', ondelete='RESTRICT'), nullable=False, index=True)  # Обязательная ссылка на скин
 
-    # Боевые характеристики (наследуются от RaceUnit, но хранятся у пользователя)
-    attack = Column(Integer, nullable=False, default=10)
-    defense = Column(Integer, nullable=False, default=5)
-    min_damage = Column(Integer, nullable=False, default=1)
-    max_damage = Column(Integer, nullable=False, default=3)
-    health = Column(Integer, nullable=False, default=10)
-    speed = Column(Integer, nullable=False, default=4)
-    initiative = Column(Integer, nullable=False, default=10)
+    # Бусты (увеличения) характеристик относительно базовых значений из RaceUnit
+    attack_boost = Column(Integer, nullable=False, default=0)  # Буст атаки
+    defense_boost = Column(Integer, nullable=False, default=0)  # Буст защиты
+    min_damage_boost = Column(Integer, nullable=False, default=0)  # Буст минимального урона
+    max_damage_boost = Column(Integer, nullable=False, default=0)  # Буст максимального урона
+    health_boost = Column(Integer, nullable=False, default=0)  # Буст здоровья
+    speed_boost = Column(Integer, nullable=False, default=0)  # Буст скорости
+    initiative_boost = Column(Integer, nullable=False, default=0)  # Буст инициативы
+    luck_boost = Column(Numeric(5, 4), nullable=False, default=0)  # Буст удачи
+    crit_chance_boost = Column(Numeric(5, 4), nullable=False, default=0)  # Буст шанса крита
+    dodge_chance_boost = Column(Numeric(5, 4), nullable=False, default=0)  # Буст шанса уклонения
+    counterattack_chance_boost = Column(Numeric(5, 4), nullable=False, default=0)  # Буст шанса контратаки
+    range_boost = Column(Integer, nullable=False, default=0)  # Буст дальности
+    regeneration_health_boost = Column(Integer, nullable=False, default=0)  # Буст регенерации
+    poison_damage_boost = Column(Integer, nullable=False, default=0)  # Буст урона яда
+    poison_turns_boost = Column(Integer, nullable=False, default=0)  # Буст ходов яда
 
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
@@ -215,6 +248,67 @@ class UserRaceUnit(Base):
     __table_args__ = (
         UniqueConstraint('user_race_id', 'race_unit_id', name='unique_user_race_unit'),
     )
+
+    # Вычисляемые свойства для получения итоговых характеристик (база + буст)
+    @property
+    def attack(self):
+        return self.race_unit.attack + self.attack_boost
+
+    @property
+    def defense(self):
+        return self.race_unit.defense + self.defense_boost
+
+    @property
+    def min_damage(self):
+        return self.race_unit.min_damage + self.min_damage_boost
+
+    @property
+    def max_damage(self):
+        return self.race_unit.max_damage + self.max_damage_boost
+
+    @property
+    def health(self):
+        return self.race_unit.health + self.health_boost
+
+    @property
+    def speed(self):
+        return self.race_unit.speed + self.speed_boost
+
+    @property
+    def initiative(self):
+        return self.race_unit.initiative + self.initiative_boost
+
+    @property
+    def luck(self):
+        return float(self.race_unit.luck) + float(self.luck_boost)
+
+    @property
+    def crit_chance(self):
+        return float(self.race_unit.crit_chance) + float(self.crit_chance_boost)
+
+    @property
+    def dodge_chance(self):
+        return float(self.race_unit.dodge_chance) + float(self.dodge_chance_boost)
+
+    @property
+    def counterattack_chance(self):
+        return float(self.race_unit.counterattack_chance) + float(self.counterattack_chance_boost)
+
+    @property
+    def range(self):
+        return self.race_unit.range + self.range_boost
+
+    @property
+    def regeneration_health(self):
+        return self.race_unit.regeneration_health + self.regeneration_health_boost
+
+    @property
+    def poison_damage(self):
+        return self.race_unit.poison_damage + self.poison_damage_boost
+
+    @property
+    def poison_turns(self):
+        return self.race_unit.poison_turns + self.poison_turns_boost
 
     def __repr__(self):
         return f"<UserRaceUnit(id={self.id}, user_race_id={self.user_race_id}, race_unit_id={self.race_unit_id}, skin_id={self.skin_id})>"

@@ -88,6 +88,8 @@ package "Battle" #LightGreen {
         +fatigue: Numeric(10,2)
         +has_moved: Integer
         +deferred: Integer
+        +poison_remaining_turns: Integer
+        +poison_damage_per_turn: Integer
     }
 
     class Obstacle {
@@ -127,6 +129,10 @@ package "Army" #LightYellow {
         +is_kamikaze: Integer
         +is_flying: Integer
         +counterattack_chance: Numeric(5,4)
+        +regeneration_health: Integer
+        +poison_damage: Integer
+        +poison_turns: Integer
+        +poison_immunity: Integer
         +effective_against_unit_id: Integer <<FK>>
         +owner_id: Integer <<FK>>
     }
@@ -174,6 +180,22 @@ package "Race" #LightPink {
         +name: String(255)
         +is_flying: Boolean
         +is_kamikaze: Boolean
+        +attack: Integer
+        +defense: Integer
+        +min_damage: Integer
+        +max_damage: Integer
+        +health: Integer
+        +speed: Integer
+        +initiative: Integer
+        +luck: Numeric(5,4)
+        +crit_chance: Numeric(5,4)
+        +dodge_chance: Numeric(5,4)
+        +counterattack_chance: Numeric(5,4)
+        +range: Integer
+        +regeneration_health: Integer
+        +poison_damage: Integer
+        +poison_turns: Integer
+        +poison_immunity: Boolean
         +created_at: DateTime
     }
 
@@ -199,13 +221,21 @@ package "Race" #LightPink {
         +user_race_id: Integer <<FK>>
         +race_unit_id: Integer <<FK>>
         +skin_id: Integer <<FK>>
-        +attack: Integer
-        +defense: Integer
-        +min_damage: Integer
-        +max_damage: Integer
-        +health: Integer
-        +speed: Integer
-        +initiative: Integer
+        +attack_boost: Integer
+        +defense_boost: Integer
+        +min_damage_boost: Integer
+        +max_damage_boost: Integer
+        +health_boost: Integer
+        +speed_boost: Integer
+        +initiative_boost: Integer
+        +luck_boost: Numeric(5,4)
+        +crit_chance_boost: Numeric(5,4)
+        +dodge_chance_boost: Numeric(5,4)
+        +counterattack_chance_boost: Numeric(5,4)
+        +range_boost: Integer
+        +regeneration_health_boost: Integer
+        +poison_damage_boost: Integer
+        +poison_turns_boost: Integer
         +created_at: DateTime
         +updated_at: DateTime
     }

@@ -90,6 +90,10 @@ class BattleUnit(Base):
     # Приоритет в очереди хода (чем больше, тем позже ходит)
     deferred = Column(Integer, nullable=False, default=0)
 
+    # Эффект отравления (применяется при атаке юнитом с poison_damage > 0)
+    poison_remaining_turns = Column(Integer, nullable=False, default=0)  # Оставшееся количество ходов отравления
+    poison_damage_per_turn = Column(Integer, nullable=False, default=0)  # Урон от яда за ход
+
     # Связи
     game = relationship("Game", back_populates="battle_units")
     user_unit = relationship("UserUnit")
