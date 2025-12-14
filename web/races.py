@@ -88,6 +88,82 @@ def generate_placeholder_sprite(level: int, size: int = 64) -> bytes:
     return output.getvalue()
 
 
+def generate_animated_sprite_sheet(level: int, size: int = 64, frames: int = 4, columns: int = 4) -> bytes:
+    """
+    Generate an animated sprite sheet for a unit level.
+    Creates a sprite sheet with multiple frames showing animation.
+
+    Args:
+        level: Unit level (1-7)
+        size: Size of each frame in pixels
+        frames: Number of animation frames
+        columns: Number of columns in sprite sheet
+
+    Returns:
+        PNG image data as bytes (sprite sheet)
+    """
+    from PIL import ImageDraw, ImageFont
+
+    # Get color for this level
+    color = LEVEL_COLORS[min(level - 1, len(LEVEL_COLORS) - 1)]
+
+    # Calculate sprite sheet dimensions
+    rows = (frames + columns - 1) // columns
+    sheet_width = size * columns
+    sheet_height = size * rows
+
+    # Create sprite sheet
+    sheet = Image.new('RGBA', (sheet_width, sheet_height), (0, 0, 0, 0))
+
+    for frame_idx in range(frames):
+        # Calculate position in sheet
+        col = frame_idx % columns
+        row = frame_idx // columns
+        offset_x = col * size
+        offset_y = row * size
+
+        # Create frame
+        frame_img = Image.new('RGBA', (size, size), (0, 0, 0, 0))
+        draw = ImageDraw.Draw(frame_img)
+
+        # Animate by slightly changing the circle size (breathing effect)
+        margin = size // 8
+        animation_offset = int((frame_idx % 4) * 2) - 3  # -3, -1, 1, 3 pixels
+
+        draw.ellipse([
+            margin - animation_offset,
+            margin - animation_offset,
+            size - margin + animation_offset,
+            size - margin + animation_offset
+        ], fill=color, outline=(0, 0, 0, 200), width=2)
+
+        # Draw level number
+        text = str(level)
+        try:
+            font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", size // 3)
+        except Exception:
+            font = ImageFont.load_default()
+
+        bbox = draw.textbbox((0, 0), text, font=font)
+        text_width = bbox[2] - bbox[0]
+        text_height = bbox[3] - bbox[1]
+        x = (size - text_width) // 2
+        y = (size - text_height) // 2 - margin // 2
+
+        # Draw text with outline
+        for dx, dy in [(-1, -1), (1, -1), (-1, 1), (1, 1)]:
+            draw.text((x + dx, y + dy), text, fill=(0, 0, 0), font=font)
+        draw.text((x, y), text, fill=(255, 255, 255), font=font)
+
+        # Paste frame onto sheet
+        sheet.paste(frame_img, (offset_x, offset_y))
+
+    # Save to bytes
+    output = io.BytesIO()
+    sheet.save(output, format='PNG')
+    return output.getvalue()
+
+
 def try_download_kenney_asset() -> tuple:
     """
     Try to download a random sprite from Kenney.nl free assets.
@@ -116,33 +192,60 @@ def try_download_kenney_asset() -> tuple:
 def create_default_skin_for_unit(race_unit, level: int) -> RaceUnitSkin:
     """
     Create a default skin with placeholder sprite for a race unit.
+    Generates both static texture and animated sprite sheet.
 
     Args:
         race_unit: RaceUnit instance
         level: Unit level (1-7)
 
     Returns:
-        RaceUnitSkin instance with placeholder image
+        RaceUnitSkin instance with placeholder image and sprite sheet
     """
-    # Generate placeholder sprite
+    # Default unit type names for Godot asset paths (prototype assets)
+    unit_type_names = [
+        'peasant',    # Level 1
+        'archer',     # Level 2
+        'griffin',    # Level 3
+        'swordsman',  # Level 4
+        'monk',       # Level 5
+        'cavalier',   # Level 6
+        'angel',      # Level 7
+    ]
+    unit_type = unit_type_names[min(level - 1, len(unit_type_names) - 1)]
+
+    # Generate placeholder sprite (static texture)
     image_data = generate_placeholder_sprite(level, size=64)
 
-    # Create skin with default values
+    # Generate animated sprite sheet (4 frames in 1 row)
+    sprite_frames_data = generate_animated_sprite_sheet(level, size=64, frames=4, columns=4)
+
+    # Create default Godot asset paths (prototype paths)
+    godot_texture_path = f"res://assets/units/prototype/{unit_type}_level{level}.png"
+    godot_sprite_path = f"res://scenes/units/prototype/{unit_type}_level{level}.tscn"
+
+    # Create skin with all fields populated
     skin = RaceUnitSkin(
         race_unit_id=race_unit.id,
-        name=f"Базовый скин",
+        name="Базовый скин",
         image_data=image_data,
         image_mime_type='image/png',
-        description=f"Стандартный скин для юнита уровня {level}",
+        description=f"Стандартный скин для юнита уровня {level}. Prototype Asset.",
+        # Sprite display parameters
         sprite_scale_x=1.0,
         sprite_scale_y=1.0,
         sprite_offset_x=0,
         sprite_offset_y=0,
         sprite_rotation=0,
-        sprite_frame_count=1,
-        sprite_fps=10,
-        sprite_columns=1,
-        sprite_rows=1
+        # Animated sprite data
+        sprite_frames_data=sprite_frames_data,
+        sprite_frames_mime_type='image/png',
+        sprite_frame_count=4,
+        sprite_fps=8,
+        sprite_columns=4,
+        sprite_rows=1,
+        # Godot asset paths
+        godot_texture_path=godot_texture_path,
+        godot_sprite_path=godot_sprite_path
     )
 
     return skin

@@ -10,7 +10,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from db.models import Base, GameRace, RaceUnit, RaceUnitSkin, UnitLevel
-from web.races import generate_placeholder_sprite, create_default_skin_for_unit
+from web.races import generate_placeholder_sprite, generate_animated_sprite_sheet, create_default_skin_for_unit
 
 
 # Use test database
@@ -55,6 +55,43 @@ class TestPlaceholderSpriteGeneration:
         sprite_128 = generate_placeholder_sprite(1, 128)
         # Larger sprite should be bigger
         assert len(sprite_128) > len(sprite_32)
+
+
+class TestAnimatedSpriteSheetGeneration:
+    """Tests for animated sprite sheet generation."""
+
+    def test_generate_animated_sprite_sheet_returns_bytes(self):
+        """Test that generate_animated_sprite_sheet returns PNG bytes."""
+        sprite_data = generate_animated_sprite_sheet(1, 64, 4, 4)
+        assert isinstance(sprite_data, bytes)
+        assert len(sprite_data) > 0
+
+    def test_generate_animated_sprite_sheet_valid_png(self):
+        """Test that generated sprite sheet is a valid PNG."""
+        sprite_data = generate_animated_sprite_sheet(3, 64, 4, 4)
+        # PNG magic bytes
+        assert sprite_data[:8] == b'\x89PNG\r\n\x1a\n'
+
+    def test_generate_animated_sprite_sheet_different_levels(self):
+        """Test sprite sheet generation for all 7 levels."""
+        for level in range(1, 8):
+            sprite_data = generate_animated_sprite_sheet(level, 64, 4, 4)
+            assert isinstance(sprite_data, bytes)
+            assert sprite_data[:8] == b'\x89PNG\r\n\x1a\n'
+
+    def test_generate_animated_sprite_sheet_larger_than_single_sprite(self):
+        """Test that sprite sheet is larger than single sprite."""
+        single_sprite = generate_placeholder_sprite(1, 64)
+        sprite_sheet = generate_animated_sprite_sheet(1, 64, 4, 4)
+        # Sprite sheet with 4 frames should be significantly larger
+        assert len(sprite_sheet) > len(single_sprite)
+
+    def test_generate_animated_sprite_sheet_different_frame_counts(self):
+        """Test sprite sheet generation with different frame counts."""
+        sheet_4_frames = generate_animated_sprite_sheet(1, 64, 4, 4)
+        sheet_8_frames = generate_animated_sprite_sheet(1, 64, 8, 4)
+        # More frames = larger sprite sheet
+        assert len(sheet_8_frames) > len(sheet_4_frames)
 
 
 class TestDefaultSkinCreation:
@@ -106,6 +143,87 @@ class TestDefaultSkinCreation:
         )
         assert skin.godot_texture_path == "res://assets/units/test.png"
         assert skin.godot_sprite_path == "res://scenes/units/test.tscn"
+
+
+class TestCreateDefaultSkinForUnit:
+    """Tests for create_default_skin_for_unit function."""
+
+    def test_create_default_skin_has_image_data(self):
+        """Test that default skin has image data."""
+        # Create mock RaceUnit with id
+        class MockRaceUnit:
+            id = 999
+
+        skin = create_default_skin_for_unit(MockRaceUnit(), 1)
+        assert skin.image_data is not None
+        assert isinstance(skin.image_data, bytes)
+        assert len(skin.image_data) > 0
+        # Verify it's a valid PNG
+        assert skin.image_data[:8] == b'\x89PNG\r\n\x1a\n'
+
+    def test_create_default_skin_has_sprite_frames_data(self):
+        """Test that default skin has sprite frames (animated sprite sheet)."""
+        class MockRaceUnit:
+            id = 999
+
+        skin = create_default_skin_for_unit(MockRaceUnit(), 1)
+        assert skin.sprite_frames_data is not None
+        assert isinstance(skin.sprite_frames_data, bytes)
+        assert len(skin.sprite_frames_data) > 0
+        # Verify it's a valid PNG
+        assert skin.sprite_frames_data[:8] == b'\x89PNG\r\n\x1a\n'
+
+    def test_create_default_skin_has_godot_paths(self):
+        """Test that default skin has Godot paths populated."""
+        class MockRaceUnit:
+            id = 999
+
+        skin = create_default_skin_for_unit(MockRaceUnit(), 1)
+        assert skin.godot_texture_path is not None
+        assert skin.godot_sprite_path is not None
+        assert 'res://' in skin.godot_texture_path
+        assert 'res://' in skin.godot_sprite_path
+        assert '.png' in skin.godot_texture_path
+        assert '.tscn' in skin.godot_sprite_path
+
+    def test_create_default_skin_has_animation_params(self):
+        """Test that default skin has correct animation parameters."""
+        class MockRaceUnit:
+            id = 999
+
+        skin = create_default_skin_for_unit(MockRaceUnit(), 1)
+        assert skin.sprite_frame_count == 4
+        assert skin.sprite_fps == 8
+        assert skin.sprite_columns == 4
+        assert skin.sprite_rows == 1
+        assert skin.sprite_frames_mime_type == 'image/png'
+
+    def test_create_default_skin_different_levels_different_paths(self):
+        """Test that different levels have different Godot paths."""
+        class MockRaceUnit:
+            id = 999
+
+        skin_level1 = create_default_skin_for_unit(MockRaceUnit(), 1)
+        skin_level7 = create_default_skin_for_unit(MockRaceUnit(), 7)
+
+        assert skin_level1.godot_texture_path != skin_level7.godot_texture_path
+        assert skin_level1.godot_sprite_path != skin_level7.godot_sprite_path
+        assert 'peasant' in skin_level1.godot_texture_path
+        assert 'angel' in skin_level7.godot_texture_path
+
+    def test_create_default_skin_all_levels(self):
+        """Test default skin creation for all 7 levels."""
+        class MockRaceUnit:
+            id = 999
+
+        for level in range(1, 8):
+            skin = create_default_skin_for_unit(MockRaceUnit(), level)
+            # Verify all required fields are populated
+            assert skin.image_data is not None
+            assert skin.sprite_frames_data is not None
+            assert skin.godot_texture_path is not None
+            assert skin.godot_sprite_path is not None
+            assert f'level{level}' in skin.godot_texture_path
 
 
 class TestUnitLevels:
