@@ -489,13 +489,19 @@ EDIT_UNIT_TEMPLATE = """
         .form-group { margin-bottom: 15px; }
         .form-group label { display: block; margin-bottom: 5px; color: #ffd700; }
         .form-group input, .form-group select { width: 100%; padding: 10px; border: 1px solid #444; background: #2a2a2a; color: white; border-radius: 5px; }
+        .form-group input[type="number"] { width: 120px; }
         .form-row { display: grid; grid-template-columns: repeat(2, 1fr); gap: 15px; }
+        .form-row-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px; }
+        .form-row-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 15px; }
         .checkbox-group { display: flex; align-items: center; gap: 10px; margin-bottom: 15px; }
         .checkbox-group input[type="checkbox"] { width: 20px; height: 20px; }
         .btn { padding: 10px 20px; border: none; border-radius: 5px; cursor: pointer; text-decoration: none; display: inline-block; margin-right: 10px; }
         .btn-success { background: #2ecc71; color: white; }
         .btn-secondary { background: #666; color: white; }
         .level-info { background: #444; padding: 10px; border-radius: 5px; color: #aaa; }
+        .section { background: #2a2a2a; padding: 15px; border-radius: 8px; margin-bottom: 20px; }
+        .section h3 { color: #3498db; margin-top: 0; margin-bottom: 15px; font-size: 16px; }
+        .help-text { color: #888; font-size: 11px; margin-top: 3px; }
     </style>
 </head>
 <body>
@@ -504,31 +510,125 @@ EDIT_UNIT_TEMPLATE = """
         <h1>✏️ Редактировать Юнит расы: {{ race.name }}</h1>
 
         <form method="POST">
-            <div class="form-group">
-                <label>Название</label>
-                <input type="text" name="name" required value="{{ unit.name }}">
-            </div>
-
-            <div class="form-group">
-                <label>Уровень юнита</label>
-                <div class="level-info">
-                    {% if unit.unit_level %}
-                    {{ unit.unit_level.icon }} Уровень {{ unit.unit_level.level }} (престиж {{ unit.unit_level.prestige_min }} - {{ unit.unit_level.prestige_max }})
-                    {% else %}
-                    Не задан
-                    {% endif %}
+            <div class="section">
+                <h3>📝 Основная информация</h3>
+                <div class="form-group">
+                    <label>Название</label>
+                    <input type="text" name="name" required value="{{ unit.name }}">
                 </div>
-                <small style="color: #666;">Уровень юнита фиксируется при создании расы и не может быть изменён</small>
+
+                <div class="form-group">
+                    <label>Уровень юнита</label>
+                    <div class="level-info">
+                        {% if unit.unit_level %}
+                        {{ unit.unit_level.icon }} Уровень {{ unit.unit_level.level }} (престиж {{ unit.unit_level.prestige_min }} - {{ unit.unit_level.prestige_max }})
+                        {% else %}
+                        Не задан
+                        {% endif %}
+                    </div>
+                    <p class="help-text">Уровень юнита фиксируется при создании расы</p>
+                </div>
+
+                <div class="checkbox-group">
+                    <input type="checkbox" name="is_flying" id="is_flying" {% if unit.is_flying %}checked{% endif %}>
+                    <label for="is_flying" style="margin-bottom: 0;">🦅 Летающий юнит</label>
+                </div>
+
+                <div class="checkbox-group">
+                    <input type="checkbox" name="is_kamikaze" id="is_kamikaze" {% if unit.is_kamikaze %}checked{% endif %}>
+                    <label for="is_kamikaze" style="margin-bottom: 0;">💥 Камикадзе</label>
+                </div>
             </div>
 
-            <div class="checkbox-group">
-                <input type="checkbox" name="is_flying" id="is_flying" {% if unit.is_flying %}checked{% endif %}>
-                <label for="is_flying" style="margin-bottom: 0;">🦅 Летающий юнит</label>
+            <div class="section">
+                <h3>⚔️ Боевые характеристики</h3>
+                <div class="form-row-4">
+                    <div class="form-group">
+                        <label>Атака</label>
+                        <input type="number" name="attack" value="{{ unit.attack or 10 }}" min="0" max="100">
+                    </div>
+                    <div class="form-group">
+                        <label>Защита</label>
+                        <input type="number" name="defense" value="{{ unit.defense or 5 }}" min="0" max="100">
+                    </div>
+                    <div class="form-group">
+                        <label>Здоровье</label>
+                        <input type="number" name="health" value="{{ unit.health or 10 }}" min="1" max="1000">
+                    </div>
+                    <div class="form-group">
+                        <label>Скорость</label>
+                        <input type="number" name="speed" value="{{ unit.speed or 4 }}" min="1" max="20">
+                    </div>
+                </div>
+
+                <div class="form-row-4">
+                    <div class="form-group">
+                        <label>Мин. урон</label>
+                        <input type="number" name="min_damage" value="{{ unit.min_damage or 1 }}" min="0" max="100">
+                    </div>
+                    <div class="form-group">
+                        <label>Макс. урон</label>
+                        <input type="number" name="max_damage" value="{{ unit.max_damage or 3 }}" min="0" max="200">
+                    </div>
+                    <div class="form-group">
+                        <label>Инициатива</label>
+                        <input type="number" name="initiative" value="{{ unit.initiative or 10 }}" min="1" max="30">
+                    </div>
+                    <div class="form-group">
+                        <label>Дальность</label>
+                        <input type="number" name="range" value="{{ unit.range or 1 }}" min="1" max="10">
+                        <p class="help-text">1 = ближний бой</p>
+                    </div>
+                </div>
             </div>
 
-            <div class="checkbox-group">
-                <input type="checkbox" name="is_kamikaze" id="is_kamikaze" {% if unit.is_kamikaze %}checked{% endif %}>
-                <label for="is_kamikaze" style="margin-bottom: 0;">💥 Камикадзе</label>
+            <div class="section">
+                <h3>🎲 Шансы (0.0 - 1.0)</h3>
+                <div class="form-row-4">
+                    <div class="form-group">
+                        <label>Удача</label>
+                        <input type="number" name="luck" value="{{ unit.luck or 0 }}" min="0" max="1" step="0.01">
+                    </div>
+                    <div class="form-group">
+                        <label>Шанс крита</label>
+                        <input type="number" name="crit_chance" value="{{ unit.crit_chance or 0 }}" min="0" max="1" step="0.01">
+                    </div>
+                    <div class="form-group">
+                        <label>Шанс уклонения</label>
+                        <input type="number" name="dodge_chance" value="{{ unit.dodge_chance or 0 }}" min="0" max="1" step="0.01">
+                    </div>
+                    <div class="form-group">
+                        <label>Шанс контратаки</label>
+                        <input type="number" name="counterattack_chance" value="{{ unit.counterattack_chance or 0 }}" min="0" max="1" step="0.01">
+                    </div>
+                </div>
+            </div>
+
+            <div class="section">
+                <h3>💊 Регенерация и яд</h3>
+                <div class="form-row-4">
+                    <div class="form-group">
+                        <label>Регенерация HP</label>
+                        <input type="number" name="regeneration_health" value="{{ unit.regeneration_health or 0 }}" min="0" max="100">
+                        <p class="help-text">HP за ход</p>
+                    </div>
+                    <div class="form-group">
+                        <label>Урон яда</label>
+                        <input type="number" name="poison_damage" value="{{ unit.poison_damage or 0 }}" min="0" max="100">
+                        <p class="help-text">Урон за ход</p>
+                    </div>
+                    <div class="form-group">
+                        <label>Ходов яда</label>
+                        <input type="number" name="poison_turns" value="{{ unit.poison_turns or 0 }}" min="0" max="10">
+                    </div>
+                    <div class="form-group">
+                        <label>&nbsp;</label>
+                        <div class="checkbox-group" style="margin-top: 5px;">
+                            <input type="checkbox" name="poison_immunity" id="poison_immunity" {% if unit.poison_immunity %}checked{% endif %}>
+                            <label for="poison_immunity" style="margin-bottom: 0;">🛡️ Иммунитет к яду</label>
+                        </div>
+                    </div>
+                </div>
             </div>
 
             <button type="submit" class="btn btn-success">💾 Сохранить</button>
@@ -795,6 +895,29 @@ def edit_race_unit(race_id, unit_id):
             unit.name = request.form.get('name')
             unit.is_flying = request.form.get('is_flying') == 'on'
             unit.is_kamikaze = request.form.get('is_kamikaze') == 'on'
+
+            # Combat stats
+            unit.attack = int(request.form.get('attack', 10))
+            unit.defense = int(request.form.get('defense', 5))
+            unit.health = int(request.form.get('health', 10))
+            unit.speed = int(request.form.get('speed', 5))
+            unit.min_damage = int(request.form.get('min_damage', 1))
+            unit.max_damage = int(request.form.get('max_damage', 3))
+            unit.initiative = int(request.form.get('initiative', 10))
+            unit.range = int(request.form.get('range', 1))
+
+            # Chances (convert to float)
+            unit.luck = float(request.form.get('luck', 0.0))
+            unit.crit_chance = float(request.form.get('crit_chance', 0.05))
+            unit.dodge_chance = float(request.form.get('dodge_chance', 0.05))
+            unit.counterattack_chance = float(request.form.get('counterattack_chance', 0.2))
+
+            # Regeneration and poison
+            unit.regeneration_health = int(request.form.get('regeneration_health', 0))
+            unit.poison_damage = int(request.form.get('poison_damage', 0))
+            unit.poison_turns = int(request.form.get('poison_turns', 0))
+            unit.poison_immunity = request.form.get('poison_immunity') == 'on'
+
             # unit_level_id не меняется после создания расы
             session_db.commit()
             return redirect(url_for('races.edit_race', race_id=race_id))
