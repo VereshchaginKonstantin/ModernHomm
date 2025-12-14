@@ -181,6 +181,7 @@ class UserRace(Base):
     user = relationship("GameUser")
     race = relationship("GameRace")
     user_race_units = relationship("UserRaceUnit", back_populates="user_race", cascade="all, delete-orphan")
+    armies = relationship("Army", back_populates="user_race", cascade="all, delete-orphan")
 
     __table_args__ = (
         # Уникальность пользователь + раса
@@ -311,7 +312,7 @@ class Army(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 
     # Связи
-    user_race = relationship("UserRace")
+    user_race = relationship("UserRace", back_populates="armies")
     army_units = relationship("ArmyUnit", back_populates="army", cascade="all, delete-orphan")
 
     def __repr__(self):
