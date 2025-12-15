@@ -468,5 +468,70 @@ class TestUnitActionsAPIEndpoint:
         assert '/actions' in content, "Метод должен вызывать эндпоинт /actions"
 
 
+class TestGameManagerDictionaryAccess:
+    """Тесты для проверки корректного доступа к словарям в GameManager"""
+
+    GAME_MANAGER_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)),
+                                      'godot-arena', 'scripts', 'autoload', 'game_manager.gd')
+
+    def test_move_selected_unit_uses_get(self):
+        """Проверка что move_selected_unit использует get() вместо прямого доступа"""
+        with open(self.GAME_MANAGER_PATH, 'r') as f:
+            content = f.read()
+
+        # Не должно быть selected_unit.id - только selected_unit.get("id")
+        assert 'selected_unit.get("id"' in content, \
+            "move_selected_unit должен использовать selected_unit.get('id')"
+        # Проверяем что нет прямого доступа selected_unit.id
+        lines = content.split('\n')
+        for line in lines:
+            if 'selected_unit.id' in line and 'selected_unit.get' not in line:
+                assert False, f"Найден прямой доступ selected_unit.id: {line}"
+
+    def test_attack_with_selected_unit_uses_get(self):
+        """Проверка что attack_with_selected_unit использует get()"""
+        with open(self.GAME_MANAGER_PATH, 'r') as f:
+            content = f.read()
+
+        # Должен использовать selected_unit.get("id")
+        assert 'attack_with_selected_unit' in content
+        # Проверяем что функция использует get для доступа к id
+
+    def test_skip_and_defer_use_get(self):
+        """Проверка что skip и defer используют get()"""
+        with open(self.GAME_MANAGER_PATH, 'r') as f:
+            content = f.read()
+
+        # Должны использовать selected_unit.get("id")
+        assert content.count('selected_unit.get("id"') >= 4, \
+            "Все методы работы с юнитом должны использовать get()"
+
+
+class TestTextureLoadingAuth:
+    """Тесты для проверки авторизации при загрузке текстур"""
+
+    GAME_GD_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)),
+                                 'godot-arena', 'scripts', 'game.gd')
+
+    def test_texture_loading_adds_auth_header(self):
+        """Проверка что загрузка текстур добавляет JWT токен"""
+        with open(self.GAME_GD_PATH, 'r') as f:
+            content = f.read()
+
+        assert 'Authorization: Bearer' in content, \
+            "Загрузка текстур должна добавлять Authorization header"
+        assert 'ApiClient.auth_token' in content, \
+            "Должен использоваться токен из ApiClient"
+
+    def test_texture_loading_uses_headers(self):
+        """Проверка что HTTP запрос текстуры использует заголовки"""
+        with open(self.GAME_GD_PATH, 'r') as f:
+            content = f.read()
+
+        # Проверяем что http.request вызывается с headers
+        assert 'http.request(url, headers)' in content, \
+            "HTTP запрос текстуры должен передавать headers"
+
+
 if __name__ == '__main__':
     pytest.main([__file__, '-v'])

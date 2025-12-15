@@ -294,5 +294,8 @@ func _on_request_completed(result: int, response_code: int, headers: PackedStrin
 		_save_auth_data(data)
 
 	if OS.has_feature("web"):
-		JavaScriptBridge.eval("console.log('API Success: ' + JSON.stringify(%s).substr(0, 200));" % JSON.stringify(data))
+		var json_str = JSON.stringify(data)
+		# Escape special characters for JavaScript string
+		json_str = json_str.replace("\\", "\\\\").replace("'", "\\'").replace("\n", "\\n").replace("\r", "\\r")
+		JavaScriptBridge.eval("console.log('[API] Success: ' + '%s'.substr(0, 200));" % json_str)
 	request_completed.emit(data)

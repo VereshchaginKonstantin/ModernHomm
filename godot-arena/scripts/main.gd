@@ -185,7 +185,8 @@ func _on_password_submitted(_text: String) -> void:
 
 func _on_api_response(data: Dictionary) -> void:
 	if OS.has_feature("web"):
-		JavaScriptBridge.eval("console.log('[Main] _on_api_response, state=%d, keys: ' + Object.keys(%s).join(','));" % [login_state, JSON.stringify(data)])
+		var keys = ",".join(data.keys())
+		JavaScriptBridge.eval("console.log('[Main] _on_api_response, state=%d, keys: %s');" % [login_state, keys])
 
 	# Обрабатываем ответ в зависимости от состояния логина
 	match login_state:

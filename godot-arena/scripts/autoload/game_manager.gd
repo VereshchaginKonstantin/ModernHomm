@@ -138,28 +138,36 @@ func deselect_unit() -> void:
 func move_selected_unit(x: int, y: int) -> void:
 	if selected_unit.is_empty():
 		return
-	ApiClient.move_unit(current_game_id, selected_unit.id, x, y)
+	var unit_id = selected_unit.get("id", 0)
+	if unit_id > 0:
+		ApiClient.move_unit(current_game_id, unit_id, x, y)
 	deselect_unit()
 
 ## Атаковать выбранным юнитом
 func attack_with_selected_unit(target_id: int) -> void:
 	if selected_unit.is_empty():
 		return
-	ApiClient.attack_unit(current_game_id, selected_unit.id, target_id)
+	var unit_id = selected_unit.get("id", 0)
+	if unit_id > 0:
+		ApiClient.attack_unit(current_game_id, unit_id, target_id)
 	deselect_unit()
 
 ## Пропустить ход юнита
 func skip_selected_unit() -> void:
 	if selected_unit.is_empty():
 		return
-	ApiClient.skip_unit(current_game_id, selected_unit.id)
+	var unit_id = selected_unit.get("id", 0)
+	if unit_id > 0:
+		ApiClient.skip_unit(current_game_id, unit_id)
 	deselect_unit()
 
 ## Отложить ход юнита
 func defer_selected_unit() -> void:
 	if selected_unit.is_empty():
 		return
-	ApiClient.defer_unit(current_game_id, selected_unit.id)
+	var unit_id = selected_unit.get("id", 0)
+	if unit_id > 0:
+		ApiClient.defer_unit(current_game_id, unit_id)
 	deselect_unit()
 
 ## Сдаться в текущей игре

@@ -70,7 +70,8 @@ func _ready() -> void:
 func _on_game_state_updated(state: Dictionary) -> void:
 	if OS.has_feature("web"):
 		JavaScriptBridge.eval("console.log('[Game] _on_game_state_updated called');")
-		JavaScriptBridge.eval("console.log('[Game] State keys: ' + Object.keys(%s).join(','));" % JSON.stringify(state))
+		var keys = ",".join(state.keys())
+		JavaScriptBridge.eval("console.log('[Game] State keys: %s');" % keys)
 
 	# Обновляем размер поля
 	var field_name = state.get("field", {}).get("name", "5x5")
@@ -225,9 +226,11 @@ func _update_units(units: Array) -> void:
 ## Загрузка текстуры юнита через HTTP
 func _load_unit_texture(image_url: String, unit_id: int) -> void:
 	# Формируем полный URL для загрузки изображения
+	# image_url может быть:
+	# - /arena/api/public/skins/{id}/image (из БД)
+	# - /static/unit_images/unit_{id}_{name}.jpg (статический файл)
 	var url = ""
 	if OS.has_feature("web"):
-		# image_url уже содержит путь вроде /arena/api/public/skins/1/image
 		url = JavaScriptBridge.eval("window.location.origin") + image_url
 		JavaScriptBridge.eval("console.log('[Game] Loading texture from: %s for unit %d');" % [url, unit_id])
 	else:
@@ -238,7 +241,13 @@ func _load_unit_texture(image_url: String, unit_id: int) -> void:
 	http.use_threads = false  # WebGL совместимость
 	add_child(http)
 	http.request_completed.connect(_on_texture_loaded.bind(image_url, unit_id, http))
-	var err = http.request(url)
+
+	# Добавляем JWT токен для авторизованных запросов к API
+	var headers: PackedStringArray = []
+	if ApiClient.auth_token != "":
+		headers.append("Authorization: Bearer " + ApiClient.auth_token)
+
+	var err = http.request(url, headers)
 	if err != OK:
 		if OS.has_feature("web"):
 			JavaScriptBridge.eval("console.error('[Game] Failed to start request for texture: %s');" % url)
@@ -360,6 +369,7 @@ func _create_unit_sprite(unit: Dictionary) -> Control:
 		texture_rect.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 		texture_rect.size = Vector2(48, 48)
 		texture_rect.position = Vector2((TILE_WIDTH - 48) / 2, 0)
+		texture_rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		container.add_child(texture_rect)
 	else:
 		# Иконка юнита (эмодзи) как fallback
@@ -374,6 +384,7 @@ func _create_unit_sprite(unit: Dictionary) -> Control:
 		icon_label.size = Vector2(TILE_WIDTH, 48)
 		icon_label.position = Vector2(0, 0)
 		icon_label.add_theme_font_size_override("font_size", 32)
+		icon_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		container.add_child(icon_label)
 
 		# Добавляем placeholder для текстуры (будет заполнен после загрузки)
@@ -382,6 +393,7 @@ func _create_unit_sprite(unit: Dictionary) -> Control:
 		texture_rect.size = Vector2(48, 48)
 		texture_rect.position = Vector2((TILE_WIDTH - 48) / 2, 0)
 		texture_rect.visible = false
+		texture_rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		container.add_child(texture_rect)
 
 	# Количество юнитов - бейдж в углу
@@ -389,6 +401,7 @@ func _create_unit_sprite(unit: Dictionary) -> Control:
 	count_bg.size = Vector2(22, 16)
 	count_bg.position = Vector2(TILE_WIDTH - 24, TILE_HEIGHT - 4)
 	count_bg.color = Color(0, 0, 0, 0.8)
+	count_bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	container.add_child(count_bg)
 
 	var count_label = Label.new()
@@ -399,6 +412,7 @@ func _create_unit_sprite(unit: Dictionary) -> Control:
 	count_label.position = Vector2(TILE_WIDTH - 24, TILE_HEIGHT - 4)
 	count_label.add_theme_font_size_override("font_size", 11)
 	count_label.add_theme_color_override("font_color", Color.WHITE)
+	count_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	container.add_child(count_label)
 
 	# Кликабельная область
@@ -495,7 +509,10 @@ func _on_defer_pressed() -> void:
 
 func _on_surrender_pressed() -> void:
 	# Сдаёмся и возвращаемся в меню
+	# Ожидаем завершения запроса surrender перед переходом в меню
+	# чтобы избежать race condition с HTTPRequest
 	GameManager.surrender_game()
+	await get_tree().create_timer(0.3).timeout
 	GameManager.return_to_menu()
 
 ## Создание изометрической подсветки для тайла
