@@ -26,12 +26,12 @@ anchor_top = 0.5
 anchor_right = 0.5
 anchor_bottom = 0.5
 offset_left = -300.0
-offset_top = -250.0
+offset_top = -280.0
 offset_right = 300.0
-offset_bottom = 250.0
+offset_bottom = 280.0
 grow_horizontal = 2
 grow_vertical = 2
-theme_override_constants/separation = 20
+theme_override_constants/separation = 15
 
 [node name="Title" type="Label" parent="VBoxContainer"]
 layout_mode = 2
@@ -135,12 +135,23 @@ text = "10x10"
 [node name="HSeparator2" type="HSeparator" parent="VBoxContainer"]
 layout_mode = 2
 
-[node name="StartButton" type="Button" parent="VBoxContainer"]
+[node name="ButtonsRow" type="HBoxContainer" parent="VBoxContainer"]
+layout_mode = 2
+alignment = 1
+theme_override_constants/separation = 20
+
+[node name="StartButton" type="Button" parent="VBoxContainer/ButtonsRow"]
 unique_name_in_owner = true
 layout_mode = 2
-custom_minimum_size = Vector2(0, 50)
+custom_minimum_size = Vector2(200, 50)
 disabled = true
 text = "⚔️ Вызвать на бой!"
+
+[node name="ArmyButton" type="Button" parent="VBoxContainer/ButtonsRow"]
+unique_name_in_owner = true
+layout_mode = 2
+custom_minimum_size = Vector2(200, 50)
+text = "🛡️ Мои армии"
 
 [node name="StatusLabel" type="Label" parent="VBoxContainer"]
 unique_name_in_owner = true
@@ -153,39 +164,68 @@ horizontal_alignment = 1
 [node name="BackButton" type="Button" parent="VBoxContainer"]
 layout_mode = 2
 custom_minimum_size = Vector2(0, 40)
-text = "← Вернуться к веб-арене"
+text = "← Выход"
 
-[node name="PendingGamesPanel" type="PanelContainer" parent="."]
+[node name="BattlesToggle" type="Button" parent="."]
 unique_name_in_owner = true
 visible = false
 layout_mode = 1
-anchors_preset = 12
-anchor_top = 1.0
+anchors_preset = 6
+anchor_left = 1.0
+anchor_top = 0.5
+anchor_right = 1.0
+anchor_bottom = 0.5
+offset_left = -40.0
+offset_top = -60.0
+offset_bottom = 60.0
+grow_horizontal = 0
+grow_vertical = 2
+text = "⚔️"
+icon_alignment = 1
+
+[node name="BattlesPanel" type="PanelContainer" parent="."]
+unique_name_in_owner = true
+visible = false
+layout_mode = 1
+anchors_preset = 11
+anchor_left = 1.0
 anchor_right = 1.0
 anchor_bottom = 1.0
-offset_top = -200.0
-grow_horizontal = 2
-grow_vertical = 0
+offset_left = -350.0
+grow_horizontal = 0
+grow_vertical = 2
 
-[node name="VBox" type="VBoxContainer" parent="PendingGamesPanel"]
+[node name="VBox" type="VBoxContainer" parent="BattlesPanel"]
 layout_mode = 2
-theme_override_constants/separation = 5
+theme_override_constants/separation = 10
 
-[node name="Title" type="Label" parent="PendingGamesPanel/VBox"]
+[node name="Header" type="HBoxContainer" parent="BattlesPanel/VBox"]
 layout_mode = 2
-theme_override_font_sizes/font_size = 16
+
+[node name="Title" type="Label" parent="BattlesPanel/VBox/Header"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_font_sizes/font_size = 18
 text = "⚔️ Бои"
-horizontal_alignment = 1
 
-[node name="ScrollContainer" type="ScrollContainer" parent="PendingGamesPanel/VBox"]
+[node name="CloseButton" type="Button" parent="BattlesPanel/VBox/Header"]
+unique_name_in_owner = true
 layout_mode = 2
-custom_minimum_size = Vector2(0, 150)
+custom_minimum_size = Vector2(30, 30)
+text = "✕"
 
-[node name="PendingList" type="VBoxContainer" parent="PendingGamesPanel/VBox/ScrollContainer"]
+[node name="HSeparator" type="HSeparator" parent="BattlesPanel/VBox"]
+layout_mode = 2
+
+[node name="ScrollContainer" type="ScrollContainer" parent="BattlesPanel/VBox"]
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="PendingList" type="VBoxContainer" parent="BattlesPanel/VBox/ScrollContainer"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
-theme_override_constants/separation = 5
+theme_override_constants/separation = 10
 
 [node name="LoginPanel" type="PanelContainer" parent="."]
 unique_name_in_owner = true
@@ -259,3 +299,20 @@ layout_mode = 2
 theme_override_colors/font_color = Color(0.9, 0.3, 0.3, 1)
 text = ""
 horizontal_alignment = 1
+
+[node name="VersionLabel" type="Label" parent="."]
+unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = 3
+anchor_left = 1.0
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = -150.0
+offset_top = -30.0
+grow_horizontal = 0
+grow_vertical = 0
+theme_override_colors/font_color = Color(0.4, 0.4, 0.4, 1)
+theme_override_font_sizes/font_size = 12
+text = "v0.0.0"
+horizontal_alignment = 2

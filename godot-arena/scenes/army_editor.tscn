@@ -1,0 +1,161 @@
+[gd_scene load_steps=2 format=3 uid="uid://c8qvpybceweqe"]
+
+[ext_resource type="Script" path="res://scripts/army_editor.gd" id="1_army"]
+
+[node name="ArmyEditor" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_army")
+
+[node name="Background" type="ColorRect" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+color = Color(0.101961, 0.101961, 0.180392, 1)
+
+[node name="MainContainer" type="HSplitContainer" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 20.0
+offset_top = 60.0
+offset_right = -20.0
+offset_bottom = -20.0
+grow_horizontal = 2
+grow_vertical = 2
+split_offset = 350
+
+[node name="LeftPanel" type="PanelContainer" parent="MainContainer"]
+layout_mode = 2
+custom_minimum_size = Vector2(300, 0)
+
+[node name="VBox" type="VBoxContainer" parent="MainContainer/LeftPanel"]
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="ArmiesHeader" type="HBoxContainer" parent="MainContainer/LeftPanel/VBox"]
+layout_mode = 2
+
+[node name="ArmiesLabel" type="Label" parent="MainContainer/LeftPanel/VBox/ArmiesHeader"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_font_sizes/font_size = 20
+text = "Мои армии"
+
+[node name="CreateArmyButton" type="Button" parent="MainContainer/LeftPanel/VBox/ArmiesHeader"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "+"
+tooltip_text = "Создать армию"
+
+[node name="HSeparator" type="HSeparator" parent="MainContainer/LeftPanel/VBox"]
+layout_mode = 2
+
+[node name="ArmiesScroll" type="ScrollContainer" parent="MainContainer/LeftPanel/VBox"]
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="ArmiesList" type="VBoxContainer" parent="MainContainer/LeftPanel/VBox/ArmiesScroll"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 5
+
+[node name="RightPanel" type="PanelContainer" parent="MainContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="VBox" type="VBoxContainer" parent="MainContainer/RightPanel"]
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="ArmyHeader" type="HBoxContainer" parent="MainContainer/RightPanel/VBox"]
+layout_mode = 2
+
+[node name="ArmyNameLabel" type="Label" parent="MainContainer/RightPanel/VBox/ArmyHeader"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_font_sizes/font_size = 24
+text = "Выберите армию"
+
+[node name="DeleteArmyButton" type="Button" parent="MainContainer/RightPanel/VBox/ArmyHeader"]
+unique_name_in_owner = true
+layout_mode = 2
+visible = false
+text = "Удалить"
+
+[node name="BalanceLabel" type="Label" parent="MainContainer/RightPanel/VBox"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_colors/font_color = Color(0.4, 0.8, 0.4, 1)
+text = "Баланс: $0"
+
+[node name="HSeparator" type="HSeparator" parent="MainContainer/RightPanel/VBox"]
+layout_mode = 2
+
+[node name="TabContainer" type="TabContainer" parent="MainContainer/RightPanel/VBox"]
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="Юниты в армии" type="ScrollContainer" parent="MainContainer/RightPanel/VBox/TabContainer"]
+layout_mode = 2
+
+[node name="ArmyUnitsList" type="VBoxContainer" parent="MainContainer/RightPanel/VBox/TabContainer/Юниты в армии"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 10
+
+[node name="Нанять юнитов" type="ScrollContainer" parent="MainContainer/RightPanel/VBox/TabContainer"]
+layout_mode = 2
+
+[node name="AvailableUnitsList" type="VBoxContainer" parent="MainContainer/RightPanel/VBox/TabContainer/Нанять юнитов"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 10
+
+[node name="Header" type="HBoxContainer" parent="."]
+layout_mode = 1
+anchors_preset = 10
+anchor_right = 1.0
+offset_left = 10.0
+offset_top = 10.0
+offset_right = -10.0
+offset_bottom = 50.0
+grow_horizontal = 2
+
+[node name="BackButton" type="Button" parent="Header"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "← Назад"
+
+[node name="Title" type="Label" parent="Header"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_font_sizes/font_size = 24
+text = "Редактор армий"
+horizontal_alignment = 1
+
+[node name="StatusLabel" type="Label" parent="."]
+unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = 7
+anchor_left = 0.5
+anchor_top = 1.0
+anchor_right = 0.5
+anchor_bottom = 1.0
+offset_left = -200.0
+offset_top = -30.0
+offset_right = 200.0
+grow_horizontal = 2
+grow_vertical = 0
+theme_override_colors/font_color = Color(0.952941, 0.611765, 0.0705882, 1)
+horizontal_alignment = 1

@@ -1032,3 +1032,351 @@ def api_public_skin_info(skin_id):
             'sprite_frame_count': skin.sprite_frame_count or 1,
             'sprite_fps': skin.sprite_fps or 10
         })
+
+
+# =========================== Army Management API ===========================
+
+@arena_bp.route('/api/public/armies')
+@token_required
+def api_public_armies():
+    """Получить список армий текущего игрока"""
+    player_id = request.player_id
+
+    with db.get_session() as session_db:
+        armies = []
+        user_races = session_db.query(UserRace).filter_by(user_id=player_id).all()
+        for user_race in user_races:
+            for army in user_race.armies:
+                army_units = []
+                army_cost = _calculate_army_cost(session_db, army)
+                for au in army.army_units:
+                    if au.race_unit and au.count > 0:
+                        skin = au.race_unit.skins[0] if au.race_unit.skins else None
+                        army_units.append({
+                            'army_unit_id': au.id,
+                            'race_unit_id': au.race_unit.id,
+                            'name': au.race_unit.name,
+                            'icon': au.race_unit.unit_level.icon if au.race_unit.unit_level else '?',
+                            'count': au.count,
+                            'attack': au.race_unit.attack,
+                            'defense': au.race_unit.defense,
+                            'health': au.race_unit.health,
+                            'speed': au.race_unit.speed,
+                            'min_damage': au.race_unit.min_damage,
+                            'max_damage': au.race_unit.max_damage,
+                            'hire_cost': au.race_unit.hire_cost,
+                            'has_image': skin and skin.image_data is not None,
+                            'image_url': f'/arena/api/public/skins/{skin.id}/image' if skin and skin.image_data else None
+                        })
+                armies.append({
+                    'army_id': army.id,
+                    'army_name': army.name,
+                    'army_cost': army_cost,
+                    'user_race_id': user_race.id,
+                    'race_name': user_race.race.name if user_race.race else 'Unknown',
+                    'units': army_units
+                })
+
+        return jsonify({'armies': armies})
+
+
+@arena_bp.route('/api/public/armies/create', methods=['POST'])
+@token_required
+def api_public_create_army():
+    """Создать новую армию"""
+    player_id = request.player_id
+    data = request.get_json() or {}
+    army_name = data.get('name', 'Новая армия')
+    user_race_id = data.get('user_race_id')
+
+    with db.get_session() as session_db:
+        # Если user_race_id не указан, берём первую расу игрока
+        if not user_race_id:
+            user_race = session_db.query(UserRace).filter_by(user_id=player_id).first()
+            if not user_race:
+                return jsonify({'error': 'У вас нет доступных рас. Выберите расу сначала.'}), 400
+            user_race_id = user_race.id
+        else:
+            user_race = session_db.query(UserRace).filter_by(id=user_race_id, user_id=player_id).first()
+            if not user_race:
+                return jsonify({'error': 'Раса не найдена'}), 404
+
+        # Создаём армию
+        new_army = Army(
+            name=army_name,
+            user_race_id=user_race_id
+        )
+        session_db.add(new_army)
+        session_db.commit()
+
+        return jsonify({
+            'success': True,
+            'army_id': new_army.id,
+            'army_name': new_army.name
+        })
+
+
+@arena_bp.route('/api/public/armies/<int:army_id>')
+@token_required
+def api_public_get_army(army_id):
+    """Получить детали армии"""
+    player_id = request.player_id
+
+    with db.get_session() as session_db:
+        army = session_db.query(Army).filter_by(id=army_id).first()
+        if not army:
+            return jsonify({'error': 'Армия не найдена'}), 404
+
+        # Проверяем что армия принадлежит игроку
+        if army.user_race.user_id != player_id:
+            return jsonify({'error': 'Нет доступа к этой армии'}), 403
+
+        army_units = []
+        army_cost = _calculate_army_cost(session_db, army)
+        for au in army.army_units:
+            if au.race_unit and au.count > 0:
+                skin = au.race_unit.skins[0] if au.race_unit.skins else None
+                army_units.append({
+                    'army_unit_id': au.id,
+                    'race_unit_id': au.race_unit.id,
+                    'name': au.race_unit.name,
+                    'icon': au.race_unit.unit_level.icon if au.race_unit.unit_level else '?',
+                    'count': au.count,
+                    'attack': au.race_unit.attack,
+                    'defense': au.race_unit.defense,
+                    'health': au.race_unit.health,
+                    'speed': au.race_unit.speed,
+                    'min_damage': au.race_unit.min_damage,
+                    'max_damage': au.race_unit.max_damage,
+                    'hire_cost': au.race_unit.hire_cost,
+                    'has_image': skin and skin.image_data is not None,
+                    'image_url': f'/arena/api/public/skins/{skin.id}/image' if skin and skin.image_data else None
+                })
+
+        return jsonify({
+            'army_id': army.id,
+            'army_name': army.name,
+            'army_cost': army_cost,
+            'user_race_id': army.user_race_id,
+            'race_name': army.user_race.race.name if army.user_race and army.user_race.race else 'Unknown',
+            'units': army_units
+        })
+
+
+@arena_bp.route('/api/public/armies/<int:army_id>/delete', methods=['POST'])
+@token_required
+def api_public_delete_army(army_id):
+    """Удалить армию"""
+    player_id = request.player_id
+
+    with db.get_session() as session_db:
+        army = session_db.query(Army).filter_by(id=army_id).first()
+        if not army:
+            return jsonify({'error': 'Армия не найдена'}), 404
+
+        if army.user_race.user_id != player_id:
+            return jsonify({'error': 'Нет доступа к этой армии'}), 403
+
+        session_db.delete(army)
+        session_db.commit()
+
+        return jsonify({'success': True})
+
+
+@arena_bp.route('/api/public/armies/<int:army_id>/available_units')
+@token_required
+def api_public_available_units(army_id):
+    """Получить доступных юнитов для найма в армию"""
+    player_id = request.player_id
+
+    with db.get_session() as session_db:
+        army = session_db.query(Army).filter_by(id=army_id).first()
+        if not army:
+            return jsonify({'error': 'Армия не найдена'}), 404
+
+        if army.user_race.user_id != player_id:
+            return jsonify({'error': 'Нет доступа к этой армии'}), 403
+
+        # Получаем баланс игрока
+        player = session_db.query(GameUser).filter_by(id=player_id).first()
+        player_balance = float(player.balance) if player else 0
+
+        # Получаем юнитов расы
+        race_units = session_db.query(RaceUnit).filter_by(race_id=army.user_race.race_id).all()
+
+        available_units = []
+        for ru in race_units:
+            skin = ru.skins[0] if ru.skins else None
+            # Проверяем, есть ли уже этот юнит в армии
+            existing_au = session_db.query(ArmyUnit).filter_by(
+                army_id=army_id,
+                race_unit_id=ru.id
+            ).first()
+            current_count = existing_au.count if existing_au else 0
+
+            available_units.append({
+                'race_unit_id': ru.id,
+                'name': ru.name,
+                'icon': ru.unit_level.icon if ru.unit_level else '?',
+                'level': ru.unit_level.level if ru.unit_level else 1,
+                'attack': ru.attack,
+                'defense': ru.defense,
+                'health': ru.health,
+                'speed': ru.speed,
+                'min_damage': ru.min_damage,
+                'max_damage': ru.max_damage,
+                'hire_cost': ru.hire_cost,
+                'current_count': current_count,
+                'can_afford': player_balance >= ru.hire_cost,
+                'has_image': skin and skin.image_data is not None,
+                'image_url': f'/arena/api/public/skins/{skin.id}/image' if skin and skin.image_data else None
+            })
+
+        return jsonify({
+            'army_id': army_id,
+            'player_balance': player_balance,
+            'units': available_units
+        })
+
+
+@arena_bp.route('/api/public/armies/<int:army_id>/hire', methods=['POST'])
+@token_required
+def api_public_hire_unit(army_id):
+    """Нанять юнитов в армию"""
+    player_id = request.player_id
+    data = request.get_json() or {}
+    race_unit_id = data.get('race_unit_id')
+    count = data.get('count', 1)
+
+    if not race_unit_id:
+        return jsonify({'error': 'race_unit_id обязателен'}), 400
+
+    if count < 1:
+        return jsonify({'error': 'count должен быть >= 1'}), 400
+
+    with db.get_session() as session_db:
+        army = session_db.query(Army).filter_by(id=army_id).first()
+        if not army:
+            return jsonify({'error': 'Армия не найдена'}), 404
+
+        if army.user_race.user_id != player_id:
+            return jsonify({'error': 'Нет доступа к этой армии'}), 403
+
+        # Получаем юнита расы
+        race_unit = session_db.query(RaceUnit).filter_by(id=race_unit_id).first()
+        if not race_unit:
+            return jsonify({'error': 'Юнит не найден'}), 404
+
+        # Проверяем что юнит принадлежит той же расе
+        if race_unit.race_id != army.user_race.race_id:
+            return jsonify({'error': 'Этот юнит не доступен для данной расы'}), 400
+
+        # Проверяем баланс
+        player = session_db.query(GameUser).filter_by(id=player_id).first()
+        total_cost = race_unit.hire_cost * count
+        if player.balance < total_cost:
+            return jsonify({'error': f'Недостаточно средств. Нужно: {total_cost}, у вас: {player.balance}'}), 400
+
+        # Находим или создаём ArmyUnit
+        army_unit = session_db.query(ArmyUnit).filter_by(
+            army_id=army_id,
+            race_unit_id=race_unit_id
+        ).first()
+
+        if army_unit:
+            army_unit.count += count
+        else:
+            army_unit = ArmyUnit(
+                army_id=army_id,
+                race_unit_id=race_unit_id,
+                count=count
+            )
+            session_db.add(army_unit)
+
+        # Списываем деньги
+        player.balance -= total_cost
+        session_db.commit()
+
+        return jsonify({
+            'success': True,
+            'hired_count': count,
+            'total_cost': total_cost,
+            'new_balance': float(player.balance),
+            'new_unit_count': army_unit.count
+        })
+
+
+@arena_bp.route('/api/public/armies/<int:army_id>/dismiss', methods=['POST'])
+@token_required
+def api_public_dismiss_unit(army_id):
+    """Распустить юнитов из армии (частичный возврат денег)"""
+    player_id = request.player_id
+    data = request.get_json() or {}
+    race_unit_id = data.get('race_unit_id')
+    count = data.get('count', 1)
+
+    if not race_unit_id:
+        return jsonify({'error': 'race_unit_id обязателен'}), 400
+
+    if count < 1:
+        return jsonify({'error': 'count должен быть >= 1'}), 400
+
+    with db.get_session() as session_db:
+        army = session_db.query(Army).filter_by(id=army_id).first()
+        if not army:
+            return jsonify({'error': 'Армия не найдена'}), 404
+
+        if army.user_race.user_id != player_id:
+            return jsonify({'error': 'Нет доступа к этой армии'}), 403
+
+        # Находим юнита в армии
+        army_unit = session_db.query(ArmyUnit).filter_by(
+            army_id=army_id,
+            race_unit_id=race_unit_id
+        ).first()
+
+        if not army_unit or army_unit.count < count:
+            return jsonify({'error': 'Недостаточно юнитов для роспуска'}), 400
+
+        # Возвращаем 50% стоимости
+        race_unit = army_unit.race_unit
+        refund = (race_unit.hire_cost * count) * 0.5
+
+        player = session_db.query(GameUser).filter_by(id=player_id).first()
+        player.balance += refund
+
+        army_unit.count -= count
+        if army_unit.count <= 0:
+            session_db.delete(army_unit)
+
+        session_db.commit()
+
+        return jsonify({
+            'success': True,
+            'dismissed_count': count,
+            'refund': refund,
+            'new_balance': float(player.balance),
+            'remaining_count': max(0, army_unit.count) if army_unit else 0
+        })
+
+
+@arena_bp.route('/api/public/user_races')
+@token_required
+def api_public_user_races():
+    """Получить расы игрока"""
+    player_id = request.player_id
+
+    with db.get_session() as session_db:
+        user_races = session_db.query(UserRace).filter_by(user_id=player_id).all()
+
+        races = []
+        for ur in user_races:
+            races.append({
+                'user_race_id': ur.id,
+                'race_id': ur.race_id,
+                'race_name': ur.race.name if ur.race else 'Unknown',
+                'race_description': ur.race.description if ur.race else '',
+                'armies_count': len(ur.armies)
+            })
+
+        return jsonify({'user_races': races})

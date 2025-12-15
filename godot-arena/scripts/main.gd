@@ -9,9 +9,13 @@ extends Control
 @onready var field_7x7: Button = %Field7x7
 @onready var field_10x10: Button = %Field10x10
 @onready var start_button: Button = %StartButton
+@onready var army_button: Button = %ArmyButton
 @onready var status_label: Label = %StatusLabel
-@onready var pending_panel: PanelContainer = %PendingGamesPanel
+@onready var battles_panel: PanelContainer = %BattlesPanel
+@onready var battles_toggle: Button = %BattlesToggle
+@onready var battles_close: Button = %CloseButton
 @onready var pending_list: VBoxContainer = %PendingList
+@onready var version_label: Label = %VersionLabel
 
 # Login panel elements
 @onready var login_panel: PanelContainer = %LoginPanel
@@ -27,6 +31,10 @@ enum LoginState { IDLE, CHECKING_USER, LOGGING_IN, SETTING_PASSWORD }
 var login_state: LoginState = LoginState.IDLE
 var login_username: String = ""
 
+# Состояние панели боёв
+var battles_panel_open: bool = false
+var battles_panel_tween: Tween
+
 var players: Array = []
 var current_player: Dictionary = {}
 var selected_opponent: Dictionary = {}
@@ -37,7 +45,12 @@ var pending_games: Array = []
 var active_games: Array = []
 var history_games: Array = []
 
+const VERSION = "2025.12.15"
+
 func _ready() -> void:
+	# Устанавливаем версию
+	version_label.text = "v" + VERSION
+
 	# Подключаем сигналы
 	GameManager.players_loaded.connect(_on_players_loaded)
 	GameManager.current_player_loaded.connect(_on_current_player_loaded)
@@ -55,7 +68,12 @@ func _ready() -> void:
 	field_7x7.pressed.connect(_on_field_7x7_pressed)
 	field_10x10.pressed.connect(_on_field_10x10_pressed)
 	start_button.pressed.connect(_on_start_pressed)
+	army_button.pressed.connect(_on_army_pressed)
 	$VBoxContainer/BackButton.pressed.connect(_on_back_pressed)
+
+	# Подключаем панель боёв
+	battles_toggle.pressed.connect(_toggle_battles_panel)
+	battles_close.pressed.connect(_close_battles_panel)
 
 	# Подключаем логин UI
 	login_button.pressed.connect(_on_login_pressed)
@@ -69,10 +87,44 @@ func _ready() -> void:
 	waiting_timer.timeout.connect(_on_waiting_timeout)
 	add_child(waiting_timer)
 
+	# Начальное положение панели боёв (за экраном)
+	battles_panel.position.x = get_viewport_rect().size.x
+
 	# Всегда показываем форму логина (больше не используем player_id из URL)
 	login_panel.visible = true
 	set_password_button.visible = false
 	username_input.grab_focus()
+
+func _toggle_battles_panel() -> void:
+	if battles_panel_open:
+		_close_battles_panel()
+	else:
+		_open_battles_panel()
+
+func _open_battles_panel() -> void:
+	if battles_panel_tween:
+		battles_panel_tween.kill()
+
+	battles_panel.visible = true
+	battles_panel_open = true
+	battles_toggle.text = "▶"
+
+	battles_panel_tween = create_tween()
+	battles_panel_tween.tween_property(battles_panel, "position:x", get_viewport_rect().size.x - battles_panel.size.x, 0.3).set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_CUBIC)
+
+func _close_battles_panel() -> void:
+	if battles_panel_tween:
+		battles_panel_tween.kill()
+
+	battles_panel_open = false
+	battles_toggle.text = "⚔️"
+
+	battles_panel_tween = create_tween()
+	battles_panel_tween.tween_property(battles_panel, "position:x", get_viewport_rect().size.x, 0.3).set_ease(Tween.EASE_IN).set_trans(Tween.TRANS_CUBIC)
+	battles_panel_tween.tween_callback(func(): battles_panel.visible = false)
+
+func _on_army_pressed() -> void:
+	get_tree().change_scene_to_file("res://scenes/army_editor.tscn")
 
 func _on_login_pressed() -> void:
 	var username = username_input.text.strip_edges()
@@ -240,15 +292,15 @@ func _on_auth_required() -> void:
 
 func _show_main_ui() -> void:
 	# Показываем имя текущего игрока
-	player_name_label.text = current_player.get("name", "???")
+	player_name_label.text = current_player.get("username", current_player.get("name", "???"))
 
 	# Обновляем статистику игрока
 	var win_rate = 0
 	var total = current_player.get("wins", 0) + current_player.get("losses", 0)
 	if total > 0:
 		win_rate = int(float(current_player.get("wins", 0)) / total * 100)
-	player_stats.text = "Армия: %.0f | Побед: %d | Поражений: %d (%d%%)" % [
-		current_player.get("army_cost", 0),
+	player_stats.text = "Баланс: %.0f | Побед: %d | Поражений: %d (%d%%)" % [
+		current_player.get("balance", 0),
 		current_player.get("wins", 0),
 		current_player.get("losses", 0),
 		win_rate
@@ -279,9 +331,6 @@ func _populate_opponents() -> void:
 		return
 
 	var my_id = current_player.get("id", 0)
-	var my_cost = current_player.get("army_cost", 0)
-	var min_cost = my_cost * 0.5
-	var max_cost = my_cost * 1.5
 
 	opponent_select.clear()
 	opponent_select.add_item("Выберите противника", 0)
@@ -292,14 +341,12 @@ func _populate_opponents() -> void:
 		if p.get("units", []).size() == 0:
 			continue
 
-		var cost = p.get("army_cost", 0)
-		if cost >= min_cost and cost <= max_cost:
-			var wr = 0
-			var t = p.get("wins", 0) + p.get("losses", 0)
-			if t > 0:
-				wr = int(float(p.get("wins", 0)) / t * 100)
-			var text = "%s (%.0f) - %d%%" % [p.get("name", "???"), cost, wr]
-			opponent_select.add_item(text, p.get("id", 0))
+		var wr = 0
+		var t = p.get("wins", 0) + p.get("losses", 0)
+		if t > 0:
+			wr = int(float(p.get("wins", 0)) / t * 100)
+		var text = "%s - %d%%" % [p.get("username", p.get("name", "???")), wr]
+		opponent_select.add_item(text, p.get("id", 0))
 
 	selected_opponent = {}
 	opponent_stats.text = ""
@@ -312,9 +359,10 @@ func _check_pending_games() -> void:
 	if current_player.is_empty() or not ApiClient.is_authenticated():
 		if OS.has_feature("web"):
 			JavaScriptBridge.eval("console.log('[Main] Not authenticated, hiding panel');")
-		pending_panel.visible = false
+		battles_toggle.visible = false
 		return
 
+	battles_toggle.visible = true
 	if OS.has_feature("web"):
 		JavaScriptBridge.eval("console.log('[Main] Loading pending games');")
 	ApiClient.get_pending_games()
@@ -373,7 +421,7 @@ func _on_start_pressed() -> void:
 
 	# Используем новый API без player_id (берётся из токена)
 	ApiClient.create_game(
-		selected_opponent.get("name", ""),
+		selected_opponent.get("username", selected_opponent.get("name", "")),
 		selected_field_size
 	)
 
@@ -428,7 +476,7 @@ func _display_battles_list() -> void:
 		hbox.add_child(label)
 
 		var army_select = OptionButton.new()
-		army_select.custom_minimum_size = Vector2(150, 0)
+		army_select.custom_minimum_size = Vector2(120, 0)
 		var player_armies = game.get("player_armies", [])
 		for i in range(player_armies.size()):
 			var army = player_armies[i]
@@ -440,12 +488,14 @@ func _display_battles_list() -> void:
 		hbox.add_child(army_select)
 
 		var accept_btn = Button.new()
-		accept_btn.text = "Принять"
+		accept_btn.text = "✓"
+		accept_btn.custom_minimum_size = Vector2(40, 0)
 		accept_btn.pressed.connect(_on_accept_game.bind(game.get("game_id", 0), army_select))
 		hbox.add_child(accept_btn)
 
 		var decline_btn = Button.new()
-		decline_btn.text = "Отклонить"
+		decline_btn.text = "✕"
+		decline_btn.custom_minimum_size = Vector2(40, 0)
 		decline_btn.pressed.connect(_on_decline_game.bind(game.get("game_id", 0)))
 		hbox.add_child(decline_btn)
 
@@ -468,7 +518,7 @@ func _display_battles_list() -> void:
 		hbox.add_child(label)
 
 		var continue_btn = Button.new()
-		continue_btn.text = "Продолжить"
+		continue_btn.text = "Играть"
 		continue_btn.pressed.connect(_on_continue_game.bind(game.get("game_id", 0)))
 		hbox.add_child(continue_btn)
 
@@ -497,7 +547,14 @@ func _display_battles_list() -> void:
 		pending_list.add_child(hbox)
 		history_shown += 1
 
-	pending_panel.visible = has_battles
+	# Показываем/скрываем кнопку toggle в зависимости от наличия боёв
+	battles_toggle.visible = has_battles or not current_player.is_empty()
+
+	# Автоматически открываем панель если есть активные бои или вызовы
+	if pending_games.size() > 0 or active_games.size() > 0:
+		if not battles_panel_open:
+			_open_battles_panel()
+
 	if OS.has_feature("web"):
 		JavaScriptBridge.eval("console.log('[Main] _display_battles_list done, has_battles=%s');" % str(has_battles))
 
@@ -519,5 +576,10 @@ func _on_continue_game(game_id: int) -> void:
 func _on_back_pressed() -> void:
 	waiting_timer.stop()
 	waiting_game_id = 0
-	if OS.has_feature("web"):
-		JavaScriptBridge.eval("window.location.href = '/arena/';")
+	# Выход из аккаунта
+	ApiClient.logout()
+	login_panel.visible = true
+	login_status.text = ""
+	username_input.text = ""
+	password_input.text = ""
+	username_input.grab_focus()

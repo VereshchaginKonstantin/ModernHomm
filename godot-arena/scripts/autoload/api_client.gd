@@ -173,6 +173,59 @@ func get_pending_games() -> void:
 	var url = api_base + "/games/pending"
 	_make_request(url, HTTPClient.METHOD_GET, "", true)
 
+## ============= Army Management =============
+
+## Получить список армий
+func get_armies() -> void:
+	var url = api_base + "/armies"
+	_make_request(url, HTTPClient.METHOD_GET, "", true)
+
+## Создать новую армию
+func create_army(army_name: String, user_race_id: int = 0) -> void:
+	var url = api_base + "/armies/create"
+	var body_data = {"name": army_name}
+	if user_race_id > 0:
+		body_data["user_race_id"] = user_race_id
+	_make_request(url, HTTPClient.METHOD_POST, JSON.stringify(body_data), true)
+
+## Получить детали армии
+func get_army(army_id: int) -> void:
+	var url = api_base + "/armies/%d" % army_id
+	_make_request(url, HTTPClient.METHOD_GET, "", true)
+
+## Удалить армию
+func delete_army(army_id: int) -> void:
+	var url = api_base + "/armies/%d/delete" % army_id
+	_make_request(url, HTTPClient.METHOD_POST, "{}", true)
+
+## Получить доступных юнитов для найма
+func get_available_units(army_id: int) -> void:
+	var url = api_base + "/armies/%d/available_units" % army_id
+	_make_request(url, HTTPClient.METHOD_GET, "", true)
+
+## Нанять юнитов в армию
+func hire_unit(army_id: int, race_unit_id: int, count: int = 1) -> void:
+	var url = api_base + "/armies/%d/hire" % army_id
+	var body = JSON.stringify({
+		"race_unit_id": race_unit_id,
+		"count": count
+	})
+	_make_request(url, HTTPClient.METHOD_POST, body, true)
+
+## Распустить юнитов из армии
+func dismiss_unit(army_id: int, race_unit_id: int, count: int = 1) -> void:
+	var url = api_base + "/armies/%d/dismiss" % army_id
+	var body = JSON.stringify({
+		"race_unit_id": race_unit_id,
+		"count": count
+	})
+	_make_request(url, HTTPClient.METHOD_POST, body, true)
+
+## Получить расы игрока
+func get_user_races() -> void:
+	var url = api_base + "/user_races"
+	_make_request(url, HTTPClient.METHOD_GET, "", true)
+
 ## Сохранить токен и данные игрока после успешного логина
 func _save_auth_data(data: Dictionary) -> void:
 	if data.has("token"):
