@@ -1,5 +1,5 @@
 extends Control
-## Главное меню арены
+## Главное меню арены с JWT аутентификацией
 
 @onready var player_name_label: Label = %PlayerNameLabel
 @onready var player_stats: Label = %PlayerStats
@@ -11,17 +11,31 @@ extends Control
 @onready var start_button: Button = %StartButton
 @onready var status_label: Label = %StatusLabel
 @onready var pending_panel: PanelContainer = %PendingGamesPanel
-@onready var pending_list: VBoxContainer = %PendingList  # Now inside ScrollContainer
+@onready var pending_list: VBoxContainer = %PendingList
+
+# Login panel elements
+@onready var login_panel: PanelContainer = %LoginPanel
+@onready var login_subtitle: Label = %Subtitle
+@onready var username_input: LineEdit = %UsernameInput
+@onready var password_input: LineEdit = %PasswordInput
+@onready var login_button: Button = %LoginButton
+@onready var set_password_button: Button = %SetPasswordButton
+@onready var login_status: Label = %LoginStatus
+
+# Состояние логина
+enum LoginState { IDLE, CHECKING_USER, LOGGING_IN, SETTING_PASSWORD }
+var login_state: LoginState = LoginState.IDLE
+var login_username: String = ""
 
 var players: Array = []
-var current_player: Dictionary = {}  # Текущий залогиненный игрок
+var current_player: Dictionary = {}
 var selected_opponent: Dictionary = {}
 var selected_field_size: String = "5x5"
-var waiting_game_id: int = 0  # ID игры в ожидании
-var waiting_timer: Timer  # Таймер для polling статуса игры
-var pending_games: Array = []  # Ожидающие игры
-var active_games: Array = []  # Активные игры
-var history_games: Array = []  # История игр
+var waiting_game_id: int = 0
+var waiting_timer: Timer
+var pending_games: Array = []
+var active_games: Array = []
+var history_games: Array = []
 
 func _ready() -> void:
 	# Подключаем сигналы
@@ -30,8 +44,10 @@ func _ready() -> void:
 	GameManager.game_state_updated.connect(_on_game_state_updated)
 	GameManager.error_occurred.connect(_on_error)
 
-	# Подключаем сигнал API для обработки создания игры
+	# Подключаем сигналы API
 	ApiClient.request_completed.connect(_on_api_response)
+	ApiClient.request_failed.connect(_on_api_error)
+	ApiClient.auth_required.connect(_on_auth_required)
 
 	# Подключаем UI
 	opponent_select.item_selected.connect(_on_opponent_selected)
@@ -41,27 +57,188 @@ func _ready() -> void:
 	start_button.pressed.connect(_on_start_pressed)
 	$VBoxContainer/BackButton.pressed.connect(_on_back_pressed)
 
+	# Подключаем логин UI
+	login_button.pressed.connect(_on_login_pressed)
+	set_password_button.pressed.connect(_on_set_password_pressed)
+	username_input.text_submitted.connect(_on_username_submitted)
+	password_input.text_submitted.connect(_on_password_submitted)
+
 	# Создаём таймер для polling статуса игры
 	waiting_timer = Timer.new()
 	waiting_timer.wait_time = 2.0
 	waiting_timer.timeout.connect(_on_waiting_timeout)
 	add_child(waiting_timer)
 
-	# Сначала загружаем текущего пользователя
-	status_label.text = "Загрузка..."
-	GameManager.load_current_player()
+	# Всегда показываем форму логина (больше не используем player_id из URL)
+	login_panel.visible = true
+	set_password_button.visible = false
+	username_input.grab_focus()
 
-func _on_current_player_loaded(player: Dictionary) -> void:
-	if player.is_empty():
-		# Пользователь не залогинен - показываем сообщение
-		# Кнопка "Назад" переведёт на веб-арену где можно залогиниться
-		status_label.text = "Необходимо войти через веб-арену"
-		player_name_label.text = "Не авторизован"
-		start_button.disabled = true
+func _on_login_pressed() -> void:
+	var username = username_input.text.strip_edges()
+	var password = password_input.text
+
+	if username.is_empty():
+		login_status.text = "Введите имя пользователя"
 		return
 
-	current_player = player
+	if password.is_empty():
+		login_status.text = "Введите пароль"
+		return
 
+	login_button.disabled = true
+	set_password_button.visible = false
+	login_status.text = "Вход..."
+	login_state = LoginState.LOGGING_IN
+	login_username = username
+	ApiClient.login(username, password)
+
+func _on_set_password_pressed() -> void:
+	var username = username_input.text.strip_edges()
+	var password = password_input.text
+
+	if username.is_empty():
+		login_status.text = "Введите имя пользователя"
+		return
+
+	if password.is_empty():
+		login_status.text = "Введите пароль (минимум 4 символа)"
+		return
+
+	if password.length() < 4:
+		login_status.text = "Пароль должен быть не менее 4 символов"
+		return
+
+	login_button.disabled = true
+	set_password_button.disabled = true
+	login_status.text = "Установка пароля..."
+	login_state = LoginState.SETTING_PASSWORD
+	login_username = username
+	ApiClient.set_password(username, password)
+
+func _on_username_submitted(_text: String) -> void:
+	# При вводе username - фокус на пароль
+	password_input.grab_focus()
+
+func _on_password_submitted(_text: String) -> void:
+	# При вводе пароля - логин
+	_on_login_pressed()
+
+func _on_api_response(data: Dictionary) -> void:
+	if OS.has_feature("web"):
+		JavaScriptBridge.eval("console.log('[Main] _on_api_response, state=%d, keys: ' + Object.keys(%s).join(','));" % [login_state, JSON.stringify(data)])
+
+	# Обрабатываем ответ в зависимости от состояния логина
+	match login_state:
+		LoginState.LOGGING_IN:
+			_handle_login_response(data)
+		LoginState.SETTING_PASSWORD:
+			_handle_set_password_response(data)
+		_:
+			_handle_game_response(data)
+
+func _handle_login_response(data: Dictionary) -> void:
+	login_state = LoginState.IDLE
+
+	if data.has("token") and data.has("player"):
+		# Успешный логин
+		var player = data.get("player", {})
+		if not player.is_empty():
+			login_panel.visible = false
+			current_player = player
+			_show_main_ui()
+			return
+
+	# Ошибка или неверные данные
+	login_button.disabled = false
+	login_status.text = data.get("error", "Ошибка входа")
+
+func _handle_set_password_response(data: Dictionary) -> void:
+	login_state = LoginState.IDLE
+
+	if data.has("success") and data.get("success", false):
+		# Пароль установлен успешно
+		login_status.text = "Пароль установлен! Входим..."
+		login_button.disabled = false
+		set_password_button.visible = false
+
+		# Если вернулся токен - сразу используем его
+		if data.has("token") and data.has("player_id"):
+			login_panel.visible = false
+			# Загружаем данные игрока
+			ApiClient.get_current_player()
+			return
+
+		# Иначе предлагаем залогиниться
+		login_status.text = "Пароль установлен! Теперь войдите."
+	else:
+		login_button.disabled = false
+		set_password_button.disabled = false
+		login_status.text = data.get("error", "Ошибка установки пароля")
+
+func _handle_game_response(data: Dictionary) -> void:
+	# Обрабатываем данные текущего игрока
+	if data.has("current_player"):
+		var player = data.get("current_player", {})
+		if not player.is_empty():
+			current_player = player
+			_show_main_ui()
+		return
+
+	# Обрабатываем ответ на ожидающие игры
+	if data.has("pending_games"):
+		pending_games = data.get("pending_games", [])
+		active_games = data.get("active_games", [])
+		history_games = data.get("history", [])
+		if OS.has_feature("web"):
+			JavaScriptBridge.eval("console.log('[Main] Got pending_games: %d, active: %d, history: %d');" % [pending_games.size(), active_games.size(), history_games.size()])
+		_display_battles_list()
+		return
+
+	# Обрабатываем ответ на создание игры
+	if data.has("game_id") and data.has("status"):
+		if data.get("status") == "waiting":
+			waiting_game_id = data.get("game_id")
+			status_label.text = "Ожидание принятия игры противником..."
+			waiting_timer.start()
+		elif data.get("status") == "in_progress":
+			GameManager.current_game_id = data.get("game_id")
+			get_tree().change_scene_to_file("res://scenes/game.tscn")
+
+func _on_api_error(error: String) -> void:
+	if OS.has_feature("web"):
+		JavaScriptBridge.eval("console.log('[Main] _on_api_error: %s, state=%d');" % [error, login_state])
+
+	match login_state:
+		LoginState.LOGGING_IN:
+			login_state = LoginState.IDLE
+			login_button.disabled = false
+
+			# Проверяем специальные коды ошибок
+			if "PASSWORD_NOT_SET" in error or "Password not set" in error:
+				# У пользователя нет пароля - предлагаем установить
+				login_status.text = "У вас не установлен пароль. Установите его:"
+				login_subtitle.text = "Установите пароль для входа"
+				set_password_button.visible = true
+			else:
+				login_status.text = error
+
+		LoginState.SETTING_PASSWORD:
+			login_state = LoginState.IDLE
+			login_button.disabled = false
+			set_password_button.disabled = false
+			login_status.text = error
+
+		_:
+			status_label.text = "Ошибка: " + error
+
+func _on_auth_required() -> void:
+	# Токен устарел - показываем логин
+	login_panel.visible = true
+	login_status.text = "Сессия истекла. Войдите снова."
+	ApiClient.logout()
+
+func _show_main_ui() -> void:
 	# Показываем имя текущего игрока
 	player_name_label.text = current_player.get("name", "???")
 
@@ -81,11 +258,20 @@ func _on_current_player_loaded(player: Dictionary) -> void:
 	status_label.text = "Загрузка противников..."
 	GameManager.load_players()
 
+func _on_current_player_loaded(player: Dictionary) -> void:
+	if player.is_empty():
+		# Данные не загрузились - показываем логин
+		login_panel.visible = true
+		login_status.text = "Ошибка загрузки данных. Войдите снова."
+		return
+
+	current_player = player
+	login_panel.visible = false
+	_show_main_ui()
+
 func _on_players_loaded(loaded_players: Array) -> void:
 	players = loaded_players
 	status_label.text = ""
-
-	# Заполняем список противников
 	_populate_opponents()
 
 func _populate_opponents() -> void:
@@ -102,9 +288,9 @@ func _populate_opponents() -> void:
 
 	for p in players:
 		if p.get("id") == my_id:
-			continue  # Себя пропускаем
+			continue
 		if p.get("units", []).size() == 0:
-			continue  # Без юнитов пропускаем
+			continue
 
 		var cost = p.get("army_cost", 0)
 		if cost >= min_cost and cost <= max_cost:
@@ -118,24 +304,20 @@ func _populate_opponents() -> void:
 	selected_opponent = {}
 	opponent_stats.text = ""
 	_update_start_button()
-
-	# Проверяем ожидающие игры
 	_check_pending_games()
 
 func _check_pending_games() -> void:
 	if OS.has_feature("web"):
 		JavaScriptBridge.eval("console.log('[Main] _check_pending_games called');")
-	if current_player.is_empty():
+	if current_player.is_empty() or not ApiClient.is_authenticated():
 		if OS.has_feature("web"):
-			JavaScriptBridge.eval("console.log('[Main] current_player is empty, hiding panel');")
+			JavaScriptBridge.eval("console.log('[Main] Not authenticated, hiding panel');")
 		pending_panel.visible = false
 		return
 
-	# Загружаем ожидающие игры через API
-	var player_id = current_player.get("id", 0)
 	if OS.has_feature("web"):
-		JavaScriptBridge.eval("console.log('[Main] Loading pending games for player_id: %d');" % player_id)
-	ApiClient.get_pending_games(player_id)
+		JavaScriptBridge.eval("console.log('[Main] Loading pending games');")
+	ApiClient.get_pending_games()
 
 func _on_opponent_selected(index: int) -> void:
 	var opponent_id = opponent_select.get_item_id(index)
@@ -145,13 +327,11 @@ func _on_opponent_selected(index: int) -> void:
 		_update_start_button()
 		return
 
-	# Находим противника
 	for p in players:
 		if p.get("id") == opponent_id:
 			selected_opponent = p
 			break
 
-	# Обновляем статистику противника
 	var win_rate = 0
 	var total = selected_opponent.get("wins", 0) + selected_opponent.get("losses", 0)
 	if total > 0:
@@ -161,7 +341,6 @@ func _on_opponent_selected(index: int) -> void:
 		selected_opponent.get("losses", 0),
 		win_rate
 	]
-
 	_update_start_button()
 
 func _on_field_5x5_pressed() -> void:
@@ -192,51 +371,23 @@ func _on_start_pressed() -> void:
 	start_button.disabled = true
 	status_label.text = "Создание игры..."
 
-	GameManager.create_game(
-		current_player.get("id"),
+	# Используем новый API без player_id (берётся из токена)
+	ApiClient.create_game(
 		selected_opponent.get("name", ""),
 		selected_field_size
 	)
 
-func _on_api_response(data: Dictionary) -> void:
-	if OS.has_feature("web"):
-		JavaScriptBridge.eval("console.log('[Main] _on_api_response called, keys: ' + Object.keys(%s).join(','));" % JSON.stringify(data))
-	# Обрабатываем ответ на ожидающие игры
-	if data.has("pending_games"):
-		pending_games = data.get("pending_games", [])
-		active_games = data.get("active_games", [])
-		history_games = data.get("history", [])
-		if OS.has_feature("web"):
-			JavaScriptBridge.eval("console.log('[Main] Got pending_games: %d, active: %d, history: %d');" % [pending_games.size(), active_games.size(), history_games.size()])
-		_display_battles_list()
-		return
-
-	# Обрабатываем ответ на создание игры
-	if data.has("game_id") and data.has("status"):
-		if data.get("status") == "waiting":
-			# Игра создана, ждём принятия
-			waiting_game_id = data.get("game_id")
-			status_label.text = "Ожидание принятия игры противником..."
-			waiting_timer.start()
-		elif data.get("status") == "in_progress":
-			# Игра уже активна, переходим
-			GameManager.current_game_id = data.get("game_id")
-			get_tree().change_scene_to_file("res://scenes/game.tscn")
-
 func _on_waiting_timeout() -> void:
-	# Проверяем статус игры
 	if waiting_game_id > 0:
 		ApiClient.get_game_state(waiting_game_id)
 
 func _on_game_state_updated(state: Dictionary) -> void:
 	var status = state.get("status", "")
 
-	# Если игра в статусе waiting - продолжаем ждать
 	if status == "waiting":
 		status_label.text = "Ожидание принятия игры противником..."
 		return
 
-	# Если игра стала активной - переходим
 	if status == "in_progress":
 		waiting_timer.stop()
 		waiting_game_id = 0
@@ -244,7 +395,6 @@ func _on_game_state_updated(state: Dictionary) -> void:
 		get_tree().change_scene_to_file("res://scenes/game.tscn")
 		return
 
-	# Если игра отменена или завершена
 	if status == "completed" or status == "cancelled":
 		waiting_timer.stop()
 		waiting_game_id = 0
@@ -260,13 +410,13 @@ func _on_error(message: String) -> void:
 func _display_battles_list() -> void:
 	if OS.has_feature("web"):
 		JavaScriptBridge.eval("console.log('[Main] _display_battles_list called');")
-	# Очищаем список
+
 	for child in pending_list.get_children():
 		child.queue_free()
 
 	var has_battles = false
 
-	# Показываем ожидающие игры (вызовы на бой)
+	# Ожидающие игры
 	for game in pending_games:
 		has_battles = true
 		var hbox = HBoxContainer.new()
@@ -277,7 +427,6 @@ func _display_battles_list() -> void:
 		label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		hbox.add_child(label)
 
-		# Выбор армии
 		var army_select = OptionButton.new()
 		army_select.custom_minimum_size = Vector2(150, 0)
 		var player_armies = game.get("player_armies", [])
@@ -302,7 +451,7 @@ func _display_battles_list() -> void:
 
 		pending_list.add_child(hbox)
 
-	# Показываем активные игры
+	# Активные игры
 	for game in active_games:
 		has_battles = true
 		var hbox = HBoxContainer.new()
@@ -325,7 +474,7 @@ func _display_battles_list() -> void:
 
 		pending_list.add_child(hbox)
 
-	# Показываем историю (последние 5)
+	# История (последние 5)
 	var history_shown = 0
 	for game in history_games:
 		if history_shown >= 5:
@@ -350,19 +499,17 @@ func _display_battles_list() -> void:
 
 	pending_panel.visible = has_battles
 	if OS.has_feature("web"):
-		JavaScriptBridge.eval("console.log('[Main] _display_battles_list done, has_battles=%s, panel.visible=%s');" % [str(has_battles), str(pending_panel.visible)])
+		JavaScriptBridge.eval("console.log('[Main] _display_battles_list done, has_battles=%s');" % str(has_battles))
 
 func _on_accept_game(game_id: int, army_select: OptionButton) -> void:
 	var selected_idx = army_select.selected
 	var army_id = 0
 	if selected_idx >= 0:
 		army_id = army_select.get_item_id(selected_idx)
-	GameManager.accept_game(game_id, current_player.get("id", 0))
-	ApiClient.accept_game(game_id, current_player.get("id", 0), army_id)
+	ApiClient.accept_game(game_id, army_id)
 
 func _on_decline_game(game_id: int) -> void:
 	ApiClient.decline_game(game_id)
-	# Обновляем список
 	_check_pending_games()
 
 func _on_continue_game(game_id: int) -> void:

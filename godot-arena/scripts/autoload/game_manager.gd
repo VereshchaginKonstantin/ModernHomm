@@ -41,24 +41,16 @@ func _check_url_params() -> void:
 	var js_code = """
 		(function() {
 			var params = new URLSearchParams(window.location.search);
-			return JSON.stringify({
-				game_id: params.get('game_id'),
-				player_id: params.get('player_id')
-			});
+			return params.get('game_id') || '';
 		})()
 	"""
 	var result = JavaScriptBridge.eval(js_code)
-	if result:
-		var json = JSON.new()
-		if json.parse(result) == OK:
-			var data = json.data
-			if data.get("game_id"):
-				current_game_id = int(data.game_id)
-			if data.get("player_id"):
-				current_player_id = int(data.player_id)
-				_save_player_id(current_player_id)
-			if current_game_id > 0:
-				start_game(current_game_id)
+	if result and result != "":
+		current_game_id = int(result)
+		# Только запускаем игру если пользователь авторизован
+		if current_game_id > 0 and ApiClient.is_authenticated():
+			current_player_id = ApiClient.player_id
+			start_game(current_game_id)
 
 func _save_player_id(player_id: int) -> void:
 	if OS.has_feature("web"):
@@ -83,7 +75,7 @@ func load_players() -> void:
 func start_game(game_id: int) -> void:
 	current_game_id = game_id
 	if current_player_id == 0:
-		current_player_id = _load_player_id()
+		current_player_id = ApiClient.player_id
 	refresh_game_state()
 	start_polling()
 
@@ -93,16 +85,14 @@ func refresh_game_state() -> void:
 		ApiClient.get_game_state(current_game_id)
 
 ## Создать новую игру
-func create_game(player1_id: int, opponent_name: String, field_size: String) -> void:
-	current_player_id = player1_id
-	_save_player_id(player1_id)
-	ApiClient.create_game(player1_id, opponent_name, field_size)
+func create_game(opponent_name: String, field_size: String) -> void:
+	current_player_id = ApiClient.player_id
+	ApiClient.create_game(opponent_name, field_size)
 
 ## Принять игру
-func accept_game(game_id: int, player_id: int) -> void:
-	current_player_id = player_id
-	_save_player_id(player_id)
-	ApiClient.accept_game(game_id, player_id)
+func accept_game(game_id: int, army_id: int = 0) -> void:
+	current_player_id = ApiClient.player_id
+	ApiClient.accept_game(game_id, army_id)
 
 ## Выбрать юнита
 func select_unit(unit: Dictionary) -> void:
@@ -132,29 +122,35 @@ func deselect_unit() -> void:
 func move_selected_unit(x: int, y: int) -> void:
 	if selected_unit.is_empty():
 		return
-	ApiClient.move_unit(current_game_id, current_player_id, selected_unit.id, x, y)
+	ApiClient.move_unit(current_game_id, selected_unit.id, x, y)
 	deselect_unit()
 
 ## Атаковать выбранным юнитом
 func attack_with_selected_unit(target_id: int) -> void:
 	if selected_unit.is_empty():
 		return
-	ApiClient.attack_unit(current_game_id, current_player_id, selected_unit.id, target_id)
+	ApiClient.attack_unit(current_game_id, selected_unit.id, target_id)
 	deselect_unit()
 
 ## Пропустить ход юнита
 func skip_selected_unit() -> void:
 	if selected_unit.is_empty():
 		return
-	ApiClient.skip_unit(current_game_id, current_player_id, selected_unit.id)
+	ApiClient.skip_unit(current_game_id, selected_unit.id)
 	deselect_unit()
 
 ## Отложить ход юнита
 func defer_selected_unit() -> void:
 	if selected_unit.is_empty():
 		return
-	ApiClient.defer_unit(current_game_id, current_player_id, selected_unit.id)
+	ApiClient.defer_unit(current_game_id, selected_unit.id)
 	deselect_unit()
+
+## Сдаться в текущей игре
+func surrender_game() -> void:
+	if current_game_id > 0:
+		ApiClient.surrender_game(current_game_id)
+		stop_polling()
 
 ## Проверить мой ли ход
 func is_my_turn() -> bool:
@@ -194,10 +190,8 @@ func return_to_menu() -> void:
 	deselect_unit()
 	current_game_id = 0
 	game_state = {}
-	if OS.has_feature("web"):
-		JavaScriptBridge.eval("window.location.href = '/arena/';")
-	else:
-		get_tree().change_scene_to_file("res://scenes/main.tscn")
+	# Всегда переключаем сцену внутри Godot (не редирект на веб)
+	get_tree().change_scene_to_file("res://scenes/main.tscn")
 
 ## Начать polling
 func start_polling() -> void:

@@ -68,9 +68,16 @@ func _ready() -> void:
 	GameManager.refresh_game_state()
 
 func _on_game_state_updated(state: Dictionary) -> void:
+	if OS.has_feature("web"):
+		JavaScriptBridge.eval("console.log('[Game] _on_game_state_updated called');")
+		JavaScriptBridge.eval("console.log('[Game] State keys: ' + Object.keys(%s).join(','));" % JSON.stringify(state))
+
 	# Обновляем размер поля
 	var field_name = state.get("field", {}).get("name", "5x5")
 	field_size = int(field_name.split("x")[0])
+
+	if OS.has_feature("web"):
+		JavaScriptBridge.eval("console.log('[Game] Field size: %d, units count: %d');" % [field_size, state.get("units", []).size()])
 
 	# Перерисовываем доску
 	_draw_board()
@@ -183,6 +190,9 @@ func _draw_board() -> void:
 			cells.append(cell)
 
 func _update_units(units: Array) -> void:
+	if OS.has_feature("web"):
+		JavaScriptBridge.eval("console.log('[Game] _update_units called, units count: %d');" % units.size())
+
 	# Удаляем старых юнитов
 	for sprite in unit_sprites.values():
 		sprite.queue_free()
@@ -193,29 +203,41 @@ func _update_units(units: Array) -> void:
 		if unit.get("count", 0) <= 0:
 			continue
 
+		if OS.has_feature("web"):
+			var unit_type = unit.get("unit_type", {})
+			JavaScriptBridge.eval("console.log('[Game] Creating unit: id=%d, name=%s, icon=%s, x=%d, y=%d');" % [
+				unit.get("id", 0),
+				unit_type.get("name", "?"),
+				unit_type.get("icon", "?"),
+				unit.get("x", 0),
+				unit.get("y", 0)
+			])
+
 		var unit_control = _create_unit_sprite(unit)
 		board.add_child(unit_control)
 		unit_sprites[unit.get("id")] = unit_control
 
-		# Загружаем текстуру юнита если есть путь к изображению
-		var image_path = unit.get("unit_type", {}).get("image_path", "")
-		if image_path != "" and not unit_textures.has(image_path):
-			_load_unit_texture(image_path, unit.get("id"))
+		# Загружаем текстуру юнита если есть URL изображения
+		var image_url = unit.get("unit_type", {}).get("image_url", "")
+		if image_url != "" and image_url != null and not unit_textures.has(image_url):
+			_load_unit_texture(image_url, unit.get("id"))
 
 ## Загрузка текстуры юнита через HTTP
-func _load_unit_texture(image_path: String, unit_id: int) -> void:
-	# Формируем URL для загрузки изображения
+func _load_unit_texture(image_url: String, unit_id: int) -> void:
+	# Формируем полный URL для загрузки изображения
 	var url = ""
 	if OS.has_feature("web"):
-		url = JavaScriptBridge.eval("window.location.origin") + "/" + image_path
+		# image_url уже содержит путь вроде /arena/api/public/skins/1/image
+		url = JavaScriptBridge.eval("window.location.origin") + image_url
+		JavaScriptBridge.eval("console.log('[Game] Loading texture from: %s');" % url)
 	else:
-		url = "http://localhost/" + image_path
+		url = "http://localhost" + image_url
 
 	# Создаём HTTPRequest для загрузки текстуры
 	var http = HTTPRequest.new()
 	http.use_threads = false  # WebGL совместимость
 	add_child(http)
-	http.request_completed.connect(_on_texture_loaded.bind(image_path, unit_id, http))
+	http.request_completed.connect(_on_texture_loaded.bind(image_url, unit_id, http))
 	http.request(url)
 
 func _on_texture_loaded(result: int, response_code: int, headers: PackedStringArray, body: PackedByteArray, image_path: String, unit_id: int, http_node: HTTPRequest) -> void:
@@ -299,11 +321,11 @@ func _create_unit_sprite(unit: Dictionary) -> Control:
 	container.move_child(base, 1)
 
 	# Изображение юнита (если загружено) или иконка
-	var image_path = unit.get("unit_type", {}).get("image_path", "")
-	if unit_textures.has(image_path):
+	var image_url = unit.get("unit_type", {}).get("image_url", "")
+	if image_url != null and image_url != "" and unit_textures.has(image_url):
 		var texture_rect = TextureRect.new()
 		texture_rect.name = "UnitTexture"
-		texture_rect.texture = unit_textures[image_path]
+		texture_rect.texture = unit_textures[image_url]
 		texture_rect.expand_mode = TextureRect.EXPAND_FIT_WIDTH_PROPORTIONAL
 		texture_rect.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 		texture_rect.size = Vector2(48, 48)
@@ -311,8 +333,12 @@ func _create_unit_sprite(unit: Dictionary) -> Control:
 		container.add_child(texture_rect)
 	else:
 		# Иконка юнита (эмодзи) как fallback
+		var icon = unit.get("unit_type", {}).get("icon", "⚔️")
+		if OS.has_feature("web"):
+			JavaScriptBridge.eval("console.log('[Game] Using icon fallback: %s');" % icon)
+
 		var icon_label = Label.new()
-		icon_label.text = unit.get("unit_type", {}).get("icon", "⚔️")
+		icon_label.text = icon
 		icon_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		icon_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 		icon_label.size = Vector2(TILE_WIDTH, 48)
@@ -417,7 +443,8 @@ func _on_defer_pressed() -> void:
 	action_mode = ""
 
 func _on_surrender_pressed() -> void:
-	# TODO: Реализовать сдачу
+	# Сдаёмся и возвращаемся в меню
+	GameManager.surrender_game()
 	GameManager.return_to_menu()
 
 ## Создание изометрической подсветки для тайла

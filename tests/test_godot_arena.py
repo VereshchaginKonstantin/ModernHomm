@@ -204,19 +204,16 @@ class TestGodotArenaPublicAPI:
         assert 'api_public_move' in content, "Должна быть функция api_public_move"
 
     def test_public_api_no_login_required(self):
-        """Проверка что публичные API не требуют авторизации"""
+        """Проверка что публичные API используют JWT а не @login_required"""
         import os
         arena_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'web', 'arena.py')
         with open(arena_path, 'r') as f:
             content = f.read()
 
-        # Находим секцию публичного API
-        public_api_section = content.split('# ==================== Public API Endpoints for Godot ====================')
-        assert len(public_api_section) > 1, "Должна быть секция Public API Endpoints"
-
-        public_api_code = public_api_section[1]
-        # Проверяем что в секции публичного API нет @login_required
-        assert '@login_required' not in public_api_code, \
+        # Проверяем что публичные API используют @token_required вместо @login_required
+        assert '@token_required' in content, "Должен использоваться декоратор @token_required"
+        # @login_required не должен использоваться в публичных эндпоинтах
+        assert '@login_required' not in content, \
             "Публичные API эндпоинты не должны использовать @login_required"
 
     def test_pending_games_api_returns_player_armies(self):
@@ -231,17 +228,31 @@ class TestGodotArenaPublicAPI:
         assert "result['player_armies'] = player_armies" in content, "player_armies должен добавляться в результат"
 
 
+class TestArenaIndexRoute:
+    """Тесты маршрута arena.index"""
+
+    def test_arena_index_route_exists(self):
+        """Проверка наличия маршрута arena.index в arena.py"""
+        arena_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'web', 'arena.py')
+        with open(arena_path, 'r') as f:
+            content = f.read()
+
+        assert "@arena_bp.route('/')" in content, "Должен быть маршрут arena.index (/)"
+        assert "def index():" in content, "Должна быть функция index"
+        assert "redirect('/godot-arena/')" in content, "Должен быть редирект на /godot-arena/"
+
+
 class TestGodotArenaIntegration:
     """Интеграционные тесты для Godot Arena"""
 
-    def test_arena_link_in_web(self):
-        """Проверка ссылки на Godot арену в web/arena.py"""
+    def test_arena_api_module_name(self):
+        """Проверка что модуль arena.py содержит API для Godot"""
         arena_py_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'web', 'arena.py')
         with open(arena_py_path, 'r') as f:
             content = f.read()
 
-        assert '/godot-arena/' in content, "Должна быть ссылка на /godot-arena/"
-        assert 'Godot' in content, "Должно быть упоминание Godot"
+        assert 'Godot Arena API' in content or 'Godot клиента' in content, "Модуль должен быть для Godot Arena"
+        assert 'api/public' in content, "Должны быть публичные API эндпоинты"
 
     def test_docker_compose_service(self):
         """Проверка сервиса в docker-compose.yml"""
@@ -259,6 +270,80 @@ class TestGodotArenaIntegration:
 
         assert 'godot-arena' in content, "Должен быть роут для godot-arena"
         assert 'godot_arena' in content, "Должен быть upstream godot_arena"
+
+
+class TestGodotArenaSurrender:
+    """Тесты функциональности сдачи в Godot Arena"""
+
+    GODOT_ARENA_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'godot-arena')
+
+    def test_surrender_endpoint_exists(self):
+        """Проверка наличия эндпоинта сдачи в arena.py"""
+        arena_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'web', 'arena.py')
+        with open(arena_path, 'r') as f:
+            content = f.read()
+
+        assert '/api/public/games/<int:game_id>/surrender' in content, \
+            "Должен быть эндпоинт /api/public/games/<game_id>/surrender"
+        assert 'api_public_surrender' in content, "Должна быть функция api_public_surrender"
+
+    def test_surrender_api_client_method(self):
+        """Проверка наличия метода surrender в api_client.gd"""
+        api_client_path = os.path.join(self.GODOT_ARENA_PATH, 'scripts', 'autoload', 'api_client.gd')
+        with open(api_client_path, 'r') as f:
+            content = f.read()
+
+        assert 'surrender_game' in content, "Должен быть метод surrender_game"
+        assert '/surrender' in content, "Метод должен вызывать эндпоинт /surrender"
+
+    def test_surrender_game_manager_method(self):
+        """Проверка наличия метода surrender в game_manager.gd"""
+        game_manager_path = os.path.join(self.GODOT_ARENA_PATH, 'scripts', 'autoload', 'game_manager.gd')
+        with open(game_manager_path, 'r') as f:
+            content = f.read()
+
+        assert 'surrender_game' in content, "Должен быть метод surrender_game"
+        assert 'ApiClient.surrender_game' in content, "Должен вызываться ApiClient.surrender_game"
+
+    def test_surrender_button_handler(self):
+        """Проверка обработчика кнопки сдачи в game.gd"""
+        game_path = os.path.join(self.GODOT_ARENA_PATH, 'scripts', 'game.gd')
+        with open(game_path, 'r') as f:
+            content = f.read()
+
+        assert 'surrender_button' in content, "Должна быть кнопка surrender_button"
+        assert '_on_surrender_pressed' in content, "Должен быть обработчик _on_surrender_pressed"
+        assert 'GameManager.surrender_game()' in content, "Обработчик должен вызывать GameManager.surrender_game()"
+
+    def test_surrender_handles_waiting_games(self):
+        """Проверка что surrender обрабатывает ожидающие игры (отмена вызова)"""
+        arena_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'web', 'arena.py')
+        with open(arena_path, 'r') as f:
+            content = f.read()
+
+        assert 'GameStatus.WAITING' in content, "Должна быть проверка на WAITING статус"
+        assert 'game_deleted' in content, "Для отмены вызова должен возвращаться game_deleted"
+
+    def test_surrender_sets_winner(self):
+        """Проверка что surrender устанавливает победителя"""
+        arena_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'web', 'arena.py')
+        with open(arena_path, 'r') as f:
+            content = f.read()
+
+        # Находим функцию surrender
+        if 'api_public_surrender' in content:
+            # Ищем строки после определения функции
+            assert 'winner_id' in content, "Должен устанавливаться winner_id"
+            assert 'GameStatus.COMPLETED' in content, "Должен устанавливаться статус COMPLETED"
+
+    def test_surrender_creates_log_entry(self):
+        """Проверка что surrender создаёт запись в логе"""
+        arena_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'web', 'arena.py')
+        with open(arena_path, 'r') as f:
+            content = f.read()
+
+        assert "event_type='surrender'" in content, "Должна создаваться запись в логе с типом surrender"
+        assert 'сдался' in content, "Сообщение лога должно содержать 'сдался'"
 
 
 if __name__ == '__main__':

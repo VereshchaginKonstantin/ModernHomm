@@ -4,6 +4,5 @@ Core модуль - игровой движок и общие компонент
 """
 
 from .game_engine import GameEngine
-from .field_renderer import FieldRenderer
 
-__all__ = ['GameEngine', 'FieldRenderer']
+__all__ = ['GameEngine']

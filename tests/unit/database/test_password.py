@@ -17,7 +17,7 @@ class TestPasswordFunctionality:
             # Создаем тестового пользователя
             game_user = GameUser(
                 telegram_id=123456789,
-                name="TestUser",
+                username="TestUser",
                 balance=1000,
                 wins=0,
                 losses=0,
@@ -39,7 +39,7 @@ class TestPasswordFunctionality:
         with db.get_session() as session:
             game_user = GameUser(
                 telegram_id=telegram_id,
-                name="PasswordTestUser",
+                username="PasswordTestUser",
                 balance=1000,
                 wins=0,
                 losses=0
@@ -119,13 +119,13 @@ class TestPasswordFunctionality:
         ]
 
         # Создаем пользователей с паролями
-        for telegram_id, name, password in users_data:
+        for telegram_id, username, password in users_data:
             password_hash = hashlib.sha256(password.encode()).hexdigest()
 
             with db.get_session() as session:
                 game_user = GameUser(
                     telegram_id=telegram_id,
-                    name=name,
+                    username=username,
                     balance=1000,
                     wins=0,
                     losses=0,
@@ -156,7 +156,7 @@ class TestPasswordFunctionality:
         with db.get_session() as session:
             game_user = GameUser(
                 telegram_id=telegram_id,
-                name="UpdatePasswordUser",
+                username="UpdatePasswordUser",
                 balance=1000,
                 wins=0,
                 losses=0,
@@ -192,7 +192,7 @@ class TestPasswordFunctionality:
         with db.get_session() as session:
             game_user = GameUser(
                 telegram_id=telegram_id,
-                name="VerifyPasswordUser",
+                username="VerifyPasswordUser",
                 balance=1000,
                 wins=0,
                 losses=0,

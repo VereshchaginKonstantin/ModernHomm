@@ -11,13 +11,13 @@ from db.models import GameUser
 class TestUsernameUniqueness:
     """Тесты для проверки уникальности username"""
 
-    def test_username_can_be_null_for_backward_compatibility(self, db):
-        """Тест: username может быть NULL для обратной совместимости"""
+    def test_username_can_be_set_for_user(self, db):
+        """Тест: username может быть установлен для пользователя"""
         with db.get_session() as session:
-            # Создаем пользователя без username (для обратной совместимости)
+            # Создаем пользователя с username
             game_user = GameUser(
                 telegram_id=123456789,
-                name="TestUser",
+                username="TestUser",
                 balance=1000
             )
             session.add(game_user)
@@ -25,7 +25,7 @@ class TestUsernameUniqueness:
 
             # Проверяем, что пользователь создан
             assert game_user.id is not None
-            assert game_user.username is None
+            assert game_user.username == "TestUser"
 
     def test_username_must_be_unique(self, db):
         """Тест: username должен быть уникальным"""
@@ -35,7 +35,6 @@ class TestUsernameUniqueness:
         with db.get_session() as session:
             game_user1 = GameUser(
                 telegram_id=111111111,
-                name="User1",
                 username=username,
                 balance=1000
             )
@@ -47,7 +46,6 @@ class TestUsernameUniqueness:
             with db.get_session() as session:
                 game_user2 = GameUser(
                     telegram_id=222222222,
-                    name="User2",
                     username=username,  # Тот же username
                     balance=1000
                 )

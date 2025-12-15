@@ -3,11 +3,12 @@
 Тестовый скрипт для проверки CRUD операций с игровыми пользователями
 """
 
+import pytest
 from db import Database
 
-def test_game_user_crud():
-    """Тестирование CRUD операций для GameUser и UserUnit"""
-    db = Database()
+
+def test_game_user_crud(db):
+    """Тестирование CRUD операций для GameUser"""
 
     print("=" * 50)
     print("Тестирование CRUD операций для игровых пользователей")
@@ -28,10 +29,17 @@ def test_game_user_crud():
     print(f"   - Побед: {game_user.wins}")
     print(f"   - Поражений: {game_user.losses}")
 
+    assert game_user.telegram_id == 12345
+    assert game_user.username == "Тестовый_игрок"
+    assert game_user.balance == 1500
+
     # 2. Получение игрового пользователя
     print("\n2. Получение игрового пользователя...")
     retrieved_user = db.get_game_user(12345)
     print(f"   ✓ Получен: {retrieved_user}")
+
+    assert retrieved_user is not None
+    assert retrieved_user.telegram_id == 12345
 
     # 3. Обновление игрового пользователя
     print("\n3. Обновление игрового пользователя...")
@@ -46,39 +54,12 @@ def test_game_user_crud():
     print(f"   - Побед: {updated_user.wins}")
     print(f"   - Поражений: {updated_user.losses}")
 
-    # 4. Добавление юнитов
-    print("\n4. Добавление юнитов...")
-    unit1 = db.add_unit(telegram_id=12345, unit_type_id=1, count=10)
-    print(f"   ✓ Добавлен юнит типа 1: {unit1.count} шт.")
+    assert updated_user.balance == 2000
+    assert updated_user.wins == 5
+    assert updated_user.losses == 2
 
-    unit2 = db.add_unit(telegram_id=12345, unit_type_id=2, count=5)
-    print(f"   ✓ Добавлен юнит типа 2: {unit2.count} шт.")
-
-    unit3 = db.add_unit(telegram_id=12345, unit_type_id=1, count=5)
-    print(f"   ✓ Добавлено еще юнитов типа 1: теперь {unit3.count} шт.")
-
-    # 5. Получение всех юнитов пользователя
-    print("\n5. Получение всех юнитов пользователя...")
-    units = db.get_user_units(12345)
-    print(f"   ✓ Всего типов юнитов: {len(units)}")
-    for unit in units:
-        print(f"   - Тип #{unit.unit_type_id}: {unit.count} шт.")
-
-    # 6. Обновление количества юнитов
-    print("\n6. Обновление количества юнитов...")
-    updated_unit = db.update_unit_count(telegram_id=12345, unit_type_id=2, count=20)
-    print(f"   ✓ Обновлено количество юнитов типа 2: {updated_unit.count} шт.")
-
-    # 7. Удаление юнитов
-    print("\n7. Удаление юнитов...")
-    success = db.remove_unit(telegram_id=12345, unit_type_id=2, count=10)
-    print(f"   ✓ Удалено 10 юнитов типа 2: {success}")
-
-    units = db.get_user_units(12345)
-    print(f"   - Осталось юнитов типа 2: {[u.count for u in units if u.unit_type_id == 2][0]} шт.")
-
-    # 8. Тестирование get_or_create_game_user
-    print("\n8. Тестирование get_or_create_game_user...")
+    # 4. Тестирование get_or_create_game_user
+    print("\n4. Тестирование get_or_create_game_user...")
 
     # Пытаемся получить существующего пользователя
     game_user2, created = db.get_or_create_game_user(
@@ -90,6 +71,9 @@ def test_game_user_crud():
     print(f"   - Username остался: {game_user2.username}")
     print(f"   - Баланс остался: ${game_user2.balance}")
 
+    assert created is False
+    assert game_user2.username == "Тестовый_игрок"  # Username не изменился
+
     # Создаем нового пользователя
     game_user3, created = db.get_or_create_game_user(
         telegram_id=67890,
@@ -100,17 +84,20 @@ def test_game_user_crud():
     print(f"   - Username: {game_user3.username}")
     print(f"   - Баланс: ${game_user3.balance}")
 
-    # 9. Удаление игрового пользователя
-    print("\n9. Удаление игрового пользователя...")
+    assert created is True
+    assert game_user3.username == "Новый_игрок"
+    assert game_user3.balance == 1000
+
+    # 5. Удаление игрового пользователя
+    print("\n5. Удаление игрового пользователя...")
     success = db.delete_game_user(67890)
     print(f"   ✓ Пользователь удален: {success}")
 
-    # Проверяем, что юниты также удалены (CASCADE)
-    success = db.delete_game_user(12345)
-    print(f"   ✓ Пользователь с юнитами удален: {success}")
+    assert success is True
 
-    units = db.get_user_units(12345)
-    print(f"   - Юниты удаленного пользователя: {len(units)} шт. (должно быть 0)")
+    # Проверяем, что пользователь удален
+    deleted_user = db.get_game_user(67890)
+    assert deleted_user is None
 
     print("\n" + "=" * 50)
     print("Все тесты пройдены успешно!")
@@ -118,4 +105,4 @@ def test_game_user_crud():
 
 
 if __name__ == '__main__':
-    test_game_user_crud()
+    pytest.main([__file__, '-v'])
