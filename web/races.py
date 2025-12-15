@@ -901,15 +901,25 @@ UNIT_SKINS_TEMPLATE = """
     <meta charset="utf-8">
     """ + BASE_STYLE + """
     <style>
-        .skins-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 15px; margin-top: 20px; }
-        .skin-card { background: #333; border-radius: 8px; padding: 15px; text-align: center; }
-        .skin-card img { max-width: 100%; max-height: 150px; margin: 10px 0; border-radius: 5px; }
+        .skins-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 20px; margin-top: 20px; }
+        .skin-card { background: #333; border-radius: 8px; padding: 15px; }
+        .skin-card h4 { text-align: center; margin-bottom: 10px; }
+        .skin-card .main-image { text-align: center; }
+        .skin-card .main-image img { max-width: 100%; max-height: 150px; margin: 10px 0; border-radius: 5px; }
         .skin-card .no-image { width: 100%; height: 100px; background: #444; display: flex; align-items: center; justify-content: center; color: #666; border-radius: 5px; margin: 10px 0; }
+        .sprites-row { display: flex; gap: 10px; margin-top: 10px; flex-wrap: wrap; justify-content: center; }
+        .sprite-item { text-align: center; background: #2a2a2a; border-radius: 5px; padding: 8px; min-width: 80px; }
+        .sprite-item img { max-width: 60px; max-height: 60px; border-radius: 3px; }
+        .sprite-item .sprite-placeholder { width: 60px; height: 60px; background: #444; display: flex; align-items: center; justify-content: center; border-radius: 3px; font-size: 10px; color: #666; }
+        .sprite-item .sprite-label { font-size: 10px; color: #888; margin-top: 4px; }
+        .sprite-item.has-sprite { border: 1px solid #2ecc71; }
+        .sprite-item.no-sprite { border: 1px solid #444; opacity: 0.6; }
         .btn { padding: 8px 15px; border: none; border-radius: 5px; cursor: pointer; text-decoration: none; display: inline-block; margin: 5px; }
         .btn-primary { background: #3498db; color: white; }
         .btn-success { background: #2ecc71; color: white; }
         .btn-secondary { background: #666; color: white; }
         .btn-danger { background: #e74c3c; color: white; }
+        .skin-actions { text-align: center; margin-top: 10px; }
     </style>
 </head>
 <body>
@@ -925,14 +935,45 @@ UNIT_SKINS_TEMPLATE = """
             {% for skin in skins %}
             <div class="skin-card">
                 <h4>{{ skin.name }}</h4>
-                {% if skin.image_data %}
-                <img src="{{ url_for('races.skin_image', skin_id=skin.id) }}" alt="Скин">
-                {% else %}
-                <div class="no-image">Нет изображения</div>
-                {% endif %}
-                <p style="font-size: 12px; color: #aaa;">{{ skin.description or 'Без описания' }}</p>
-                <div>
-                    <a href="{{ url_for('races.edit_unit_skin', race_id=race.id, unit_id=unit.id, skin_id=skin.id) }}" class="btn btn-primary" style="padding: 5px 10px; font-size: 12px;">✏️</a>
+
+                <div class="main-image">
+                    {% if skin.image_data %}
+                    <img src="{{ url_for('races.skin_image', skin_id=skin.id) }}" alt="Основной спрайт">
+                    {% else %}
+                    <div class="no-image">Нет основного изображения</div>
+                    {% endif %}
+                </div>
+
+                <div class="sprites-row">
+                    <div class="sprite-item {% if skin.sprite_frames_data %}has-sprite{% else %}no-sprite{% endif %}">
+                        {% if skin.sprite_frames_data %}
+                        <img src="{{ url_for('races.skin_sprite_frames', skin_id=skin.id) }}" alt="Idle">
+                        {% else %}
+                        <div class="sprite-placeholder">—</div>
+                        {% endif %}
+                        <div class="sprite-label">IDLE</div>
+                    </div>
+                    <div class="sprite-item {% if skin.attack_sprite_data %}has-sprite{% else %}no-sprite{% endif %}">
+                        {% if skin.attack_sprite_data %}
+                        <img src="{{ url_for('races.skin_attack_sprite', skin_id=skin.id) }}" alt="Attack">
+                        {% else %}
+                        <div class="sprite-placeholder">—</div>
+                        {% endif %}
+                        <div class="sprite-label">АТАКА</div>
+                    </div>
+                    <div class="sprite-item {% if skin.death_sprite_data %}has-sprite{% else %}no-sprite{% endif %}">
+                        {% if skin.death_sprite_data %}
+                        <img src="{{ url_for('races.skin_death_sprite', skin_id=skin.id) }}" alt="Death">
+                        {% else %}
+                        <div class="sprite-placeholder">—</div>
+                        {% endif %}
+                        <div class="sprite-label">СМЕРТЬ</div>
+                    </div>
+                </div>
+
+                <p style="font-size: 12px; color: #aaa; text-align: center; margin-top: 10px;">{{ skin.description or 'Без описания' }}</p>
+                <div class="skin-actions">
+                    <a href="{{ url_for('races.edit_unit_skin', race_id=race.id, unit_id=unit.id, skin_id=skin.id) }}" class="btn btn-primary" style="padding: 5px 10px; font-size: 12px;">✏️ Редактировать</a>
                     <button onclick="deleteSkin({{ skin.id }})" class="btn btn-danger" style="padding: 5px 10px; font-size: 12px;">🗑️</button>
                 </div>
             </div>
@@ -1539,6 +1580,32 @@ EDIT_SKIN_TEMPLATE = """
                     {% endif %}
                 </span>
             </div>
+            <div class="status-item">
+                <span class="status-icon {% if skin.attack_sprite_data %}status-ok{% else %}status-missing{% endif %}">
+                    {% if skin.attack_sprite_data %}✅{% else %}❌{% endif %}
+                </span>
+                <span class="status-label">Спрайт атаки:</span>
+                <span class="status-value">
+                    {% if skin.attack_sprite_data %}
+                        Загружен ({{ (skin.attack_sprite_data|length / 1024)|round(1) }} KB, {{ skin.attack_frame_count }} кадров, {{ skin.attack_fps }} FPS)
+                    {% else %}
+                        Не загружен
+                    {% endif %}
+                </span>
+            </div>
+            <div class="status-item">
+                <span class="status-icon {% if skin.death_sprite_data %}status-ok{% else %}status-missing{% endif %}">
+                    {% if skin.death_sprite_data %}✅{% else %}❌{% endif %}
+                </span>
+                <span class="status-label">Спрайт смерти:</span>
+                <span class="status-value">
+                    {% if skin.death_sprite_data %}
+                        Загружен ({{ (skin.death_sprite_data|length / 1024)|round(1) }} KB, {{ skin.death_frame_count }} кадров, {{ skin.death_fps }} FPS)
+                    {% else %}
+                        Не загружен
+                    {% endif %}
+                </span>
+            </div>
         </div>
 
         <form method="POST" enctype="multipart/form-data">
@@ -1674,6 +1741,144 @@ EDIT_SKIN_TEMPLATE = """
             </div>
 
             <div class="section">
+                <h3>Анимация атаки (опционально)</h3>
+
+                <div class="info-box">
+                    <h4>Спрайт-лист анимации атаки</h4>
+                    <p>Загрузите спрайт-лист с кадрами анимации атаки юнита. Анимация будет проигрываться при атаке противника.</p>
+                </div>
+
+                {% if skin.attack_image_data %}
+                <div class="form-group">
+                    <label>Текущее изображение атаки</label>
+                    <div>
+                        <img src="{{ url_for('races.skin_attack_image', skin_id=skin.id) }}" class="current-image" alt="Изображение атаки">
+                        <br>
+                        <label style="color: #aaa;">
+                            <input type="checkbox" name="delete_attack_image"> Удалить изображение атаки
+                        </label>
+                    </div>
+                </div>
+                {% endif %}
+
+                <div class="form-group">
+                    <label>{% if skin.attack_image_data %}Загрузить новое{% else %}Загрузить{% endif %} изображение атаки (PNG, JPG до 5MB)</label>
+                    <input type="file" name="attack_image" accept="image/png,image/jpeg,image/gif,image/webp">
+                    <p class="help-text">Статичное изображение для анимации атаки</p>
+                </div>
+
+                {% if skin.attack_sprite_data %}
+                <div class="form-group">
+                    <label>Текущий спрайт-лист атаки</label>
+                    <div>
+                        <img src="{{ url_for('races.skin_attack_sprite', skin_id=skin.id) }}" class="current-image" alt="Спрайт-лист атаки">
+                        <br>
+                        <label style="color: #aaa;">
+                            <input type="checkbox" name="delete_attack_sprite"> Удалить спрайт-лист атаки
+                        </label>
+                    </div>
+                </div>
+                {% endif %}
+
+                <div class="form-group">
+                    <label>{% if skin.attack_sprite_data %}Загрузить новый{% else %}Загрузить{% endif %} спрайт-лист атаки (PNG)</label>
+                    <input type="file" name="attack_sprite" accept="image/png">
+                    <p class="help-text">Спрайт-лист с кадрами анимации атаки</p>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Количество кадров</label>
+                        <input type="number" name="attack_frame_count" value="{{ skin.attack_frame_count or 1 }}" min="1" max="100">
+                    </div>
+                    <div class="form-group">
+                        <label>Скорость (FPS)</label>
+                        <input type="number" name="attack_fps" value="{{ skin.attack_fps or 10 }}" min="1" max="60">
+                    </div>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Колонок в спрайт-листе</label>
+                        <input type="number" name="attack_columns" value="{{ skin.attack_columns or 1 }}" min="1" max="20">
+                    </div>
+                    <div class="form-group">
+                        <label>Строк в спрайт-листе</label>
+                        <input type="number" name="attack_rows" value="{{ skin.attack_rows or 1 }}" min="1" max="20">
+                    </div>
+                </div>
+            </div>
+
+            <div class="section">
+                <h3>Анимация смерти (опционально)</h3>
+
+                <div class="info-box">
+                    <h4>Спрайт-лист анимации смерти</h4>
+                    <p>Загрузите спрайт-лист с кадрами анимации смерти юнита. Анимация будет проигрываться при гибели юнита.</p>
+                </div>
+
+                {% if skin.death_image_data %}
+                <div class="form-group">
+                    <label>Текущее изображение смерти</label>
+                    <div>
+                        <img src="{{ url_for('races.skin_death_image', skin_id=skin.id) }}" class="current-image" alt="Изображение смерти">
+                        <br>
+                        <label style="color: #aaa;">
+                            <input type="checkbox" name="delete_death_image"> Удалить изображение смерти
+                        </label>
+                    </div>
+                </div>
+                {% endif %}
+
+                <div class="form-group">
+                    <label>{% if skin.death_image_data %}Загрузить новое{% else %}Загрузить{% endif %} изображение смерти (PNG, JPG до 5MB)</label>
+                    <input type="file" name="death_image" accept="image/png,image/jpeg,image/gif,image/webp">
+                    <p class="help-text">Статичное изображение для анимации смерти</p>
+                </div>
+
+                {% if skin.death_sprite_data %}
+                <div class="form-group">
+                    <label>Текущий спрайт-лист смерти</label>
+                    <div>
+                        <img src="{{ url_for('races.skin_death_sprite', skin_id=skin.id) }}" class="current-image" alt="Спрайт-лист смерти">
+                        <br>
+                        <label style="color: #aaa;">
+                            <input type="checkbox" name="delete_death_sprite"> Удалить спрайт-лист смерти
+                        </label>
+                    </div>
+                </div>
+                {% endif %}
+
+                <div class="form-group">
+                    <label>{% if skin.death_sprite_data %}Загрузить новый{% else %}Загрузить{% endif %} спрайт-лист смерти (PNG)</label>
+                    <input type="file" name="death_sprite" accept="image/png">
+                    <p class="help-text">Спрайт-лист с кадрами анимации смерти</p>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Количество кадров</label>
+                        <input type="number" name="death_frame_count" value="{{ skin.death_frame_count or 1 }}" min="1" max="100">
+                    </div>
+                    <div class="form-group">
+                        <label>Скорость (FPS)</label>
+                        <input type="number" name="death_fps" value="{{ skin.death_fps or 10 }}" min="1" max="60">
+                    </div>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Колонок в спрайт-листе</label>
+                        <input type="number" name="death_columns" value="{{ skin.death_columns or 1 }}" min="1" max="20">
+                    </div>
+                    <div class="form-group">
+                        <label>Строк в спрайт-листе</label>
+                        <input type="number" name="death_rows" value="{{ skin.death_rows or 1 }}" min="1" max="20">
+                    </div>
+                </div>
+            </div>
+
+            <div class="section">
                 <h3>Пути в Godot проекте (опционально)</h3>
                 <div class="form-group">
                     <label>Путь к текстуре в Godot</label>
@@ -1778,6 +1983,84 @@ def edit_unit_skin(race_id, unit_id, skin_id):
                         skin.sprite_frames_data = file.read()
                         skin.sprite_frames_mime_type = file.content_type or 'image/png'
 
+            # ========== АТАКА ==========
+            # Удаление изображения атаки
+            if request.form.get('delete_attack_image') == 'on':
+                skin.attack_image_data = None
+                skin.attack_image_mime_type = None
+
+            # Загрузка изображения атаки
+            if 'attack_image' in request.files:
+                file = request.files['attack_image']
+                if file and file.filename:
+                    file.seek(0, 2)
+                    size = file.tell()
+                    file.seek(0)
+                    if size <= 5 * 1024 * 1024:  # 5MB
+                        skin.attack_image_data = file.read()
+                        skin.attack_image_mime_type = file.content_type or 'image/png'
+
+            # Удаление спрайт-листа атаки
+            if request.form.get('delete_attack_sprite') == 'on':
+                skin.attack_sprite_data = None
+                skin.attack_sprite_mime_type = None
+
+            # Загрузка спрайт-листа атаки
+            if 'attack_sprite' in request.files:
+                file = request.files['attack_sprite']
+                if file and file.filename:
+                    file.seek(0, 2)
+                    size = file.tell()
+                    file.seek(0)
+                    if size <= 10 * 1024 * 1024:  # 10MB
+                        skin.attack_sprite_data = file.read()
+                        skin.attack_sprite_mime_type = file.content_type or 'image/png'
+
+            # Параметры атаки
+            skin.attack_frame_count = int(request.form.get('attack_frame_count', 1) or 1)
+            skin.attack_fps = int(request.form.get('attack_fps', 10) or 10)
+            skin.attack_columns = int(request.form.get('attack_columns', 1) or 1)
+            skin.attack_rows = int(request.form.get('attack_rows', 1) or 1)
+
+            # ========== СМЕРТЬ ==========
+            # Удаление изображения смерти
+            if request.form.get('delete_death_image') == 'on':
+                skin.death_image_data = None
+                skin.death_image_mime_type = None
+
+            # Загрузка изображения смерти
+            if 'death_image' in request.files:
+                file = request.files['death_image']
+                if file and file.filename:
+                    file.seek(0, 2)
+                    size = file.tell()
+                    file.seek(0)
+                    if size <= 5 * 1024 * 1024:  # 5MB
+                        skin.death_image_data = file.read()
+                        skin.death_image_mime_type = file.content_type or 'image/png'
+
+            # Удаление спрайт-листа смерти
+            if request.form.get('delete_death_sprite') == 'on':
+                skin.death_sprite_data = None
+                skin.death_sprite_mime_type = None
+
+            # Загрузка спрайт-листа смерти
+            if 'death_sprite' in request.files:
+                file = request.files['death_sprite']
+                if file and file.filename:
+                    file.seek(0, 2)
+                    size = file.tell()
+                    file.seek(0)
+                    if size <= 10 * 1024 * 1024:  # 10MB
+                        skin.death_sprite_data = file.read()
+                        skin.death_sprite_mime_type = file.content_type or 'image/png'
+
+            # Параметры смерти
+            skin.death_frame_count = int(request.form.get('death_frame_count', 1) or 1)
+            skin.death_fps = int(request.form.get('death_fps', 10) or 10)
+            skin.death_columns = int(request.form.get('death_columns', 1) or 1)
+            skin.death_rows = int(request.form.get('death_rows', 1) or 1)
+
             session_db.commit()
             return redirect(url_for('races.unit_skins', race_id=race_id, unit_id=unit_id))
 
@@ -1806,7 +2089,7 @@ def skin_image(skin_id):
             return Response(
                 skin.image_data,
                 mimetype=skin.image_mime_type or 'image/png',
-                headers={'Cache-Control': 'public, max-age=3600'}
+                headers={'Cache-Control': 'no-cache, no-store, must-revalidate'}
             )
         # Возвращаем пустую картинку 1x1 PNG если изображение не найдено
         empty_png = b'\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\x06\x00\x00\x00\x1f\x15\xc4\x89\x00\x00\x00\nIDATx\x9cc\x00\x01\x00\x00\x05\x00\x01\r\n-\xb4\x00\x00\x00\x00IEND\xaeB`\x82'
@@ -1822,7 +2105,71 @@ def skin_sprite_frames(skin_id):
             return Response(
                 skin.sprite_frames_data,
                 mimetype=skin.sprite_frames_mime_type or 'image/png',
-                headers={'Cache-Control': 'public, max-age=3600'}
+                headers={'Cache-Control': 'no-cache, no-store, must-revalidate'}
+            )
+        # Возвращаем пустую картинку 1x1 PNG если изображение не найдено
+        empty_png = b'\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\x06\x00\x00\x00\x1f\x15\xc4\x89\x00\x00\x00\nIDATx\x9cc\x00\x01\x00\x00\x05\x00\x01\r\n-\xb4\x00\x00\x00\x00IEND\xaeB`\x82'
+        return Response(empty_png, mimetype='image/png', status=404)
+
+
+@races_bp.route('/skin/<int:skin_id>/attack-image')
+def skin_attack_image(skin_id):
+    """Отдача изображения атаки скина из БД"""
+    with db.get_session() as session_db:
+        skin = session_db.query(RaceUnitSkin).filter_by(id=skin_id).first()
+        if skin and skin.attack_image_data:
+            return Response(
+                skin.attack_image_data,
+                mimetype=skin.attack_image_mime_type or 'image/png',
+                headers={'Cache-Control': 'no-cache, no-store, must-revalidate'}
+            )
+        # Возвращаем пустую картинку 1x1 PNG если изображение не найдено
+        empty_png = b'\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\x06\x00\x00\x00\x1f\x15\xc4\x89\x00\x00\x00\nIDATx\x9cc\x00\x01\x00\x00\x05\x00\x01\r\n-\xb4\x00\x00\x00\x00IEND\xaeB`\x82'
+        return Response(empty_png, mimetype='image/png', status=404)
+
+
+@races_bp.route('/skin/<int:skin_id>/attack-sprite')
+def skin_attack_sprite(skin_id):
+    """Отдача спрайт-листа атаки скина из БД"""
+    with db.get_session() as session_db:
+        skin = session_db.query(RaceUnitSkin).filter_by(id=skin_id).first()
+        if skin and skin.attack_sprite_data:
+            return Response(
+                skin.attack_sprite_data,
+                mimetype=skin.attack_sprite_mime_type or 'image/png',
+                headers={'Cache-Control': 'no-cache, no-store, must-revalidate'}
+            )
+        # Возвращаем пустую картинку 1x1 PNG если изображение не найдено
+        empty_png = b'\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\x06\x00\x00\x00\x1f\x15\xc4\x89\x00\x00\x00\nIDATx\x9cc\x00\x01\x00\x00\x05\x00\x01\r\n-\xb4\x00\x00\x00\x00IEND\xaeB`\x82'
+        return Response(empty_png, mimetype='image/png', status=404)
+
+
+@races_bp.route('/skin/<int:skin_id>/death-image')
+def skin_death_image(skin_id):
+    """Отдача изображения смерти скина из БД"""
+    with db.get_session() as session_db:
+        skin = session_db.query(RaceUnitSkin).filter_by(id=skin_id).first()
+        if skin and skin.death_image_data:
+            return Response(
+                skin.death_image_data,
+                mimetype=skin.death_image_mime_type or 'image/png',
+                headers={'Cache-Control': 'no-cache, no-store, must-revalidate'}
+            )
+        # Возвращаем пустую картинку 1x1 PNG если изображение не найдено
+        empty_png = b'\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\x06\x00\x00\x00\x1f\x15\xc4\x89\x00\x00\x00\nIDATx\x9cc\x00\x01\x00\x00\x05\x00\x01\r\n-\xb4\x00\x00\x00\x00IEND\xaeB`\x82'
+        return Response(empty_png, mimetype='image/png', status=404)
+
+
+@races_bp.route('/skin/<int:skin_id>/death-sprite')
+def skin_death_sprite(skin_id):
+    """Отдача спрайт-листа смерти скина из БД"""
+    with db.get_session() as session_db:
+        skin = session_db.query(RaceUnitSkin).filter_by(id=skin_id).first()
+        if skin and skin.death_sprite_data:
+            return Response(
+                skin.death_sprite_data,
+                mimetype=skin.death_sprite_mime_type or 'image/png',
+                headers={'Cache-Control': 'no-cache, no-store, must-revalidate'}
             )
         # Возвращаем пустую картинку 1x1 PNG если изображение не найдено
         empty_png = b'\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\x06\x00\x00\x00\x1f\x15\xc4\x89\x00\x00\x00\nIDATx\x9cc\x00\x01\x00\x00\x05\x00\x01\r\n-\xb4\x00\x00\x00\x00IEND\xaeB`\x82'
