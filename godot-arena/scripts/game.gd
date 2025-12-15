@@ -229,7 +229,7 @@ func _load_unit_texture(image_url: String, unit_id: int) -> void:
 	if OS.has_feature("web"):
 		# image_url уже содержит путь вроде /arena/api/public/skins/1/image
 		url = JavaScriptBridge.eval("window.location.origin") + image_url
-		JavaScriptBridge.eval("console.log('[Game] Loading texture from: %s');" % url)
+		JavaScriptBridge.eval("console.log('[Game] Loading texture from: %s for unit %d');" % [url, unit_id])
 	else:
 		url = "http://localhost" + image_url
 
@@ -238,12 +238,31 @@ func _load_unit_texture(image_url: String, unit_id: int) -> void:
 	http.use_threads = false  # WebGL совместимость
 	add_child(http)
 	http.request_completed.connect(_on_texture_loaded.bind(image_url, unit_id, http))
-	http.request(url)
+	var err = http.request(url)
+	if err != OK:
+		if OS.has_feature("web"):
+			JavaScriptBridge.eval("console.error('[Game] Failed to start request for texture: %s');" % url)
+		http.queue_free()
 
 func _on_texture_loaded(result: int, response_code: int, headers: PackedStringArray, body: PackedByteArray, image_path: String, unit_id: int, http_node: HTTPRequest) -> void:
 	http_node.queue_free()
 
-	if result != HTTPRequest.RESULT_SUCCESS or response_code != 200:
+	if OS.has_feature("web"):
+		JavaScriptBridge.eval("console.log('[Game] Texture response: result=%d, code=%d, body_size=%d for unit %d');" % [result, response_code, body.size(), unit_id])
+
+	if result != HTTPRequest.RESULT_SUCCESS:
+		if OS.has_feature("web"):
+			JavaScriptBridge.eval("console.error('[Game] Texture request failed with result: %d');" % result)
+		return
+
+	if response_code != 200:
+		if OS.has_feature("web"):
+			JavaScriptBridge.eval("console.error('[Game] Texture request returned code: %d');" % response_code)
+		return
+
+	if body.size() == 0:
+		if OS.has_feature("web"):
+			JavaScriptBridge.eval("console.error('[Game] Texture response has empty body');")
 		return
 
 	# Создаём текстуру из загруженных данных
@@ -252,10 +271,18 @@ func _on_texture_loaded(result: int, response_code: int, headers: PackedStringAr
 	if error != OK:
 		error = image.load_png_from_buffer(body)
 	if error != OK:
+		# Попробуем загрузить как WebP
+		error = image.load_webp_from_buffer(body)
+	if error != OK:
+		if OS.has_feature("web"):
+			JavaScriptBridge.eval("console.error('[Game] Failed to load image from buffer, error: %d');" % error)
 		return
 
 	var texture = ImageTexture.create_from_image(image)
 	unit_textures[image_path] = texture
+
+	if OS.has_feature("web"):
+		JavaScriptBridge.eval("console.log('[Game] Texture loaded successfully for unit %d, size: %dx%d');" % [unit_id, image.get_width(), image.get_height()])
 
 	# Обновляем спрайт юнита если он всё ещё существует
 	if unit_sprites.has(unit_id):
@@ -263,6 +290,9 @@ func _on_texture_loaded(result: int, response_code: int, headers: PackedStringAr
 		var texture_rect = unit_control.get_node_or_null("UnitTexture")
 		if texture_rect:
 			texture_rect.texture = texture
+			texture_rect.visible = true
+			if OS.has_feature("web"):
+				JavaScriptBridge.eval("console.log('[Game] Applied texture to unit %d');" % unit_id)
 
 func _create_unit_sprite(unit: Dictionary) -> Control:
 	var container = Control.new()
@@ -411,16 +441,37 @@ func _on_cell_clicked(event: InputEvent, x: int, y: int) -> void:
 
 func _on_unit_clicked(event: InputEvent, unit: Dictionary) -> void:
 	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
+		if OS.has_feature("web"):
+			JavaScriptBridge.eval("console.log('[Game] Unit clicked: id=%d, player_id=%d, current_player_id=%d, action_mode=%s');" % [
+				unit.get("id", 0),
+				unit.get("player_id", 0),
+				GameManager.current_player_id,
+				action_mode
+			])
+
 		if action_mode == "attack" and GameManager.can_attack(unit.get("id")):
 			GameManager.attack_with_selected_unit(unit.get("id"))
 			_clear_highlights()
 			action_mode = ""
 		elif unit.get("player_id") == GameManager.current_player_id:
 			GameManager.select_unit(unit)
+		else:
+			# Попытка выбрать вражеского юнита - показываем сообщение
+			if OS.has_feature("web"):
+				JavaScriptBridge.eval("console.log('[Game] Cannot select enemy unit');")
 
 func _on_unit_actions_received(actions: Dictionary) -> void:
+	if OS.has_feature("web"):
+		JavaScriptBridge.eval("console.log('[Game] _on_unit_actions_received: can_move=%d, can_attack=%d');" % [
+			actions.get("can_move", []).size(),
+			actions.get("can_attack", []).size()
+		])
+
 	_update_action_buttons()
 	hint_label.text = "Выбран юнит. Выберите действие."
+
+	# Перерисовываем юнитов чтобы показать выделение
+	_update_units(GameManager.game_state.get("units", []))
 
 func _on_move_pressed() -> void:
 	action_mode = "move"

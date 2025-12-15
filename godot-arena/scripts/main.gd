@@ -90,10 +90,17 @@ func _ready() -> void:
 	# Начальное положение панели боёв (за экраном)
 	battles_panel.position.x = get_viewport_rect().size.x
 
-	# Всегда показываем форму логина (больше не используем player_id из URL)
-	login_panel.visible = true
-	set_password_button.visible = false
-	username_input.grab_focus()
+	# Проверяем если пользователь уже авторизован
+	if ApiClient.is_authenticated():
+		# Пользователь уже авторизован - показываем главное меню
+		login_panel.visible = false
+		# Загружаем данные текущего пользователя
+		ApiClient.get_current_player()
+	else:
+		# Показываем форму логина
+		login_panel.visible = true
+		set_password_button.visible = false
+		username_input.grab_focus()
 
 func _toggle_battles_panel() -> void:
 	if battles_panel_open:

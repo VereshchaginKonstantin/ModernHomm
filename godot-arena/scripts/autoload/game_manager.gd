@@ -96,6 +96,18 @@ func accept_game(game_id: int, army_id: int = 0) -> void:
 
 ## Выбрать юнита
 func select_unit(unit: Dictionary) -> void:
+	# Обновляем current_player_id из ApiClient если не установлен
+	if current_player_id == 0:
+		current_player_id = ApiClient.player_id
+
+	if OS.has_feature("web"):
+		JavaScriptBridge.eval("console.log('[GameManager] select_unit called, unit_id=%d, player_id=%d, current_player_id=%d, is_my_turn=%s');" % [
+			unit.get("id", 0),
+			unit.get("player_id", 0),
+			current_player_id,
+			str(is_my_turn())
+		])
+
 	# Проверяем можно ли выбрать юнита
 	if unit.get("player_id") != current_player_id:
 		error_occurred.emit("Это юнит противника!")
@@ -111,7 +123,11 @@ func select_unit(unit: Dictionary) -> void:
 
 	selected_unit = unit
 	current_actions = {}
-	ApiClient.get_unit_actions(current_game_id, unit.id)
+	var unit_id = unit.get("id", 0)
+	if unit_id > 0:
+		ApiClient.get_unit_actions(current_game_id, unit_id)
+	else:
+		error_occurred.emit("Некорректный ID юнита")
 
 ## Отменить выбор юнита
 func deselect_unit() -> void:
@@ -224,6 +240,17 @@ func _on_api_response(data: Dictionary) -> void:
 		var old_current_player = game_state.get("current_player_id", 0)
 		game_state = data
 
+		# Устанавливаем current_player_id если не установлен
+		if current_player_id == 0:
+			current_player_id = ApiClient.player_id
+
+		if OS.has_feature("web"):
+			JavaScriptBridge.eval("console.log('[GameManager] Game state received: game_id=%d, current_player_id=%d, ApiClient.player_id=%d');" % [
+				data.get("game_id", 0),
+				current_player_id,
+				ApiClient.player_id
+			])
+
 		# Проверяем смену хода
 		if old_current_player != 0 and old_current_player != game_state.current_player_id:
 			turn_changed.emit(game_state.current_player_id)
@@ -241,10 +268,25 @@ func _on_api_response(data: Dictionary) -> void:
 
 		game_state_updated.emit(game_state)
 
-	elif data.has("can_move") or data.has("can_attack"):
-		# Это действия юнита
-		current_actions = data
-		unit_actions_received.emit(data)
+	elif data.has("moves") or data.has("attacks") or data.has("can_move") or data.has("can_attack"):
+		# Это действия юнита - нормализуем названия ключей
+		if data.has("moves"):
+			current_actions["can_move"] = data.get("moves", [])
+		else:
+			current_actions["can_move"] = data.get("can_move", [])
+
+		if data.has("attacks"):
+			current_actions["can_attack"] = data.get("attacks", [])
+		else:
+			current_actions["can_attack"] = data.get("can_attack", [])
+
+		if OS.has_feature("web"):
+			JavaScriptBridge.eval("console.log('[GameManager] Unit actions received: can_move=%d, can_attack=%d');" % [
+				current_actions.get("can_move", []).size(),
+				current_actions.get("can_attack", []).size()
+			])
+
+		unit_actions_received.emit(current_actions)
 
 	elif data.has("success"):
 		# Это результат действия
