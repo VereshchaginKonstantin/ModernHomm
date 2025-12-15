@@ -138,6 +138,24 @@ class GameState:
         self.session = session
 
     @classmethod
+    def _find_static_unit_image(cls, race_unit_id: int) -> str:
+        """Найти статическое изображение юнита по ID"""
+        import glob
+        static_path = 'web/static/unit_images'
+        patterns = [
+            f'{static_path}/unit_{race_unit_id}_*.jpg',
+            f'{static_path}/unit_{race_unit_id}_*.jpeg',
+            f'{static_path}/unit_{race_unit_id}_*.png'
+        ]
+        for pattern in patterns:
+            files = glob.glob(pattern)
+            if files:
+                # Возвращаем URL относительно /static/
+                filename = os.path.basename(files[0])
+                return f'/static/unit_images/{filename}'
+        return None
+
+    @classmethod
     def from_game(cls, game: Game, session) -> 'GameState':
         """Создать GameState из объекта Game"""
         units = []
@@ -150,6 +168,14 @@ class GameState:
                     skin_id = skin.id if skin else None
                     has_image = skin and skin.image_data is not None
                     has_sprite = skin and skin.sprite_frames_data is not None
+
+                    # Формируем URL изображения: сначала из БД, потом fallback на статику
+                    image_url = None
+                    if has_image:
+                        image_url = f'/arena/api/public/skins/{skin_id}/image'
+                    else:
+                        # Fallback на статическое изображение
+                        image_url = cls._find_static_unit_image(race_unit.id)
 
                     units.append({
                         'id': bu.id,
@@ -168,9 +194,9 @@ class GameState:
                             'speed': race_unit.speed,
                             'attack_range': race_unit.range,
                             'skin_id': skin_id,
-                            'has_image': has_image,
+                            'has_image': has_image or (image_url is not None),
                             'has_sprite': has_sprite,
-                            'image_url': f'/arena/api/public/skins/{skin_id}/image' if has_image else None,
+                            'image_url': image_url,
                             'sprite_url': f'/arena/api/public/skins/{skin_id}/sprite' if has_sprite else None
                         }
                     })
@@ -1036,6 +1062,13 @@ def api_public_skin_info(skin_id):
 
 # =========================== Army Management API ===========================
 
+def _get_hire_cost(race_unit) -> int:
+    """Рассчитать стоимость найма юнита на основе prestige_max из unit_level"""
+    if race_unit.unit_level:
+        return race_unit.unit_level.prestige_max
+    return 100  # Default cost
+
+
 @arena_bp.route('/api/public/armies')
 @token_required
 def api_public_armies():
@@ -1064,7 +1097,7 @@ def api_public_armies():
                             'speed': au.race_unit.speed,
                             'min_damage': au.race_unit.min_damage,
                             'max_damage': au.race_unit.max_damage,
-                            'hire_cost': au.race_unit.hire_cost,
+                            'hire_cost': _get_hire_cost(au.race_unit),
                             'has_image': skin and skin.image_data is not None,
                             'image_url': f'/arena/api/public/skins/{skin.id}/image' if skin and skin.image_data else None
                         })
@@ -1148,7 +1181,7 @@ def api_public_get_army(army_id):
                     'speed': au.race_unit.speed,
                     'min_damage': au.race_unit.min_damage,
                     'max_damage': au.race_unit.max_damage,
-                    'hire_cost': au.race_unit.hire_cost,
+                    'hire_cost': _get_hire_cost(au.race_unit),
                     'has_image': skin and skin.image_data is not None,
                     'image_url': f'/arena/api/public/skins/{skin.id}/image' if skin and skin.image_data else None
                 })
@@ -1214,6 +1247,7 @@ def api_public_available_units(army_id):
             ).first()
             current_count = existing_au.count if existing_au else 0
 
+            hire_cost = _get_hire_cost(ru)
             available_units.append({
                 'race_unit_id': ru.id,
                 'name': ru.name,
@@ -1225,9 +1259,9 @@ def api_public_available_units(army_id):
                 'speed': ru.speed,
                 'min_damage': ru.min_damage,
                 'max_damage': ru.max_damage,
-                'hire_cost': ru.hire_cost,
+                'hire_cost': hire_cost,
                 'current_count': current_count,
-                'can_afford': player_balance >= ru.hire_cost,
+                'can_afford': player_balance >= hire_cost,
                 'has_image': skin and skin.image_data is not None,
                 'image_url': f'/arena/api/public/skins/{skin.id}/image' if skin and skin.image_data else None
             })
@@ -1273,7 +1307,8 @@ def api_public_hire_unit(army_id):
 
         # Проверяем баланс
         player = session_db.query(GameUser).filter_by(id=player_id).first()
-        total_cost = race_unit.hire_cost * count
+        hire_cost = _get_hire_cost(race_unit)
+        total_cost = hire_cost * count
         if player.balance < total_cost:
             return jsonify({'error': f'Недостаточно средств. Нужно: {total_cost}, у вас: {player.balance}'}), 400
 
@@ -1340,7 +1375,8 @@ def api_public_dismiss_unit(army_id):
 
         # Возвращаем 50% стоимости
         race_unit = army_unit.race_unit
-        refund = (race_unit.hire_cost * count) * 0.5
+        hire_cost = _get_hire_cost(race_unit)
+        refund = (hire_cost * count) * 0.5
 
         player = session_db.query(GameUser).filter_by(id=player_id).first()
         player.balance += refund

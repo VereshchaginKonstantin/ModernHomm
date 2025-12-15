@@ -2,6 +2,63 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## CRITICAL: Post-Change Workflow (ALWAYS EXECUTE AFTER ANY CODE CHANGES)
+
+After completing ANY code changes, Claude MUST automatically execute the following steps IN ORDER:
+
+### 1. Fix All Errors
+- Run syntax checks on modified Python files: `python3 -m py_compile <file>`
+- Fix any syntax or import errors before proceeding
+
+### 2. Write Tests (if needed)
+- Write integration tests for new functionality in `tests/`
+- Write acceptance/smoke tests for API endpoints
+
+### 3. Rebuild and Restart Containers
+```bash
+# Rebuild ALL containers with latest changes
+docker compose build --no-cache
+
+# Restart containers
+docker compose up -d
+
+# Verify containers are running with latest code
+docker compose ps
+```
+
+### 4. Run Tests
+```bash
+# Run all tests
+pytest -v
+
+# If tests fail, fix them before proceeding
+```
+
+### 5. Push Changes
+```bash
+git add -A
+git commit -m "Description of changes"
+git push
+```
+
+### 6. Update Domain Model (if db/models changed)
+If any changes were made to `db/models/`, update `domain_model.puml`:
+- Generate PlantUML diagram reflecting current database models
+- Include all tables, relationships, and key fields
+
+### 7. Final Verification
+- Run smoke/acceptance tests again after push
+- Confirm all containers are healthy
+- Report completion status
+
+### 8. Background Tasks
+- Wait for ALL background tasks to complete
+- Report what each background task is doing and why
+
+**IMPORTANT**: Do NOT skip any step. Do NOT proceed to next prompt until all steps are complete.
+
+---
+
 ## Project Overview
 
 This is a Telegram bot application written in Python that responds to all messages with a personalized phrase and saves all messages and users to a PostgreSQL database. The bot is built using the `python-telegram-bot` library (v20.7) and SQLAlchemy for database operations.

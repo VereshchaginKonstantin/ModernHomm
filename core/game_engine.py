@@ -395,7 +395,7 @@ class GameEngine:
 
         # Получить характеристики юнита
         unit = self._get_unit_stats(battle_unit)
-        speed = unit.speed
+        speed = unit['speed']
         start_x, start_y = battle_unit.position_x, battle_unit.position_y
 
         # Получить размеры поля
@@ -450,6 +450,51 @@ class GameEngine:
                     queue.append((next_x, next_y, next_distance))
 
         return available_cells
+
+    def get_valid_moves(self, battle_unit_id: int) -> List[Dict]:
+        """
+        Публичный метод для получения доступных перемещений юнита.
+        Возвращает список словарей с координатами {x, y}.
+
+        Args:
+            battle_unit_id: ID юнита на поле боя
+
+        Returns:
+            List[Dict]: Список доступных клеток [{x, y}, ...]
+        """
+        battle_unit = self.db.query(BattleUnit).filter_by(id=battle_unit_id).first()
+        if not battle_unit:
+            return []
+
+        cells = self.get_available_movement_cells(battle_unit.game_id, battle_unit_id)
+        return [{'x': x, 'y': y} for x, y in cells]
+
+    def get_valid_attacks(self, battle_unit_id: int) -> List[Dict]:
+        """
+        Публичный метод для получения доступных целей для атаки юнита.
+        Возвращает список словарей с информацией о целях.
+
+        Args:
+            battle_unit_id: ID юнита на поле боя
+
+        Returns:
+            List[Dict]: Список доступных целей [{id, x, y, name}, ...]
+        """
+        battle_unit = self.db.query(BattleUnit).filter_by(id=battle_unit_id).first()
+        if not battle_unit:
+            return []
+
+        game = self.db.query(Game).filter_by(id=battle_unit.game_id).first()
+        if not game:
+            return []
+
+        targets = self._get_available_targets(game, battle_unit)
+        return [{
+            'id': t['unit_id'],
+            'x': t['position'][0],
+            'y': t['position'][1],
+            'name': t['unit_name']
+        } for t in targets]
 
     def attack(self, game_id: int, player_id: int, attacker_id: int, target_id: int) -> Tuple[bool, str, bool]:
         """

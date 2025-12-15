@@ -346,5 +346,127 @@ class TestGodotArenaSurrender:
         assert 'сдался' in content, "Сообщение лога должно содержать 'сдался'"
 
 
+class TestGameEngineValidMoves:
+    """Тесты для методов get_valid_moves и get_valid_attacks в GameEngine"""
+
+    def test_get_valid_moves_method_exists(self):
+        """Проверка наличия метода get_valid_moves в GameEngine"""
+        game_engine_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'core', 'game_engine.py')
+        with open(game_engine_path, 'r') as f:
+            content = f.read()
+
+        assert 'def get_valid_moves(self, battle_unit_id: int)' in content, \
+            "Должен быть метод get_valid_moves(battle_unit_id)"
+        assert "return [{'x': x, 'y': y}" in content, \
+            "get_valid_moves должен возвращать список словарей с x, y"
+
+    def test_get_valid_attacks_method_exists(self):
+        """Проверка наличия метода get_valid_attacks в GameEngine"""
+        game_engine_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'core', 'game_engine.py')
+        with open(game_engine_path, 'r') as f:
+            content = f.read()
+
+        assert 'def get_valid_attacks(self, battle_unit_id: int)' in content, \
+            "Должен быть метод get_valid_attacks(battle_unit_id)"
+        assert "'id': t['unit_id']" in content, \
+            "get_valid_attacks должен возвращать id цели"
+
+    def test_unit_actions_api_uses_engine_methods(self):
+        """Проверка что API unit_actions использует методы GameEngine"""
+        arena_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'web', 'arena.py')
+        with open(arena_path, 'r') as f:
+            content = f.read()
+
+        assert 'engine.get_valid_moves(unit_id)' in content, \
+            "API должен использовать engine.get_valid_moves()"
+        assert 'engine.get_valid_attacks(unit_id)' in content, \
+            "API должен использовать engine.get_valid_attacks()"
+
+    def test_get_unit_stats_returns_dict(self):
+        """Проверка что _get_unit_stats возвращает словарь и используется правильно"""
+        game_engine_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'core', 'game_engine.py')
+        with open(game_engine_path, 'r') as f:
+            content = f.read()
+
+        # Проверяем что в get_available_movement_cells используется unit['speed']
+        assert "speed = unit['speed']" in content, \
+            "_get_unit_stats возвращает словарь, доступ должен быть через unit['speed']"
+
+
+class TestHireCostFix:
+    """Тесты для исправления hire_cost"""
+
+    def test_get_hire_cost_function_exists(self):
+        """Проверка наличия функции _get_hire_cost"""
+        arena_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'web', 'arena.py')
+        with open(arena_path, 'r') as f:
+            content = f.read()
+
+        assert 'def _get_hire_cost(race_unit)' in content, \
+            "Должна быть функция _get_hire_cost"
+        assert 'unit_level.prestige_max' in content, \
+            "_get_hire_cost должна использовать prestige_max из unit_level"
+
+    def test_armies_api_uses_get_hire_cost(self):
+        """Проверка что API armies использует _get_hire_cost"""
+        arena_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'web', 'arena.py')
+        with open(arena_path, 'r') as f:
+            content = f.read()
+
+        # Проверяем что hire_cost берётся через функцию, а не атрибут
+        assert "_get_hire_cost(au.race_unit)" in content, \
+            "API должен использовать _get_hire_cost() для получения стоимости найма"
+        # Не должно быть прямого обращения к race_unit.hire_cost
+        lines_with_hire_cost = [line for line in content.split('\n')
+                                if 'race_unit.hire_cost' in line and 'def _get_hire_cost' not in line]
+        assert len(lines_with_hire_cost) == 0, \
+            f"Не должно быть прямого обращения к race_unit.hire_cost: {lines_with_hire_cost}"
+
+    def test_available_units_api_uses_get_hire_cost(self):
+        """Проверка что API available_units использует _get_hire_cost"""
+        arena_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'web', 'arena.py')
+        with open(arena_path, 'r') as f:
+            content = f.read()
+
+        assert "hire_cost = _get_hire_cost(ru)" in content, \
+            "API available_units должен использовать _get_hire_cost()"
+        assert "'can_afford': player_balance >= hire_cost" in content, \
+            "can_afford должен использовать hire_cost переменную"
+
+
+class TestUnitActionsAPIEndpoint:
+    """Тесты для API эндпоинта unit_actions"""
+
+    def test_unit_actions_endpoint_exists(self):
+        """Проверка наличия эндпоинта unit_actions"""
+        arena_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'web', 'arena.py')
+        with open(arena_path, 'r') as f:
+            content = f.read()
+
+        assert '/api/public/games/<int:game_id>/units/<int:unit_id>/actions' in content, \
+            "Должен быть эндпоинт /api/public/games/<game_id>/units/<unit_id>/actions"
+        assert 'def api_public_unit_actions' in content, \
+            "Должна быть функция api_public_unit_actions"
+
+    def test_unit_actions_returns_moves_and_attacks(self):
+        """Проверка что unit_actions возвращает moves и attacks"""
+        arena_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'web', 'arena.py')
+        with open(arena_path, 'r') as f:
+            content = f.read()
+
+        assert "'moves': moves" in content, "Должен возвращать moves"
+        assert "'attacks': attacks" in content, "Должен возвращать attacks"
+
+    def test_unit_actions_api_client_method(self):
+        """Проверка наличия метода get_unit_actions в api_client.gd"""
+        api_client_path = os.path.join(os.path.dirname(os.path.dirname(__file__)),
+                                       'godot-arena', 'scripts', 'autoload', 'api_client.gd')
+        with open(api_client_path, 'r') as f:
+            content = f.read()
+
+        assert 'get_unit_actions' in content, "Должен быть метод get_unit_actions"
+        assert '/actions' in content, "Метод должен вызывать эндпоинт /actions"
+
+
 if __name__ == '__main__':
     pytest.main([__file__, '-v'])

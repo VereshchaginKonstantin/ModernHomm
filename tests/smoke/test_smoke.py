@@ -16,9 +16,17 @@ from pathlib import Path
 
 
 # Конфигурация тестов
+# Используем порт 5434 для прямого доступа к web контейнеру через docker network
+# или localhost:80 через nginx (может редиректить на HTTPS)
 WEB_BASE_URL = os.getenv('WEB_BASE_URL', 'http://localhost:80')
 BOT_API_URL = os.getenv('BOT_API_URL', 'http://localhost:8080')
 TIMEOUT = 10  # секунд
+# Отключаем проверку SSL для localhost тестов
+VERIFY_SSL = os.getenv('VERIFY_SSL', 'false').lower() == 'true'
+
+# Подавляем warnings о небезопасных запросах при verify=False
+import urllib3
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 
 def get_local_version(filename):
@@ -30,12 +38,29 @@ def get_local_version(filename):
         return None
 
 
+def make_request(url, **kwargs):
+    """Делает HTTP запрос с обработкой редиректа на HTTPS"""
+    kwargs.setdefault('timeout', TIMEOUT)
+    kwargs.setdefault('verify', VERIFY_SSL)
+
+    try:
+        response = requests.get(url, **kwargs)
+        # Если nginx редиректит на HTTPS, следуем за редиректом без проверки SSL
+        if response.status_code in [301, 302] and 'https://' in response.headers.get('Location', ''):
+            https_url = response.headers['Location']
+            return requests.get(https_url, timeout=TIMEOUT, verify=False)
+        return response
+    except requests.exceptions.SSLError:
+        # Пробуем без SSL верификации
+        return requests.get(url.replace('http://', 'https://'), timeout=TIMEOUT, verify=False)
+
+
 class TestWebSmoke:
     """Smoke тесты для веб-интерфейса"""
 
     def test_web_version_endpoint(self):
         """Проверка доступности /api/version"""
-        response = requests.get(f'{WEB_BASE_URL}/api/version', timeout=TIMEOUT)
+        response = make_request(f'{WEB_BASE_URL}/api/version')
         assert response.status_code == 200, f"Web /api/version returned {response.status_code}"
 
         data = response.json()
@@ -45,7 +70,7 @@ class TestWebSmoke:
 
     def test_web_health_endpoint(self):
         """Проверка доступности /api/health"""
-        response = requests.get(f'{WEB_BASE_URL}/api/health', timeout=TIMEOUT)
+        response = make_request(f'{WEB_BASE_URL}/api/health')
         assert response.status_code == 200, f"Web /api/health returned {response.status_code}"
 
         data = response.json()
@@ -54,15 +79,15 @@ class TestWebSmoke:
 
     def test_web_login_page(self):
         """Проверка доступности страницы логина"""
-        response = requests.get(f'{WEB_BASE_URL}/login', timeout=TIMEOUT, allow_redirects=False)
-        # Может быть 200 (страница логина) или 302 (редирект)
-        assert response.status_code in [200, 302], f"Login page returned {response.status_code}"
+        response = make_request(f'{WEB_BASE_URL}/login', allow_redirects=False)
+        # Может быть 200 (страница логина), 301/302 (редирект на HTTPS или другую страницу)
+        assert response.status_code in [200, 301, 302], f"Login page returned {response.status_code}"
 
     def test_web_root_redirect(self):
         """Проверка редиректа с главной страницы"""
-        response = requests.get(f'{WEB_BASE_URL}/', timeout=TIMEOUT, allow_redirects=False)
-        # Должен редиректить на логин или показать страницу
-        assert response.status_code in [200, 302], f"Root returned {response.status_code}"
+        response = make_request(f'{WEB_BASE_URL}/', allow_redirects=False)
+        # Должен редиректить на логин или показать страницу (или редирект на HTTPS)
+        assert response.status_code in [200, 301, 302], f"Root returned {response.status_code}"
 
 
 class TestBotSmoke:
@@ -96,7 +121,7 @@ class TestVersionMatch:
         if local_version is None:
             pytest.skip("WEB_VERSION file not found locally")
 
-        response = requests.get(f'{WEB_BASE_URL}/api/version', timeout=TIMEOUT)
+        response = make_request(f'{WEB_BASE_URL}/api/version')
         assert response.status_code == 200
 
         data = response.json()
@@ -122,7 +147,7 @@ class TestVersionMatch:
 
     def test_versions_consistent_across_services(self):
         """Проверка что версии согласованы между сервисами"""
-        web_response = requests.get(f'{WEB_BASE_URL}/api/version', timeout=TIMEOUT)
+        web_response = make_request(f'{WEB_BASE_URL}/api/version')
         bot_response = requests.get(f'{BOT_API_URL}/api/version', timeout=TIMEOUT)
 
         assert web_response.status_code == 200
