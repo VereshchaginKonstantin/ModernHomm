@@ -51,11 +51,18 @@ var unit_positions: Dictionary = {}  # unit_id -> {x, y} - последние и
 var active_tweens: Dictionary = {}  # unit_id -> Tween - активные анимации перемещения
 var action_mode: String = ""  # "move" или "attack"
 var last_log_count: int = 0  # Для отслеживания изменений в логах
+var base_url: String = ""  # Кэшированный base URL для запросов
 
 # Константы анимации перемещения
 const MOVE_DURATION: float = 0.5  # Длительность анимации перемещения в секундах
 
 func _ready() -> void:
+	# Кэшируем base URL один раз
+	if OS.has_feature("web"):
+		base_url = JavaScriptBridge.eval("window.location.origin")
+	else:
+		base_url = "http://localhost"
+
 	# Подключаем сигналы GameManager
 	GameManager.game_state_updated.connect(_on_game_state_updated)
 	GameManager.unit_actions_received.connect(_on_unit_actions_received)
@@ -315,11 +322,7 @@ func _update_unit_moved_state(unit_id: int, has_moved: bool) -> void:
 
 ## Загрузка текстуры юнита через HTTP
 func _load_unit_texture(image_url: String, unit_id: int) -> void:
-	var url = ""
-	if OS.has_feature("web"):
-		url = JavaScriptBridge.eval("window.location.origin") + image_url
-	else:
-		url = "http://localhost" + image_url
+	var url = base_url + image_url
 
 	var http = HTTPRequest.new()
 	http.use_threads = false
@@ -361,11 +364,7 @@ func _on_texture_loaded(result: int, response_code: int, headers: PackedStringAr
 
 ## Загрузка спрайт-листа через HTTP
 func _load_sprite_sheet(sprite_url: String, sprite_params: Variant, unit_id: int) -> void:
-	var url = ""
-	if OS.has_feature("web"):
-		url = JavaScriptBridge.eval("window.location.origin") + sprite_url
-	else:
-		url = "http://localhost" + sprite_url
+	var url = base_url + sprite_url
 
 	var http = HTTPRequest.new()
 	http.use_threads = false
