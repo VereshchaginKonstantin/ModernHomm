@@ -47,7 +47,11 @@ var sprite_sheets: Dictionary = {}
 var field_size: int = 5
 var cells: Array[Control] = []
 var unit_sprites: Dictionary = {}  # unit_id -> Control
+var unit_positions: Dictionary = {}  # unit_id -> {x, y} - последние известные позиции
 var action_mode: String = ""  # "move" или "attack"
+
+# Константы анимации перемещения
+const MOVE_DURATION: float = 0.5  # Длительность анимации перемещения в секундах
 
 func _ready() -> void:
 	# Подключаем сигналы GameManager
@@ -196,42 +200,118 @@ func _update_units(units: Array) -> void:
 	if OS.has_feature("web"):
 		JavaScriptBridge.eval("console.log('[Game] _update_units called, units count: %d');" % units.size())
 
-	# Удаляем старых юнитов
-	for sprite in unit_sprites.values():
-		sprite.queue_free()
-	unit_sprites.clear()
+	# Собираем ID юнитов из нового состояния
+	var new_unit_ids: Dictionary = {}
+	for unit in units:
+		if unit.get("count", 0) > 0:
+			new_unit_ids[unit.get("id")] = unit
 
-	# Создаём новых юнитов
+	# Удаляем юнитов, которых больше нет (погибших)
+	var units_to_remove: Array = []
+	for unit_id in unit_sprites.keys():
+		if not new_unit_ids.has(unit_id):
+			units_to_remove.append(unit_id)
+
+	for unit_id in units_to_remove:
+		if unit_sprites.has(unit_id):
+			unit_sprites[unit_id].queue_free()
+			unit_sprites.erase(unit_id)
+			unit_positions.erase(unit_id)
+
+	# Обновляем или создаём юнитов
 	for unit in units:
 		if unit.get("count", 0) <= 0:
 			continue
 
-		if OS.has_feature("web"):
+		var unit_id = unit.get("id")
+		var new_x = unit.get("x", 0)
+		var new_y = unit.get("y", 0)
+
+		if unit_sprites.has(unit_id):
+			# Юнит уже существует - проверяем нужно ли перемещение
+			var old_pos = unit_positions.get(unit_id, {"x": new_x, "y": new_y})
+			if old_pos["x"] != new_x or old_pos["y"] != new_y:
+				# Позиция изменилась - плавно перемещаем
+				_animate_unit_move(unit_id, old_pos["x"], old_pos["y"], new_x, new_y)
+				unit_positions[unit_id] = {"x": new_x, "y": new_y}
+
+			# Обновляем счётчик юнитов
+			_update_unit_count(unit_id, unit.get("count", 0))
+
+			# Обновляем has_moved (полупрозрачность)
+			_update_unit_moved_state(unit_id, unit.get("has_moved", 0) == 1)
+		else:
+			# Новый юнит - создаём
+			if OS.has_feature("web"):
+				var unit_type = unit.get("unit_type", {})
+				JavaScriptBridge.eval("console.log('[Game] Creating unit: id=%d, name=%s, x=%d, y=%d');" % [
+					unit_id,
+					unit_type.get("name", "?"),
+					new_x,
+					new_y
+				])
+
+			var unit_control = _create_unit_sprite(unit)
+			board.add_child(unit_control)
+			unit_sprites[unit_id] = unit_control
+			unit_positions[unit_id] = {"x": new_x, "y": new_y}
+
+			# Загружаем текстуру/спрайт если нужно
 			var unit_type = unit.get("unit_type", {})
-			JavaScriptBridge.eval("console.log('[Game] Creating unit: id=%d, name=%s, icon=%s, x=%d, y=%d');" % [
-				unit.get("id", 0),
-				unit_type.get("name", "?"),
-				unit_type.get("icon", "?"),
-				unit.get("x", 0),
-				unit.get("y", 0)
-			])
+			var sprite_url = unit_type.get("sprite_url", "")
+			var sprite_params = unit_type.get("sprite_params", null)
+			var image_url = unit_type.get("image_url", "")
 
-		var unit_control = _create_unit_sprite(unit)
-		board.add_child(unit_control)
-		unit_sprites[unit.get("id")] = unit_control
+			if sprite_url != "" and sprite_url != null and not sprite_sheets.has(sprite_url):
+				_load_sprite_sheet(sprite_url, sprite_params, unit_id)
+			elif image_url != "" and image_url != null and not unit_textures.has(image_url):
+				_load_unit_texture(image_url, unit_id)
 
-		# Приоритет: спрайт-лист > статическое изображение
-		var unit_type = unit.get("unit_type", {})
-		var sprite_url = unit_type.get("sprite_url", "")
-		var sprite_params = unit_type.get("sprite_params", null)
-		var image_url = unit_type.get("image_url", "")
+## Плавное перемещение юнита с анимацией
+func _animate_unit_move(unit_id: int, from_x: int, from_y: int, to_x: int, to_y: int) -> void:
+	if not unit_sprites.has(unit_id):
+		return
 
-		if sprite_url != "" and sprite_url != null and not sprite_sheets.has(sprite_url):
-			# Загружаем анимированный спрайт-лист
-			_load_sprite_sheet(sprite_url, sprite_params, unit.get("id"))
-		elif image_url != "" and image_url != null and not unit_textures.has(image_url):
-			# Fallback на статическое изображение
-			_load_unit_texture(image_url, unit.get("id"))
+	var unit_control = unit_sprites[unit_id]
+	if not is_instance_valid(unit_control):
+		return
+
+	# Вычисляем позиции в изометрических координатах
+	var from_pos = grid_to_iso(from_x, from_y) + Vector2(0, -20)
+	var to_pos = grid_to_iso(to_x, to_y) + Vector2(0, -20)
+
+	# Обновляем z_index для правильной отрисовки во время движения
+	unit_control.z_index = to_x + to_y + 100
+
+	# Создаём Tween для плавной анимации
+	var tween = create_tween()
+	tween.set_ease(Tween.EASE_IN_OUT)
+	tween.set_trans(Tween.TRANS_QUAD)
+	tween.tween_property(unit_control, "position", to_pos, MOVE_DURATION)
+
+	if OS.has_feature("web"):
+		JavaScriptBridge.eval("console.log('[Game] Animating unit %d from (%d,%d) to (%d,%d)');" % [unit_id, from_x, from_y, to_x, to_y])
+
+## Обновляет счётчик юнитов в существующем спрайте
+func _update_unit_count(unit_id: int, count: int) -> void:
+	if not unit_sprites.has(unit_id):
+		return
+
+	var unit_control = unit_sprites[unit_id]
+	# Ищем Label со счётчиком (последний Label в контейнере)
+	for child in unit_control.get_children():
+		if child is Label and child.text.is_valid_int():
+			child.text = str(count)
+			break
+
+## Обновляет состояние "уже походил" (полупрозрачность)
+func _update_unit_moved_state(unit_id: int, has_moved: bool) -> void:
+	if not unit_sprites.has(unit_id):
+		return
+
+	var unit_control = unit_sprites[unit_id]
+	# Меняем прозрачность всего контейнера
+	unit_control.modulate.a = 0.5 if has_moved else 1.0
 
 ## Загрузка текстуры юнита через HTTP
 func _load_unit_texture(image_url: String, unit_id: int) -> void:
