@@ -40,6 +40,8 @@ const COLORS = {
 # Кэш загруженных текстур юнитов
 var unit_textures: Dictionary = {}
 var texture_load_queue: Array = []
+# Кэш для спрайт-листов: {sprite_url: {texture: Texture2D, params: {frame_count, fps, columns, rows}}}
+var sprite_sheets: Dictionary = {}
 
 # Состояние
 var field_size: int = 5
@@ -218,9 +220,17 @@ func _update_units(units: Array) -> void:
 		board.add_child(unit_control)
 		unit_sprites[unit.get("id")] = unit_control
 
-		# Загружаем текстуру юнита если есть URL изображения
-		var image_url = unit.get("unit_type", {}).get("image_url", "")
-		if image_url != "" and image_url != null and not unit_textures.has(image_url):
+		# Приоритет: спрайт-лист > статическое изображение
+		var unit_type = unit.get("unit_type", {})
+		var sprite_url = unit_type.get("sprite_url", "")
+		var sprite_params = unit_type.get("sprite_params", null)
+		var image_url = unit_type.get("image_url", "")
+
+		if sprite_url != "" and sprite_url != null and not sprite_sheets.has(sprite_url):
+			# Загружаем анимированный спрайт-лист
+			_load_sprite_sheet(sprite_url, sprite_params, unit.get("id"))
+		elif image_url != "" and image_url != null and not unit_textures.has(image_url):
+			# Fallback на статическое изображение
 			_load_unit_texture(image_url, unit.get("id"))
 
 ## Загрузка текстуры юнита через HTTP
@@ -303,6 +313,186 @@ func _on_texture_loaded(result: int, response_code: int, headers: PackedStringAr
 			if OS.has_feature("web"):
 				JavaScriptBridge.eval("console.log('[Game] Applied texture to unit %d');" % unit_id)
 
+## Загрузка спрайт-листа через HTTP
+func _load_sprite_sheet(sprite_url: String, sprite_params: Variant, unit_id: int) -> void:
+	var url = ""
+	if OS.has_feature("web"):
+		url = JavaScriptBridge.eval("window.location.origin") + sprite_url
+		JavaScriptBridge.eval("console.log('[Game] Loading sprite sheet from: %s for unit %d');" % [url, unit_id])
+	else:
+		url = "http://localhost" + sprite_url
+
+	var http = HTTPRequest.new()
+	http.use_threads = false
+	add_child(http)
+	http.request_completed.connect(_on_sprite_sheet_loaded.bind(sprite_url, sprite_params, unit_id, http))
+
+	var headers: PackedStringArray = []
+	if ApiClient.auth_token != "":
+		headers.append("Authorization: Bearer " + ApiClient.auth_token)
+
+	var err = http.request(url, headers)
+	if err != OK:
+		if OS.has_feature("web"):
+			JavaScriptBridge.eval("console.error('[Game] Failed to start request for sprite sheet: %s');" % url)
+		http.queue_free()
+
+func _on_sprite_sheet_loaded(result: int, response_code: int, headers: PackedStringArray, body: PackedByteArray, sprite_url: String, sprite_params: Variant, unit_id: int, http_node: HTTPRequest) -> void:
+	http_node.queue_free()
+
+	if OS.has_feature("web"):
+		JavaScriptBridge.eval("console.log('[Game] Sprite sheet response: result=%d, code=%d, body_size=%d for unit %d');" % [result, response_code, body.size(), unit_id])
+
+	if result != HTTPRequest.RESULT_SUCCESS or response_code != 200 or body.size() == 0:
+		if OS.has_feature("web"):
+			JavaScriptBridge.eval("console.error('[Game] Sprite sheet request failed');")
+		return
+
+	# Создаём текстуру из спрайт-листа
+	var image = Image.new()
+	var error = image.load_png_from_buffer(body)
+	if error != OK:
+		error = image.load_jpg_from_buffer(body)
+	if error != OK:
+		error = image.load_webp_from_buffer(body)
+	if error != OK:
+		if OS.has_feature("web"):
+			JavaScriptBridge.eval("console.error('[Game] Failed to load sprite sheet image');")
+		return
+
+	var texture = ImageTexture.create_from_image(image)
+
+	# Сохраняем в кэш с параметрами анимации
+	sprite_sheets[sprite_url] = {
+		"texture": texture,
+		"params": sprite_params if sprite_params else {"frame_count": 1, "fps": 10, "columns": 1, "rows": 1}
+	}
+
+	if OS.has_feature("web"):
+		var params_str = str(sprite_params) if sprite_params else "default"
+		JavaScriptBridge.eval("console.log('[Game] Sprite sheet loaded for unit %d, params: %s');" % [unit_id, params_str])
+
+	# Обновляем юнита с анимированным спрайтом
+	if unit_sprites.has(unit_id):
+		_apply_animated_sprite(unit_id, sprite_url)
+
+## Применяет анимированный спрайт к юниту
+func _apply_animated_sprite(unit_id: int, sprite_url: String) -> void:
+	if not unit_sprites.has(unit_id) or not sprite_sheets.has(sprite_url):
+		return
+
+	var unit_control = unit_sprites[unit_id]
+	# Проверяем что узел всё ещё валиден (не удалён)
+	if not is_instance_valid(unit_control) or unit_control.is_queued_for_deletion():
+		return
+
+	var sprite_data = sprite_sheets[sprite_url]
+	var texture: Texture2D = sprite_data["texture"]
+	var params: Dictionary = sprite_data["params"]
+
+	# Удаляем старый TextureRect и иконку если есть
+	var old_texture = unit_control.get_node_or_null("UnitTexture")
+	if old_texture:
+		old_texture.queue_free()
+
+	# Ищем и скрываем Label с иконкой
+	for child in unit_control.get_children():
+		if child is Label and child.text.length() <= 4:  # Эмодзи обычно короткие
+			child.visible = false
+
+	# Создаём AnimatedSprite2D
+	var animated_sprite = AnimatedSprite2D.new()
+	animated_sprite.name = "AnimatedSprite"
+
+	# Создаём SpriteFrames для анимации
+	var sprite_frames = SpriteFrames.new()
+	sprite_frames.add_animation("idle")
+	sprite_frames.set_animation_loop("idle", true)
+	sprite_frames.set_animation_speed("idle", params.get("fps", 10))
+
+	# Получаем параметры спрайт-листа с защитой от деления на ноль
+	var frame_count: int = maxi(1, params.get("frame_count", 1))
+	var columns: int = maxi(1, params.get("columns", 1))
+	var rows: int = maxi(1, params.get("rows", 1))
+
+	var tex_width = texture.get_width()
+	var tex_height = texture.get_height()
+	var frame_width = tex_width / columns
+	var frame_height = tex_height / rows
+
+	if OS.has_feature("web"):
+		JavaScriptBridge.eval("console.log('[Game] Creating animation: frames=%d, cols=%d, rows=%d, frame_size=%dx%d');" % [frame_count, columns, rows, frame_width, frame_height])
+
+	# Добавляем кадры анимации
+	for i in range(frame_count):
+		var col = i % columns
+		var row = i / columns  # Integer division in GDScript 4.x
+
+		var atlas_texture = AtlasTexture.new()
+		atlas_texture.atlas = texture
+		atlas_texture.region = Rect2(col * frame_width, row * frame_height, frame_width, frame_height)
+
+		sprite_frames.add_frame("idle", atlas_texture)
+
+	animated_sprite.sprite_frames = sprite_frames
+	animated_sprite.animation = "idle"
+
+	# Позиционирование и масштабирование (сохраняем пропорции)
+	animated_sprite.position = Vector2(TILE_WIDTH / 2, 24)
+	var scale_factor = 48.0 / maxf(frame_width, frame_height)
+	animated_sprite.scale = Vector2(scale_factor, scale_factor)
+
+	unit_control.add_child(animated_sprite)
+	animated_sprite.play("idle")
+
+	if OS.has_feature("web"):
+		JavaScriptBridge.eval("console.log('[Game] AnimatedSprite applied to unit %d');" % unit_id)
+
+## Создаёт анимированный спрайт в контейнере (используется при создании юнита)
+func _create_animated_sprite_in_container(container: Control, sprite_url: String) -> void:
+	if not sprite_sheets.has(sprite_url):
+		return
+
+	var sprite_data = sprite_sheets[sprite_url]
+	var texture: Texture2D = sprite_data["texture"]
+	var params: Dictionary = sprite_data["params"]
+
+	var animated_sprite = AnimatedSprite2D.new()
+	animated_sprite.name = "AnimatedSprite"
+
+	var sprite_frames = SpriteFrames.new()
+	sprite_frames.add_animation("idle")
+	sprite_frames.set_animation_loop("idle", true)
+	sprite_frames.set_animation_speed("idle", params.get("fps", 10))
+
+	# Защита от деления на ноль
+	var frame_count: int = maxi(1, params.get("frame_count", 1))
+	var columns: int = maxi(1, params.get("columns", 1))
+	var rows: int = maxi(1, params.get("rows", 1))
+
+	var tex_width = texture.get_width()
+	var tex_height = texture.get_height()
+	var frame_width = tex_width / columns
+	var frame_height = tex_height / rows
+
+	for i in range(frame_count):
+		var col = i % columns
+		var row = i / columns  # Integer division in GDScript 4.x
+
+		var atlas_texture = AtlasTexture.new()
+		atlas_texture.atlas = texture
+		atlas_texture.region = Rect2(col * frame_width, row * frame_height, frame_width, frame_height)
+		sprite_frames.add_frame("idle", atlas_texture)
+
+	animated_sprite.sprite_frames = sprite_frames
+	animated_sprite.animation = "idle"
+	animated_sprite.position = Vector2(TILE_WIDTH / 2, 24)
+	var scale_factor = 48.0 / maxf(frame_width, frame_height)
+	animated_sprite.scale = Vector2(scale_factor, scale_factor)
+
+	container.add_child(animated_sprite)
+	animated_sprite.play("idle")
+
 func _create_unit_sprite(unit: Dictionary) -> Control:
 	var container = Control.new()
 	var grid_x = unit.get("x", 0)
@@ -359,9 +549,16 @@ func _create_unit_sprite(unit: Dictionary) -> Control:
 	# Перемещаем base поверх outline
 	container.move_child(base, 1)
 
-	# Изображение юнита (если загружено) или иконка
-	var image_url = unit.get("unit_type", {}).get("image_url", "")
-	if image_url != null and image_url != "" and unit_textures.has(image_url):
+	# Изображение юнита: приоритет sprite_url > image_url > иконка
+	var unit_type = unit.get("unit_type", {})
+	var sprite_url = unit_type.get("sprite_url", "")
+	var image_url = unit_type.get("image_url", "")
+
+	# Приоритет 1: анимированный спрайт-лист (если уже загружен)
+	if sprite_url != null and sprite_url != "" and sprite_sheets.has(sprite_url):
+		_create_animated_sprite_in_container(container, sprite_url)
+	# Приоритет 2: статическое изображение
+	elif image_url != null and image_url != "" and unit_textures.has(image_url):
 		var texture_rect = TextureRect.new()
 		texture_rect.name = "UnitTexture"
 		texture_rect.texture = unit_textures[image_url]
@@ -372,8 +569,8 @@ func _create_unit_sprite(unit: Dictionary) -> Control:
 		texture_rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		container.add_child(texture_rect)
 	else:
-		# Иконка юнита (эмодзи) как fallback
-		var icon = unit.get("unit_type", {}).get("icon", "⚔️")
+		# Fallback: иконка юнита (эмодзи)
+		var icon = unit_type.get("icon", "⚔️")
 		if OS.has_feature("web"):
 			JavaScriptBridge.eval("console.log('[Game] Using icon fallback: %s');" % icon)
 

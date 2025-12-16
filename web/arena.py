@@ -169,8 +169,21 @@ class GameState:
                     has_image = skin and skin.image_data is not None
                     has_sprite = skin and skin.sprite_frames_data is not None
 
-                    # Формируем URL изображения: сначала из БД, потом fallback на статику
+                    # Формируем URL изображения: приоритет спрайт-лист > статика > image_data
                     image_url = None
+                    sprite_url = None
+                    sprite_params = None
+
+                    if has_sprite:
+                        # Приоритет: анимированный спрайт-лист
+                        sprite_url = f'/arena/api/public/skins/{skin_id}/sprite'
+                        sprite_params = {
+                            'frame_count': skin.sprite_frame_count or 1,
+                            'fps': skin.sprite_fps or 10,
+                            'columns': skin.sprite_columns or 1,
+                            'rows': skin.sprite_rows or 1
+                        }
+
                     if has_image:
                         image_url = f'/arena/api/public/skins/{skin_id}/image'
                     else:
@@ -197,7 +210,8 @@ class GameState:
                             'has_image': has_image or (image_url is not None),
                             'has_sprite': has_sprite,
                             'image_url': image_url,
-                            'sprite_url': f'/arena/api/public/skins/{skin_id}/sprite' if has_sprite else None
+                            'sprite_url': sprite_url,
+                            'sprite_params': sprite_params
                         }
                     })
 
@@ -1048,6 +1062,7 @@ def api_public_skin_info(skin_id):
         return jsonify({
             'id': skin.id,
             'name': skin.name,
+            # Idle спрайт
             'has_image': skin.image_data is not None,
             'has_sprite': skin.sprite_frames_data is not None,
             'sprite_scale_x': float(skin.sprite_scale_x) if skin.sprite_scale_x else 1.0,
@@ -1056,8 +1071,78 @@ def api_public_skin_info(skin_id):
             'sprite_offset_y': skin.sprite_offset_y or 0,
             'sprite_rotation': float(skin.sprite_rotation) if skin.sprite_rotation else 0,
             'sprite_frame_count': skin.sprite_frame_count or 1,
-            'sprite_fps': skin.sprite_fps or 10
+            'sprite_fps': skin.sprite_fps or 10,
+            # Атака
+            'has_attack_image': skin.attack_image_data is not None if hasattr(skin, 'attack_image_data') else False,
+            'has_attack_sprite': skin.attack_sprite_data is not None if hasattr(skin, 'attack_sprite_data') else False,
+            'attack_frame_count': skin.attack_frame_count if hasattr(skin, 'attack_frame_count') else 1,
+            'attack_fps': skin.attack_fps if hasattr(skin, 'attack_fps') else 10,
+            # Смерть
+            'has_death_image': skin.death_image_data is not None if hasattr(skin, 'death_image_data') else False,
+            'has_death_sprite': skin.death_sprite_data is not None if hasattr(skin, 'death_sprite_data') else False,
+            'death_frame_count': skin.death_frame_count if hasattr(skin, 'death_frame_count') else 1,
+            'death_fps': skin.death_fps if hasattr(skin, 'death_fps') else 10,
         })
+
+
+@arena_bp.route('/api/public/skins/<int:skin_id>/attack')
+def api_public_skin_attack(skin_id):
+    """Публичный эндпоинт - получить изображение атаки юнита"""
+    with db.get_session() as session_db:
+        skin = session_db.query(RaceUnitSkin).filter_by(id=skin_id).first()
+        if not skin or not hasattr(skin, 'attack_image_data') or not skin.attack_image_data:
+            return '', 404
+
+        response = make_response(skin.attack_image_data)
+        response.headers['Content-Type'] = skin.attack_image_mime_type or 'image/png'
+        response.headers['Cache-Control'] = 'public, max-age=86400'
+        response.headers['Cross-Origin-Resource-Policy'] = 'cross-origin'
+        return response
+
+
+@arena_bp.route('/api/public/skins/<int:skin_id>/attack_sprite')
+def api_public_skin_attack_sprite(skin_id):
+    """Публичный эндпоинт - получить спрайт-лист атаки юнита"""
+    with db.get_session() as session_db:
+        skin = session_db.query(RaceUnitSkin).filter_by(id=skin_id).first()
+        if not skin or not hasattr(skin, 'attack_sprite_data') or not skin.attack_sprite_data:
+            return '', 404
+
+        response = make_response(skin.attack_sprite_data)
+        response.headers['Content-Type'] = skin.attack_sprite_mime_type or 'image/png'
+        response.headers['Cache-Control'] = 'public, max-age=86400'
+        response.headers['Cross-Origin-Resource-Policy'] = 'cross-origin'
+        return response
+
+
+@arena_bp.route('/api/public/skins/<int:skin_id>/death')
+def api_public_skin_death(skin_id):
+    """Публичный эндпоинт - получить изображение смерти юнита"""
+    with db.get_session() as session_db:
+        skin = session_db.query(RaceUnitSkin).filter_by(id=skin_id).first()
+        if not skin or not hasattr(skin, 'death_image_data') or not skin.death_image_data:
+            return '', 404
+
+        response = make_response(skin.death_image_data)
+        response.headers['Content-Type'] = skin.death_image_mime_type or 'image/png'
+        response.headers['Cache-Control'] = 'public, max-age=86400'
+        response.headers['Cross-Origin-Resource-Policy'] = 'cross-origin'
+        return response
+
+
+@arena_bp.route('/api/public/skins/<int:skin_id>/death_sprite')
+def api_public_skin_death_sprite(skin_id):
+    """Публичный эндпоинт - получить спрайт-лист смерти юнита"""
+    with db.get_session() as session_db:
+        skin = session_db.query(RaceUnitSkin).filter_by(id=skin_id).first()
+        if not skin or not hasattr(skin, 'death_sprite_data') or not skin.death_sprite_data:
+            return '', 404
+
+        response = make_response(skin.death_sprite_data)
+        response.headers['Content-Type'] = skin.death_sprite_mime_type or 'image/png'
+        response.headers['Cache-Control'] = 'public, max-age=86400'
+        response.headers['Cross-Origin-Resource-Policy'] = 'cross-origin'
+        return response
 
 
 # =========================== Army Management API ===========================
