@@ -692,32 +692,14 @@ func _on_cell_clicked(event: InputEvent, x: int, y: int) -> void:
 
 func _on_unit_clicked(event: InputEvent, unit: Dictionary) -> void:
 	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
-		if OS.has_feature("web"):
-			JavaScriptBridge.eval("console.log('[Game] Unit clicked: id=%d, player_id=%d, current_player_id=%d, action_mode=%s');" % [
-				unit.get("id", 0),
-				unit.get("player_id", 0),
-				GameManager.current_player_id,
-				action_mode
-			])
-
 		if action_mode == "attack" and GameManager.can_attack(unit.get("id")):
 			GameManager.attack_with_selected_unit(unit.get("id"))
 			_clear_highlights()
 			action_mode = ""
 		elif unit.get("player_id") == GameManager.current_player_id:
 			GameManager.select_unit(unit)
-		else:
-			# Попытка выбрать вражеского юнита - показываем сообщение
-			if OS.has_feature("web"):
-				JavaScriptBridge.eval("console.log('[Game] Cannot select enemy unit');")
 
 func _on_unit_actions_received(actions: Dictionary) -> void:
-	if OS.has_feature("web"):
-		JavaScriptBridge.eval("console.log('[Game] _on_unit_actions_received: can_move=%d, can_attack=%d');" % [
-			actions.get("can_move", []).size(),
-			actions.get("can_attack", []).size()
-		])
-
 	_update_action_buttons()
 	hint_label.text = "Выбран юнит. Выберите действие."
 

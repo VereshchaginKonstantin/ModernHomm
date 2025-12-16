@@ -42,10 +42,6 @@ func _load_armies() -> void:
 	ApiClient.get_armies()
 
 func _on_api_response(data: Dictionary) -> void:
-	if OS.has_feature("web"):
-		var keys = ",".join(data.keys())
-		JavaScriptBridge.eval("console.log('[ArmyEditor] _on_api_response, request=%d, keys: %s');" % [pending_request, keys])
-
 	match pending_request:
 		RequestType.GET_ARMIES:
 			_handle_armies_response(data)

@@ -184,10 +184,6 @@ func _on_password_submitted(_text: String) -> void:
 	_on_login_pressed()
 
 func _on_api_response(data: Dictionary) -> void:
-	if OS.has_feature("web"):
-		var keys = ",".join(data.keys())
-		JavaScriptBridge.eval("console.log('[Main] _on_api_response, state=%d, keys: %s');" % [login_state, keys])
-
 	# Обрабатываем ответ в зависимости от состояния логина
 	match login_state:
 		LoginState.LOGGING_IN:
@@ -250,8 +246,6 @@ func _handle_game_response(data: Dictionary) -> void:
 		pending_games = data.get("pending_games", [])
 		active_games = data.get("active_games", [])
 		history_games = data.get("history", [])
-		if OS.has_feature("web"):
-			JavaScriptBridge.eval("console.log('[Main] Got pending_games: %d, active: %d, history: %d');" % [pending_games.size(), active_games.size(), history_games.size()])
 		_display_battles_list()
 		return
 
@@ -266,9 +260,6 @@ func _handle_game_response(data: Dictionary) -> void:
 			get_tree().change_scene_to_file("res://scenes/game.tscn")
 
 func _on_api_error(error: String) -> void:
-	if OS.has_feature("web"):
-		JavaScriptBridge.eval("console.log('[Main] _on_api_error: %s, state=%d');" % [error, login_state])
-
 	match login_state:
 		LoginState.LOGGING_IN:
 			login_state = LoginState.IDLE
@@ -362,17 +353,11 @@ func _populate_opponents() -> void:
 	_check_pending_games()
 
 func _check_pending_games() -> void:
-	if OS.has_feature("web"):
-		JavaScriptBridge.eval("console.log('[Main] _check_pending_games called');")
 	if current_player.is_empty() or not ApiClient.is_authenticated():
-		if OS.has_feature("web"):
-			JavaScriptBridge.eval("console.log('[Main] Not authenticated, hiding panel');")
 		battles_toggle.visible = false
 		return
 
 	battles_toggle.visible = true
-	if OS.has_feature("web"):
-		JavaScriptBridge.eval("console.log('[Main] Loading pending games');")
 	ApiClient.get_pending_games()
 
 func _on_opponent_selected(index: int) -> void:
@@ -464,9 +449,6 @@ func _on_error(message: String) -> void:
 	waiting_game_id = 0
 
 func _display_battles_list() -> void:
-	if OS.has_feature("web"):
-		JavaScriptBridge.eval("console.log('[Main] _display_battles_list called');")
-
 	for child in pending_list.get_children():
 		child.queue_free()
 
@@ -562,9 +544,6 @@ func _display_battles_list() -> void:
 	if pending_games.size() > 0 or active_games.size() > 0:
 		if not battles_panel_open:
 			_open_battles_panel()
-
-	if OS.has_feature("web"):
-		JavaScriptBridge.eval("console.log('[Main] _display_battles_list done, has_battles=%s');" % str(has_battles))
 
 func _on_accept_game(game_id: int, army_select: OptionButton) -> void:
 	var selected_idx = army_select.selected

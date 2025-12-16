@@ -100,14 +100,6 @@ func select_unit(unit: Dictionary) -> void:
 	if current_player_id == 0:
 		current_player_id = ApiClient.player_id
 
-	if OS.has_feature("web"):
-		JavaScriptBridge.eval("console.log('[GameManager] select_unit called, unit_id=%d, player_id=%d, current_player_id=%d, is_my_turn=%s');" % [
-			unit.get("id", 0),
-			unit.get("player_id", 0),
-			current_player_id,
-			str(is_my_turn())
-		])
-
 	# Проверяем можно ли выбрать юнита
 	if unit.get("player_id") != current_player_id:
 		error_occurred.emit("Это юнит противника!")
@@ -252,13 +244,6 @@ func _on_api_response(data: Dictionary) -> void:
 		if current_player_id == 0:
 			current_player_id = ApiClient.player_id
 
-		if OS.has_feature("web"):
-			JavaScriptBridge.eval("console.log('[GameManager] Game state received: game_id=%d, current_player_id=%d, ApiClient.player_id=%d');" % [
-				data.get("game_id", 0),
-				current_player_id,
-				ApiClient.player_id
-			])
-
 		# Проверяем смену хода
 		if old_current_player != 0 and old_current_player != game_state.current_player_id:
 			turn_changed.emit(game_state.current_player_id)
@@ -287,12 +272,6 @@ func _on_api_response(data: Dictionary) -> void:
 			current_actions["can_attack"] = data.get("attacks", [])
 		else:
 			current_actions["can_attack"] = data.get("can_attack", [])
-
-		if OS.has_feature("web"):
-			JavaScriptBridge.eval("console.log('[GameManager] Unit actions received: can_move=%d, can_attack=%d');" % [
-				current_actions.get("can_move", []).size(),
-				current_actions.get("can_attack", []).size()
-			])
 
 		unit_actions_received.emit(current_actions)
 

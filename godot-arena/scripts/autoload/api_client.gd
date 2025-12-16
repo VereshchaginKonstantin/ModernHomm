@@ -250,15 +250,8 @@ func _make_request(url: String, method: int, body: String = "", requires_auth: b
 
 ## Обработка ответа
 func _on_request_completed(result: int, response_code: int, headers: PackedStringArray, body: PackedByteArray) -> void:
-	# Отладочная информация в консоль браузера
-	if OS.has_feature("web"):
-		JavaScriptBridge.eval("console.log('API Response: result=%d, code=%d');" % [result, response_code])
-
 	if result != HTTPRequest.RESULT_SUCCESS:
-		var error_msg = "Network error: " + str(result)
-		if OS.has_feature("web"):
-			JavaScriptBridge.eval("console.error('API Error: %s');" % error_msg)
-		request_failed.emit(error_msg)
+		request_failed.emit("Network error: " + str(result))
 		return
 
 	var json_string = body.get_string_from_utf8()
@@ -266,10 +259,7 @@ func _on_request_completed(result: int, response_code: int, headers: PackedStrin
 	var parse_result = json.parse(json_string)
 
 	if parse_result != OK:
-		var error_msg = "JSON parse error"
-		if OS.has_feature("web"):
-			JavaScriptBridge.eval("console.error('API Error: %s, body=%s');" % [error_msg, json_string.substr(0, 100)])
-		request_failed.emit(error_msg)
+		request_failed.emit("JSON parse error")
 		return
 
 	var data = json.data
@@ -283,19 +273,11 @@ func _on_request_completed(result: int, response_code: int, headers: PackedStrin
 		return
 
 	if response_code < 200 or response_code >= 300:
-		var error_msg = data.get("error", "HTTP error: " + str(response_code))
-		if OS.has_feature("web"):
-			JavaScriptBridge.eval("console.error('API Error: %s');" % error_msg)
-		request_failed.emit(error_msg)
+		request_failed.emit(data.get("error", "HTTP error: " + str(response_code)))
 		return
 
 	# Сохраняем данные авторизации если есть токен
 	if data.has("token"):
 		_save_auth_data(data)
 
-	if OS.has_feature("web"):
-		var json_str = JSON.stringify(data)
-		# Escape special characters for JavaScript string
-		json_str = json_str.replace("\\", "\\\\").replace("'", "\\'").replace("\n", "\\n").replace("\r", "\\r")
-		JavaScriptBridge.eval("console.log('[API] Success: ' + '%s'.substr(0, 200));" % json_str)
 	request_completed.emit(data)
