@@ -82,7 +82,7 @@ class RaceUnitSkin(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     race_unit_id = Column(Integer, ForeignKey('race_units.id', ondelete='CASCADE'), nullable=False, index=True)
     name = Column(String(255), nullable=False)  # Название скина
-    image_data = Column(LargeBinary, nullable=True)  # Бинарные данные изображения
+    image_data = Column(LargeBinary, nullable=True)  # Бинарные данные изображения (idle)
     image_mime_type = Column(String(50), nullable=True)  # MIME тип изображения (image/png, image/jpeg)
     description = Column(Text, nullable=True)  # Описание скина
 
@@ -93,13 +93,33 @@ class RaceUnitSkin(Base):
     sprite_offset_y = Column(Integer, nullable=False, default=0)  # Смещение по Y в пикселях
     sprite_rotation = Column(Numeric(10, 4), nullable=False, default=0)  # Вращение в градусах
 
-    # Анимированный спрайт (для AnimatedSprite2D в Godot)
+    # Анимированный спрайт IDLE (для AnimatedSprite2D в Godot)
     sprite_frames_data = Column(LargeBinary, nullable=True)  # Спрайт-лист или анимированный спрайт (PNG)
     sprite_frames_mime_type = Column(String(50), nullable=True)  # MIME тип спрайт-листа
     sprite_frame_count = Column(Integer, nullable=False, default=1)  # Количество кадров анимации
     sprite_fps = Column(Integer, nullable=False, default=10)  # Кадров в секунду для анимации
     sprite_columns = Column(Integer, nullable=False, default=1)  # Количество столбцов в спрайт-листе
     sprite_rows = Column(Integer, nullable=False, default=1)  # Количество строк в спрайт-листе
+
+    # Спрайт анимации АТАКИ
+    attack_image_data = Column(LargeBinary, nullable=True)  # Изображение атаки
+    attack_image_mime_type = Column(String(50), nullable=True)  # MIME тип
+    attack_sprite_data = Column(LargeBinary, nullable=True)  # Спрайт-лист атаки
+    attack_sprite_mime_type = Column(String(50), nullable=True)  # MIME тип спрайт-листа атаки
+    attack_frame_count = Column(Integer, nullable=False, default=1)  # Количество кадров атаки
+    attack_fps = Column(Integer, nullable=False, default=10)  # FPS анимации атаки
+    attack_columns = Column(Integer, nullable=False, default=1)  # Столбцы в спрайт-листе атаки
+    attack_rows = Column(Integer, nullable=False, default=1)  # Строки в спрайт-листе атаки
+
+    # Спрайт анимации СМЕРТИ
+    death_image_data = Column(LargeBinary, nullable=True)  # Изображение смерти
+    death_image_mime_type = Column(String(50), nullable=True)  # MIME тип
+    death_sprite_data = Column(LargeBinary, nullable=True)  # Спрайт-лист смерти
+    death_sprite_mime_type = Column(String(50), nullable=True)  # MIME тип спрайт-листа смерти
+    death_frame_count = Column(Integer, nullable=False, default=1)  # Количество кадров смерти
+    death_fps = Column(Integer, nullable=False, default=10)  # FPS анимации смерти
+    death_columns = Column(Integer, nullable=False, default=1)  # Столбцы в спрайт-листе смерти
+    death_rows = Column(Integer, nullable=False, default=1)  # Строки в спрайт-листе смерти
 
     # Путь к файлам в Godot assets (генерируется при экспорте)
     godot_texture_path = Column(String(512), nullable=True)  # Путь к текстуре в Godot (res://assets/...)

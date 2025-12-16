@@ -50,6 +50,7 @@ var unit_sprites: Dictionary = {}  # unit_id -> Control
 var unit_positions: Dictionary = {}  # unit_id -> {x, y} - последние известные позиции
 var active_tweens: Dictionary = {}  # unit_id -> Tween - активные анимации перемещения
 var action_mode: String = ""  # "move" или "attack"
+var last_log_count: int = 0  # Для отслеживания изменений в логах
 
 # Константы анимации перемещения
 const MOVE_DURATION: float = 0.5  # Длительность анимации перемещения в секундах
@@ -77,10 +78,12 @@ func _ready() -> void:
 func _on_game_state_updated(state: Dictionary) -> void:
 	# Обновляем размер поля
 	var field_name = state.get("field", {}).get("name", "5x5")
-	field_size = int(field_name.split("x")[0])
+	var new_field_size = int(field_name.split("x")[0])
 
-	# Перерисовываем доску
-	_draw_board()
+	# Перерисовываем доску только если размер поля изменился или доска ещё не создана
+	if new_field_size != field_size or cells.is_empty():
+		field_size = new_field_size
+		_draw_board()
 
 	# Обновляем юнитов
 	_update_units(state.get("units", []))
@@ -825,6 +828,11 @@ func _update_action_buttons() -> void:
 	defer_button.disabled = not (has_unit and is_my_turn)
 
 func _update_log(logs: Array) -> void:
+	# Проверяем изменилось ли количество логов (оптимизация - не пересоздаём если не изменилось)
+	if logs.size() == last_log_count:
+		return
+	last_log_count = logs.size()
+
 	# Очищаем старые записи
 	for child in log_list.get_children():
 		child.queue_free()
