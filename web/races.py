@@ -1620,7 +1620,7 @@ EDIT_SKIN_TEMPLATE = """
                     <label>Текущее изображение</label>
                     {% if skin.image_data %}
                     <div>
-                        <img src="{{ url_for('races.skin_image', skin_id=skin.id) }}" class="current-image" alt="Текущий скин">
+                        <img src="{{ url_for('races.skin_image', skin_id=skin.id) }}?t={{ now }}" class="current-image" alt="Текущий скин">
                         <br>
                         <label style="color: #aaa;">
                             <input type="checkbox" name="delete_image"> Удалить текущее изображение
@@ -1702,7 +1702,7 @@ EDIT_SKIN_TEMPLATE = """
                 <div class="form-group">
                     <label>Текущий спрайт-лист</label>
                     <div>
-                        <img src="{{ url_for('races.skin_sprite_frames', skin_id=skin.id) }}" class="current-image" alt="Спрайт-лист">
+                        <img src="{{ url_for('races.skin_sprite_frames', skin_id=skin.id) }}?t={{ now }}" class="current-image" alt="Спрайт-лист">
                         <br>
                         <label style="color: #aaa;">
                             <input type="checkbox" name="delete_sprite_frames"> Удалить спрайт-лист
@@ -1752,7 +1752,7 @@ EDIT_SKIN_TEMPLATE = """
                 <div class="form-group">
                     <label>Текущее изображение атаки</label>
                     <div>
-                        <img src="{{ url_for('races.skin_attack_image', skin_id=skin.id) }}" class="current-image" alt="Изображение атаки">
+                        <img src="{{ url_for('races.skin_attack_image', skin_id=skin.id) }}?t={{ now }}" class="current-image" alt="Изображение атаки">
                         <br>
                         <label style="color: #aaa;">
                             <input type="checkbox" name="delete_attack_image"> Удалить изображение атаки
@@ -1771,7 +1771,7 @@ EDIT_SKIN_TEMPLATE = """
                 <div class="form-group">
                     <label>Текущий спрайт-лист атаки</label>
                     <div>
-                        <img src="{{ url_for('races.skin_attack_sprite', skin_id=skin.id) }}" class="current-image" alt="Спрайт-лист атаки">
+                        <img src="{{ url_for('races.skin_attack_sprite', skin_id=skin.id) }}?t={{ now }}" class="current-image" alt="Спрайт-лист атаки">
                         <br>
                         <label style="color: #aaa;">
                             <input type="checkbox" name="delete_attack_sprite"> Удалить спрайт-лист атаки
@@ -1821,7 +1821,7 @@ EDIT_SKIN_TEMPLATE = """
                 <div class="form-group">
                     <label>Текущее изображение смерти</label>
                     <div>
-                        <img src="{{ url_for('races.skin_death_image', skin_id=skin.id) }}" class="current-image" alt="Изображение смерти">
+                        <img src="{{ url_for('races.skin_death_image', skin_id=skin.id) }}?t={{ now }}" class="current-image" alt="Изображение смерти">
                         <br>
                         <label style="color: #aaa;">
                             <input type="checkbox" name="delete_death_image"> Удалить изображение смерти
@@ -1840,7 +1840,7 @@ EDIT_SKIN_TEMPLATE = """
                 <div class="form-group">
                     <label>Текущий спрайт-лист смерти</label>
                     <div>
-                        <img src="{{ url_for('races.skin_death_sprite', skin_id=skin.id) }}" class="current-image" alt="Спрайт-лист смерти">
+                        <img src="{{ url_for('races.skin_death_sprite', skin_id=skin.id) }}?t={{ now }}" class="current-image" alt="Спрайт-лист смерти">
                         <br>
                         <label style="color: #aaa;">
                             <input type="checkbox" name="delete_death_sprite"> Удалить спрайт-лист смерти
@@ -2064,7 +2064,8 @@ def edit_unit_skin(race_id, unit_id, skin_id):
             session_db.commit()
             return redirect(url_for('races.unit_skins', race_id=race_id, unit_id=unit_id))
 
-        return render_template_string(EDIT_SKIN_TEMPLATE, race=race, unit=unit, skin=skin)
+        import time
+        return render_template_string(EDIT_SKIN_TEMPLATE, race=race, unit=unit, skin=skin, now=int(time.time()))
 
 
 @races_bp.route('/skin/<int:skin_id>/delete', methods=['POST'])

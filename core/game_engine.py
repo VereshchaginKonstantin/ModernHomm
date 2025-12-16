@@ -342,8 +342,8 @@ class GameEngine:
 
         # Проверить дистанцию (манхэттенское расстояние)
         distance = abs(battle_unit.position_x - target_x) + abs(battle_unit.position_y - target_y)
-        if distance > unit.speed:
-            return False, f"Слишком далеко! Скорость юнита: {unit.speed}, расстояние: {distance}", False
+        if distance > unit['speed']:
+            return False, f"Слишком далеко! Скорость юнита: {unit['speed']}, расстояние: {distance}", False
 
         # Переместить юнита
         old_pos = (battle_unit.position_x, battle_unit.position_y)
@@ -361,7 +361,7 @@ class GameEngine:
 
         # Логируем перемещение
         player = self.db.query(GameUser).filter_by(id=player_id).first()
-        unit_name = unit.name if unit else "Юнит"
+        unit_name = unit['name'] if unit else "Юнит"
         self._log_event(game.id, "move", f"🚶 {player.username}: {unit_name} {old_pos} → ({target_x}, {target_y})")
 
         self.db.commit()
@@ -594,14 +594,14 @@ class GameEngine:
                 combat_log += f"\n\n❌ Контратака не сработала (вероятность 50%, бросок: {counterattack_roll*100:.1f}%)"
 
         # Обработать камикадзе - уменьшить счетчик юнитов на 1 после атаки
-        if attacker_unit.is_kamikaze and attacker.total_count > 0:
+        if attacker_unit['is_kamikaze'] and attacker.total_count > 0:
             attacker.total_count -= 1
-            combat_log += f"\n\n💣 КАМИКАДЗЕ: {attacker_unit.name} потерял 1 юнита после атаки (осталось: {attacker.total_count})"
+            combat_log += f"\n\n💣 КАМИКАДЗЕ: {attacker_unit['name']} потерял 1 юнита после атаки (осталось: {attacker.total_count})"
 
             # Если камикадзе юниты закончились, обнулить HP
             if attacker.total_count == 0:
                 attacker.remaining_hp = 0
-                combat_log += f"\n⚰️ Все камикадзе юниты {attacker_unit.name} погибли!"
+                combat_log += f"\n⚰️ Все камикадзе юниты {attacker_unit['name']} погибли!"
 
         # Обновить кураж (morale) в зависимости от результата атаки
         if units_killed > 0:
