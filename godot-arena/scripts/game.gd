@@ -345,19 +345,47 @@ func _on_sprite_sheet_loaded(result: int, response_code: int, headers: PackedStr
 
 	if result != HTTPRequest.RESULT_SUCCESS or response_code != 200 or body.size() == 0:
 		if OS.has_feature("web"):
-			JavaScriptBridge.eval("console.error('[Game] Sprite sheet request failed');")
+			JavaScriptBridge.eval("console.error('[Game] Sprite sheet request failed: result=%d, code=%d, size=%d');" % [result, response_code, body.size()])
 		return
 
 	# Создаём текстуру из спрайт-листа
+	# Определяем формат по сигнатуре файла
 	var image = Image.new()
-	var error = image.load_png_from_buffer(body)
+	var error = ERR_FILE_UNRECOGNIZED
+
+	# Проверяем сигнатуру файла
+	if body.size() >= 4:
+		var header = body.slice(0, 4)
+		if OS.has_feature("web"):
+			JavaScriptBridge.eval("console.log('[Game] Sprite header bytes: %d %d %d %d');" % [header[0], header[1], header[2], header[3]])
+
+		# RIFF = WebP (0x52 0x49 0x46 0x46)
+		if header[0] == 0x52 and header[1] == 0x49 and header[2] == 0x46 and header[3] == 0x46:
+			if OS.has_feature("web"):
+				JavaScriptBridge.eval("console.log('[Game] Detected WebP format');")
+			error = image.load_webp_from_buffer(body)
+		# PNG signature (0x89 0x50 0x4E 0x47)
+		elif header[0] == 0x89 and header[1] == 0x50 and header[2] == 0x4E and header[3] == 0x47:
+			if OS.has_feature("web"):
+				JavaScriptBridge.eval("console.log('[Game] Detected PNG format');")
+			error = image.load_png_from_buffer(body)
+		# JPEG signature (0xFF 0xD8)
+		elif header[0] == 0xFF and header[1] == 0xD8:
+			if OS.has_feature("web"):
+				JavaScriptBridge.eval("console.log('[Game] Detected JPEG format');")
+			error = image.load_jpg_from_buffer(body)
+
+	# Fallback: пробуем все форматы
+	if error != OK:
+		error = image.load_png_from_buffer(body)
 	if error != OK:
 		error = image.load_jpg_from_buffer(body)
 	if error != OK:
 		error = image.load_webp_from_buffer(body)
+
 	if error != OK:
 		if OS.has_feature("web"):
-			JavaScriptBridge.eval("console.error('[Game] Failed to load sprite sheet image');")
+			JavaScriptBridge.eval("console.error('[Game] Failed to load sprite sheet image, error: %d');" % error)
 		return
 
 	var texture = ImageTexture.create_from_image(image)
