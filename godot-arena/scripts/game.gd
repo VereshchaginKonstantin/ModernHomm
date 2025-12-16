@@ -48,6 +48,7 @@ var field_size: int = 5
 var cells: Array[Control] = []
 var unit_sprites: Dictionary = {}  # unit_id -> Control
 var unit_positions: Dictionary = {}  # unit_id -> {x, y} - последние известные позиции
+var active_tweens: Dictionary = {}  # unit_id -> Tween - активные анимации перемещения
 var action_mode: String = ""  # "move" или "attack"
 
 # Константы анимации перемещения
@@ -74,17 +75,9 @@ func _ready() -> void:
 	GameManager.refresh_game_state()
 
 func _on_game_state_updated(state: Dictionary) -> void:
-	if OS.has_feature("web"):
-		JavaScriptBridge.eval("console.log('[Game] _on_game_state_updated called');")
-		var keys = ",".join(state.keys())
-		JavaScriptBridge.eval("console.log('[Game] State keys: %s');" % keys)
-
 	# Обновляем размер поля
 	var field_name = state.get("field", {}).get("name", "5x5")
 	field_size = int(field_name.split("x")[0])
-
-	if OS.has_feature("web"):
-		JavaScriptBridge.eval("console.log('[Game] Field size: %d, units count: %d');" % [field_size, state.get("units", []).size()])
 
 	# Перерисовываем доску
 	_draw_board()
@@ -197,9 +190,6 @@ func _draw_board() -> void:
 			cells.append(cell)
 
 func _update_units(units: Array) -> void:
-	if OS.has_feature("web"):
-		JavaScriptBridge.eval("console.log('[Game] _update_units called, units count: %d');" % units.size())
-
 	# Собираем ID юнитов из нового состояния
 	var new_unit_ids: Dictionary = {}
 	for unit in units:
@@ -213,6 +203,10 @@ func _update_units(units: Array) -> void:
 			units_to_remove.append(unit_id)
 
 	for unit_id in units_to_remove:
+		# Останавливаем активную анимацию если есть
+		if active_tweens.has(unit_id) and is_instance_valid(active_tweens[unit_id]):
+			active_tweens[unit_id].kill()
+			active_tweens.erase(unit_id)
 		if unit_sprites.has(unit_id):
 			unit_sprites[unit_id].queue_free()
 			unit_sprites.erase(unit_id)
@@ -230,10 +224,11 @@ func _update_units(units: Array) -> void:
 		if unit_sprites.has(unit_id):
 			# Юнит уже существует - проверяем нужно ли перемещение
 			var old_pos = unit_positions.get(unit_id, {"x": new_x, "y": new_y})
-			if old_pos["x"] != new_x or old_pos["y"] != new_y:
+			# Проверяем что нет активной анимации и позиция изменилась
+			var is_animating = active_tweens.has(unit_id) and is_instance_valid(active_tweens[unit_id]) and active_tweens[unit_id].is_running()
+			if not is_animating and (old_pos["x"] != new_x or old_pos["y"] != new_y):
 				# Позиция изменилась - плавно перемещаем
-				_animate_unit_move(unit_id, old_pos["x"], old_pos["y"], new_x, new_y)
-				unit_positions[unit_id] = {"x": new_x, "y": new_y}
+				_animate_unit_move(unit_id, old_pos["x"], old_pos["y"], new_x, new_y, new_x, new_y)
 
 			# Обновляем счётчик юнитов
 			_update_unit_count(unit_id, unit.get("count", 0))
@@ -242,15 +237,6 @@ func _update_units(units: Array) -> void:
 			_update_unit_moved_state(unit_id, unit.get("has_moved", 0) == 1)
 		else:
 			# Новый юнит - создаём
-			if OS.has_feature("web"):
-				var unit_type = unit.get("unit_type", {})
-				JavaScriptBridge.eval("console.log('[Game] Creating unit: id=%d, name=%s, x=%d, y=%d');" % [
-					unit_id,
-					unit_type.get("name", "?"),
-					new_x,
-					new_y
-				])
-
 			var unit_control = _create_unit_sprite(unit)
 			board.add_child(unit_control)
 			unit_sprites[unit_id] = unit_control
@@ -268,13 +254,18 @@ func _update_units(units: Array) -> void:
 				_load_unit_texture(image_url, unit_id)
 
 ## Плавное перемещение юнита с анимацией
-func _animate_unit_move(unit_id: int, from_x: int, from_y: int, to_x: int, to_y: int) -> void:
+## target_x, target_y - целевые координаты для обновления unit_positions после анимации
+func _animate_unit_move(unit_id: int, from_x: int, from_y: int, to_x: int, to_y: int, target_x: int = -1, target_y: int = -1) -> void:
 	if not unit_sprites.has(unit_id):
 		return
 
 	var unit_control = unit_sprites[unit_id]
 	if not is_instance_valid(unit_control):
 		return
+
+	# Останавливаем предыдущую анимацию для этого юнита если есть
+	if active_tweens.has(unit_id) and is_instance_valid(active_tweens[unit_id]):
+		active_tweens[unit_id].kill()
 
 	# Вычисляем позиции в изометрических координатах
 	var from_pos = grid_to_iso(from_x, from_y) + Vector2(0, -20)
@@ -289,8 +280,16 @@ func _animate_unit_move(unit_id: int, from_x: int, from_y: int, to_x: int, to_y:
 	tween.set_trans(Tween.TRANS_QUAD)
 	tween.tween_property(unit_control, "position", to_pos, MOVE_DURATION)
 
-	if OS.has_feature("web"):
-		JavaScriptBridge.eval("console.log('[Game] Animating unit %d from (%d,%d) to (%d,%d)');" % [unit_id, from_x, from_y, to_x, to_y])
+	# Сохраняем ссылку на активный Tween
+	active_tweens[unit_id] = tween
+
+	# Обновляем позицию после завершения анимации
+	var final_x = target_x if target_x >= 0 else to_x
+	var final_y = target_y if target_y >= 0 else to_y
+	tween.finished.connect(func():
+		unit_positions[unit_id] = {"x": final_x, "y": final_y}
+		active_tweens.erase(unit_id)
+	)
 
 ## Обновляет счётчик юнитов в существующем спрайте
 func _update_unit_count(unit_id: int, count: int) -> void:
@@ -298,11 +297,9 @@ func _update_unit_count(unit_id: int, count: int) -> void:
 		return
 
 	var unit_control = unit_sprites[unit_id]
-	# Ищем Label со счётчиком (последний Label в контейнере)
-	for child in unit_control.get_children():
-		if child is Label and child.text.is_valid_int():
-			child.text = str(count)
-			break
+	var count_label = unit_control.get_node_or_null("CountLabel")
+	if count_label and count_label is Label:
+		count_label.text = str(count)
 
 ## Обновляет состояние "уже походил" (полупрозрачность)
 func _update_unit_moved_state(unit_id: int, has_moved: bool) -> void:
@@ -315,90 +312,55 @@ func _update_unit_moved_state(unit_id: int, has_moved: bool) -> void:
 
 ## Загрузка текстуры юнита через HTTP
 func _load_unit_texture(image_url: String, unit_id: int) -> void:
-	# Формируем полный URL для загрузки изображения
-	# image_url может быть:
-	# - /arena/api/public/skins/{id}/image (из БД)
-	# - /static/unit_images/unit_{id}_{name}.jpg (статический файл)
 	var url = ""
 	if OS.has_feature("web"):
 		url = JavaScriptBridge.eval("window.location.origin") + image_url
-		JavaScriptBridge.eval("console.log('[Game] Loading texture from: %s for unit %d');" % [url, unit_id])
 	else:
 		url = "http://localhost" + image_url
 
-	# Создаём HTTPRequest для загрузки текстуры
 	var http = HTTPRequest.new()
-	http.use_threads = false  # WebGL совместимость
+	http.use_threads = false
 	add_child(http)
 	http.request_completed.connect(_on_texture_loaded.bind(image_url, unit_id, http))
 
-	# Добавляем JWT токен для авторизованных запросов к API
 	var headers: PackedStringArray = []
 	if ApiClient.auth_token != "":
 		headers.append("Authorization: Bearer " + ApiClient.auth_token)
 
 	var err = http.request(url, headers)
 	if err != OK:
-		if OS.has_feature("web"):
-			JavaScriptBridge.eval("console.error('[Game] Failed to start request for texture: %s');" % url)
 		http.queue_free()
 
 func _on_texture_loaded(result: int, response_code: int, headers: PackedStringArray, body: PackedByteArray, image_path: String, unit_id: int, http_node: HTTPRequest) -> void:
 	http_node.queue_free()
 
-	if OS.has_feature("web"):
-		JavaScriptBridge.eval("console.log('[Game] Texture response: result=%d, code=%d, body_size=%d for unit %d');" % [result, response_code, body.size(), unit_id])
-
-	if result != HTTPRequest.RESULT_SUCCESS:
-		if OS.has_feature("web"):
-			JavaScriptBridge.eval("console.error('[Game] Texture request failed with result: %d');" % result)
+	if result != HTTPRequest.RESULT_SUCCESS or response_code != 200 or body.size() == 0:
 		return
 
-	if response_code != 200:
-		if OS.has_feature("web"):
-			JavaScriptBridge.eval("console.error('[Game] Texture request returned code: %d');" % response_code)
-		return
-
-	if body.size() == 0:
-		if OS.has_feature("web"):
-			JavaScriptBridge.eval("console.error('[Game] Texture response has empty body');")
-		return
-
-	# Создаём текстуру из загруженных данных
 	var image = Image.new()
 	var error = image.load_jpg_from_buffer(body)
 	if error != OK:
 		error = image.load_png_from_buffer(body)
 	if error != OK:
-		# Попробуем загрузить как WebP
 		error = image.load_webp_from_buffer(body)
 	if error != OK:
-		if OS.has_feature("web"):
-			JavaScriptBridge.eval("console.error('[Game] Failed to load image from buffer, error: %d');" % error)
 		return
 
 	var texture = ImageTexture.create_from_image(image)
 	unit_textures[image_path] = texture
 
-	if OS.has_feature("web"):
-		JavaScriptBridge.eval("console.log('[Game] Texture loaded successfully for unit %d, size: %dx%d');" % [unit_id, image.get_width(), image.get_height()])
-
-	# Обновляем спрайт юнита если он всё ещё существует
 	if unit_sprites.has(unit_id):
 		var unit_control = unit_sprites[unit_id]
 		var texture_rect = unit_control.get_node_or_null("UnitTexture")
 		if texture_rect:
 			texture_rect.texture = texture
 			texture_rect.visible = true
-			if OS.has_feature("web"):
-				JavaScriptBridge.eval("console.log('[Game] Applied texture to unit %d');" % unit_id)
 
 ## Загрузка спрайт-листа через HTTP
 func _load_sprite_sheet(sprite_url: String, sprite_params: Variant, unit_id: int) -> void:
 	var url = ""
 	if OS.has_feature("web"):
 		url = JavaScriptBridge.eval("window.location.origin") + sprite_url
-		JavaScriptBridge.eval("console.log('[Game] Loading sprite sheet from: %s for unit %d');" % [url, unit_id])
 	else:
 		url = "http://localhost" + sprite_url
 
@@ -413,46 +375,28 @@ func _load_sprite_sheet(sprite_url: String, sprite_params: Variant, unit_id: int
 
 	var err = http.request(url, headers)
 	if err != OK:
-		if OS.has_feature("web"):
-			JavaScriptBridge.eval("console.error('[Game] Failed to start request for sprite sheet: %s');" % url)
 		http.queue_free()
 
 func _on_sprite_sheet_loaded(result: int, response_code: int, headers: PackedStringArray, body: PackedByteArray, sprite_url: String, sprite_params: Variant, unit_id: int, http_node: HTTPRequest) -> void:
 	http_node.queue_free()
 
-	if OS.has_feature("web"):
-		JavaScriptBridge.eval("console.log('[Game] Sprite sheet response: result=%d, code=%d, body_size=%d for unit %d');" % [result, response_code, body.size(), unit_id])
-
 	if result != HTTPRequest.RESULT_SUCCESS or response_code != 200 or body.size() == 0:
-		if OS.has_feature("web"):
-			JavaScriptBridge.eval("console.error('[Game] Sprite sheet request failed: result=%d, code=%d, size=%d');" % [result, response_code, body.size()])
 		return
 
-	# Создаём текстуру из спрайт-листа
-	# Определяем формат по сигнатуре файла
+	# Создаём текстуру из спрайт-листа - определяем формат по сигнатуре файла
 	var image = Image.new()
 	var error = ERR_FILE_UNRECOGNIZED
 
-	# Проверяем сигнатуру файла
 	if body.size() >= 4:
 		var header = body.slice(0, 4)
-		if OS.has_feature("web"):
-			JavaScriptBridge.eval("console.log('[Game] Sprite header bytes: %d %d %d %d');" % [header[0], header[1], header[2], header[3]])
-
-		# RIFF = WebP (0x52 0x49 0x46 0x46)
+		# RIFF = WebP
 		if header[0] == 0x52 and header[1] == 0x49 and header[2] == 0x46 and header[3] == 0x46:
-			if OS.has_feature("web"):
-				JavaScriptBridge.eval("console.log('[Game] Detected WebP format');")
 			error = image.load_webp_from_buffer(body)
-		# PNG signature (0x89 0x50 0x4E 0x47)
+		# PNG signature
 		elif header[0] == 0x89 and header[1] == 0x50 and header[2] == 0x4E and header[3] == 0x47:
-			if OS.has_feature("web"):
-				JavaScriptBridge.eval("console.log('[Game] Detected PNG format');")
 			error = image.load_png_from_buffer(body)
-		# JPEG signature (0xFF 0xD8)
+		# JPEG signature
 		elif header[0] == 0xFF and header[1] == 0xD8:
-			if OS.has_feature("web"):
-				JavaScriptBridge.eval("console.log('[Game] Detected JPEG format');")
 			error = image.load_jpg_from_buffer(body)
 
 	# Fallback: пробуем все форматы
@@ -464,8 +408,6 @@ func _on_sprite_sheet_loaded(result: int, response_code: int, headers: PackedStr
 		error = image.load_webp_from_buffer(body)
 
 	if error != OK:
-		if OS.has_feature("web"):
-			JavaScriptBridge.eval("console.error('[Game] Failed to load sprite sheet image, error: %d');" % error)
 		return
 
 	var texture = ImageTexture.create_from_image(image)
@@ -475,10 +417,6 @@ func _on_sprite_sheet_loaded(result: int, response_code: int, headers: PackedStr
 		"texture": texture,
 		"params": sprite_params if sprite_params else {"frame_count": 1, "fps": 10, "columns": 1, "rows": 1}
 	}
-
-	if OS.has_feature("web"):
-		var params_str = str(sprite_params) if sprite_params else "default"
-		JavaScriptBridge.eval("console.log('[Game] Sprite sheet loaded for unit %d, params: %s');" % [unit_id, params_str])
 
 	# Обновляем юнита с анимированным спрайтом
 	if unit_sprites.has(unit_id):
@@ -503,10 +441,10 @@ func _apply_animated_sprite(unit_id: int, sprite_url: String) -> void:
 	if old_texture:
 		old_texture.queue_free()
 
-	# Ищем и скрываем Label с иконкой
-	for child in unit_control.get_children():
-		if child is Label and child.text.length() <= 4:  # Эмодзи обычно короткие
-			child.visible = false
+	# Скрываем Label с иконкой
+	var icon_label = unit_control.get_node_or_null("IconLabel")
+	if icon_label and icon_label is Label:
+		icon_label.visible = false
 
 	# Создаём AnimatedSprite2D
 	var animated_sprite = AnimatedSprite2D.new()
@@ -527,9 +465,6 @@ func _apply_animated_sprite(unit_id: int, sprite_url: String) -> void:
 	var tex_height = texture.get_height()
 	var frame_width = tex_width / columns
 	var frame_height = tex_height / rows
-
-	if OS.has_feature("web"):
-		JavaScriptBridge.eval("console.log('[Game] Creating animation: frames=%d, cols=%d, rows=%d, frame_size=%dx%d');" % [frame_count, columns, rows, frame_width, frame_height])
 
 	# Добавляем кадры анимации
 	for i in range(frame_count):
@@ -552,9 +487,6 @@ func _apply_animated_sprite(unit_id: int, sprite_url: String) -> void:
 
 	unit_control.add_child(animated_sprite)
 	animated_sprite.play("idle")
-
-	if OS.has_feature("web"):
-		JavaScriptBridge.eval("console.log('[Game] AnimatedSprite applied to unit %d');" % unit_id)
 
 ## Создаёт анимированный спрайт в контейнере (используется при создании юнита)
 func _create_animated_sprite_in_container(container: Control, sprite_url: String) -> void:
@@ -679,10 +611,9 @@ func _create_unit_sprite(unit: Dictionary) -> Control:
 	else:
 		# Fallback: иконка юнита (эмодзи)
 		var icon = unit_type.get("icon", "⚔️")
-		if OS.has_feature("web"):
-			JavaScriptBridge.eval("console.log('[Game] Using icon fallback: %s');" % icon)
 
 		var icon_label = Label.new()
+		icon_label.name = "IconLabel"
 		icon_label.text = icon
 		icon_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		icon_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
@@ -710,6 +641,7 @@ func _create_unit_sprite(unit: Dictionary) -> Control:
 	container.add_child(count_bg)
 
 	var count_label = Label.new()
+	count_label.name = "CountLabel"
 	count_label.text = str(unit.get("count", 0))
 	count_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	count_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
