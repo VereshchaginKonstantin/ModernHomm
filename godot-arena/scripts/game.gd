@@ -63,6 +63,13 @@ func _ready() -> void:
 	else:
 		base_url = "http://localhost"
 
+	RemoteLogger.info("Game scene _ready started", {
+		"game_id": GameManager.current_game_id,
+		"player_id": ApiClient.player_id,
+		"auth_token_exists": ApiClient.auth_token != "",
+		"authenticated": ApiClient.is_authenticated()
+	})
+
 	# Подключаем сигналы GameManager
 	GameManager.game_state_updated.connect(_on_game_state_updated)
 	GameManager.unit_actions_received.connect(_on_unit_actions_received)
@@ -79,14 +86,16 @@ func _ready() -> void:
 	surrender_button.pressed.connect(_on_surrender_pressed)
 	game_over_overlay.get_node("VBox/BackButton").pressed.connect(_on_back_to_menu)
 
-	# Начинаем обновление состояния игры и запускаем polling только если авторизован
-	RemoteLogger.info("Game scene ready", {
-		"game_id": GameManager.current_game_id,
-		"player_id": GameManager.current_player_id,
-		"authenticated": ApiClient.is_authenticated()
-	})
+	# Проверяем что game_id установлен
+	if GameManager.current_game_id <= 0:
+		RemoteLogger.error("No game_id set when entering game scene")
+		hint_label.text = "Ошибка: игра не выбрана"
+		return
 
+	# Начинаем обновление состояния игры и запускаем polling только если авторизован
 	if ApiClient.is_authenticated():
+		RemoteLogger.info("Starting game refresh", {"game_id": GameManager.current_game_id})
+		hint_label.text = "Загрузка игры..."
 		GameManager.refresh_game_state()
 		GameManager.start_polling()
 	else:
@@ -94,16 +103,31 @@ func _ready() -> void:
 		hint_label.text = "Ошибка: требуется авторизация"
 
 func _on_game_state_updated(state: Dictionary) -> void:
-	RemoteLogger.debug("Game state updated", {
+	RemoteLogger.info("Game state received in game scene", {
 		"game_id": state.get("game_id"),
 		"status": state.get("status"),
 		"units_count": state.get("units", []).size(),
-		"current_player": state.get("current_player_id")
+		"current_player": state.get("current_player_id"),
+		"field": state.get("field", {}),
+		"obstacles_count": state.get("obstacles", []).size()
 	})
 
+	# Проверяем что state валидный
+	if state.is_empty():
+		RemoteLogger.error("Empty game state received")
+		hint_label.text = "Ошибка: пустое состояние игры"
+		return
+
 	# Обновляем размер поля
-	var field_name = state.get("field", {}).get("name", "5x5")
+	var field_data = state.get("field", {})
+	var field_name = field_data.get("name", "5x5")
+	if field_name == "" or field_name == null:
+		field_name = "5x5"
 	var new_field_size = int(field_name.split("x")[0])
+	if new_field_size <= 0:
+		new_field_size = 5
+
+	RemoteLogger.debug("Field parsed", {"field_name": field_name, "new_field_size": new_field_size, "current_field_size": field_size, "cells_empty": cells.is_empty()})
 
 	# Перерисовываем доску только если размер поля изменился или доска ещё не создана
 	if new_field_size != field_size or cells.is_empty():
@@ -252,12 +276,26 @@ func _update_units(units: Array) -> void:
 
 		if unit_sprites.has(unit_id):
 			# Юнит уже существует - проверяем нужно ли перемещение
-			var old_pos = unit_positions.get(unit_id, {"x": new_x, "y": new_y})
-			# Проверяем что нет активной анимации и позиция изменилась
-			var is_animating = active_tweens.has(unit_id) and is_instance_valid(active_tweens[unit_id]) and active_tweens[unit_id].is_running()
-			if not is_animating and (old_pos["x"] != new_x or old_pos["y"] != new_y):
-				# Позиция изменилась - плавно перемещаем
-				_animate_unit_move(unit_id, old_pos["x"], old_pos["y"], new_x, new_y, new_x, new_y)
+			var old_pos = unit_positions.get(unit_id, {})
+			if old_pos.is_empty():
+				# Нет старой позиции - просто запоминаем текущую
+				unit_positions[unit_id] = {"x": new_x, "y": new_y}
+			else:
+				# Проверяем что нет активной анимации и позиция изменилась
+				var is_animating = active_tweens.has(unit_id) and is_instance_valid(active_tweens[unit_id]) and active_tweens[unit_id].is_running()
+				var pos_changed = old_pos["x"] != new_x or old_pos["y"] != new_y
+
+				if pos_changed:
+					RemoteLogger.info("Unit position changed", {
+						"unit_id": unit_id,
+						"old_x": old_pos["x"], "old_y": old_pos["y"],
+						"new_x": new_x, "new_y": new_y,
+						"is_animating": is_animating
+					})
+
+				if not is_animating and pos_changed:
+					# Позиция изменилась - плавно перемещаем
+					_animate_unit_move(unit_id, old_pos["x"], old_pos["y"], new_x, new_y, new_x, new_y)
 
 			# Обновляем счётчик юнитов
 			_update_unit_count(unit_id, unit.get("count", 0))
@@ -266,6 +304,7 @@ func _update_units(units: Array) -> void:
 			_update_unit_moved_state(unit_id, unit.get("has_moved", 0) == 1)
 		else:
 			# Новый юнит - создаём
+			RemoteLogger.debug("Creating new unit sprite", {"unit_id": unit_id, "x": new_x, "y": new_y})
 			var unit_control = _create_unit_sprite(unit)
 			board.add_child(unit_control)
 			unit_sprites[unit_id] = unit_control
@@ -285,11 +324,20 @@ func _update_units(units: Array) -> void:
 ## Плавное перемещение юнита с анимацией
 ## target_x, target_y - целевые координаты для обновления unit_positions после анимации
 func _animate_unit_move(unit_id: int, from_x: int, from_y: int, to_x: int, to_y: int, target_x: int = -1, target_y: int = -1) -> void:
+	RemoteLogger.info("Starting unit animation", {
+		"unit_id": unit_id,
+		"from": "%d,%d" % [from_x, from_y],
+		"to": "%d,%d" % [to_x, to_y],
+		"duration": MOVE_DURATION
+	})
+
 	if not unit_sprites.has(unit_id):
+		RemoteLogger.error("Unit sprite not found for animation", {"unit_id": unit_id})
 		return
 
 	var unit_control = unit_sprites[unit_id]
 	if not is_instance_valid(unit_control):
+		RemoteLogger.error("Unit control invalid", {"unit_id": unit_id})
 		return
 
 	# Останавливаем предыдущую анимацию для этого юнита если есть
@@ -316,6 +364,7 @@ func _animate_unit_move(unit_id: int, from_x: int, from_y: int, to_x: int, to_y:
 	var final_x = target_x if target_x >= 0 else to_x
 	var final_y = target_y if target_y >= 0 else to_y
 	tween.finished.connect(func():
+		RemoteLogger.debug("Animation finished", {"unit_id": unit_id, "final_pos": "%d,%d" % [final_x, final_y]})
 		unit_positions[unit_id] = {"x": final_x, "y": final_y}
 		active_tweens.erase(unit_id)
 	)
@@ -384,6 +433,7 @@ func _on_texture_loaded(result: int, response_code: int, headers: PackedStringAr
 ## Загрузка спрайт-листа через HTTP
 func _load_sprite_sheet(sprite_url: String, sprite_params: Variant, unit_id: int) -> void:
 	var url = base_url + sprite_url
+	RemoteLogger.info("Loading sprite sheet", {"url": url, "unit_id": unit_id})
 
 	var http = HTTPRequest.new()
 	http.use_threads = false
@@ -396,13 +446,17 @@ func _load_sprite_sheet(sprite_url: String, sprite_params: Variant, unit_id: int
 
 	var err = http.request(url, headers)
 	if err != OK:
+		RemoteLogger.error("Failed to start sprite request", {"url": url, "error": err})
 		http.queue_free()
 
 func _on_sprite_sheet_loaded(result: int, response_code: int, headers: PackedStringArray, body: PackedByteArray, sprite_url: String, sprite_params: Variant, unit_id: int, http_node: HTTPRequest) -> void:
 	http_node.queue_free()
 
 	if result != HTTPRequest.RESULT_SUCCESS or response_code != 200 or body.size() == 0:
+		RemoteLogger.error("Sprite load failed", {"sprite_url": sprite_url, "result": result, "response_code": response_code, "body_size": body.size()})
 		return
+
+	RemoteLogger.info("Sprite loaded successfully", {"sprite_url": sprite_url, "body_size": body.size()})
 
 	# Создаём текстуру из спрайт-листа - определяем формат по сигнатуре файла
 	var image = Image.new()
