@@ -579,7 +579,8 @@ HELP_TEMPLATE = """
         </div>
 
         <!-- Admin Debug Section -->
-        <div id="debug-section" style="margin-top: 40px; background: #fff3cd; padding: 20px; border-radius: 8px; border: 1px solid #ffc107; display: none;">
+        {% if is_admin %}
+        <div id="debug-section" style="margin-top: 40px; background: #fff3cd; padding: 20px; border-radius: 8px; border: 1px solid #ffc107;">
             <h2 style="color: #856404;">🔧 Отладка (только для админов)</h2>
 
             <div style="margin: 20px 0;">
@@ -612,31 +613,10 @@ HELP_TEMPLATE = """
         </div>
 
         <script>
-        let authToken = null;
         let currentOffset = 0;
         const logsPerPage = 50;
 
-        // Проверяем права админа при загрузке
-        async function checkAdminAccess() {
-            // Получаем токен из localStorage Godot Arena
-            authToken = localStorage.getItem('arena_token');
-            if (!authToken) {
-                return;
-            }
-
-            try {
-                const response = await fetch('/arena/api/admin/logs?limit=1', {
-                    headers: {'Authorization': 'Bearer ' + authToken}
-                });
-                if (response.ok) {
-                    document.getElementById('debug-section').style.display = 'block';
-                    checkDebugStatus();
-                }
-            } catch (e) {
-                console.log('Not admin or not logged in');
-            }
-        }
-
+        // Проверяем статус debug mode при загрузке
         async function checkDebugStatus() {
             try {
                 const response = await fetch('/arena/api/public/debug/status');
@@ -664,17 +644,10 @@ HELP_TEMPLATE = """
         }
 
         async function toggleDebugMode() {
-            if (!authToken) {
-                alert('Требуется авторизация в Godot Arena');
-                return;
-            }
             try {
-                const response = await fetch('/arena/api/admin/debug/toggle', {
+                const response = await fetch('/admin/debug/toggle', {
                     method: 'POST',
-                    headers: {
-                        'Authorization': 'Bearer ' + authToken,
-                        'Content-Type': 'application/json'
-                    }
+                    headers: {'Content-Type': 'application/json'}
                 });
                 const data = await response.json();
                 if (data.success) {
@@ -688,18 +661,12 @@ HELP_TEMPLATE = """
         }
 
         async function loadLogs() {
-            if (!authToken) {
-                alert('Требуется авторизация в Godot Arena');
-                return;
-            }
             const level = document.getElementById('log-level-filter').value;
-            let url = `/arena/api/admin/logs?limit=${logsPerPage}&offset=${currentOffset}`;
+            let url = `/admin/logs?limit=${logsPerPage}&offset=${currentOffset}`;
             if (level) url += `&level=${level}`;
 
             try {
-                const response = await fetch(url, {
-                    headers: {'Authorization': 'Bearer ' + authToken}
-                });
+                const response = await fetch(url);
                 const data = await response.json();
 
                 const container = document.getElementById('logs-container');
@@ -728,6 +695,7 @@ HELP_TEMPLATE = """
                     `;
                 } else {
                     container.innerHTML = '<p style="color: #666;">Логов не найдено</p>';
+                    document.getElementById('logs-pagination').innerHTML = '';
                 }
             } catch (e) {
                 alert('Ошибка загрузки логов: ' + e.message);
@@ -746,17 +714,10 @@ HELP_TEMPLATE = """
 
         async function clearOldLogs() {
             if (!confirm('Удалить логи старше 7 дней?')) return;
-            if (!authToken) {
-                alert('Требуется авторизация в Godot Arena');
-                return;
-            }
             try {
-                const response = await fetch('/arena/api/admin/logs/clear', {
+                const response = await fetch('/admin/logs/clear', {
                     method: 'POST',
-                    headers: {
-                        'Authorization': 'Bearer ' + authToken,
-                        'Content-Type': 'application/json'
-                    },
+                    headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify({days: 7})
                 });
                 const data = await response.json();
@@ -770,8 +731,9 @@ HELP_TEMPLATE = """
         }
 
         // Инициализация
-        checkAdminAccess();
+        checkDebugStatus();
         </script>
+        {% endif %}
     </div>
     {{ footer_html|safe }}
 </body>

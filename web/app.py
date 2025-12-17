@@ -10,7 +10,8 @@ import shutil
 import hashlib
 from io import BytesIO
 from functools import wraps
-from flask import Flask, render_template_string, request, redirect, url_for, flash, send_file, session
+from datetime import datetime
+from flask import Flask, render_template_string, request, redirect, url_for, flash, send_file, session, jsonify
 from werkzeug.utils import secure_filename
 from db import Database
 from db.models import GameUser
@@ -371,7 +372,116 @@ def leaderboard():
 @login_required
 def help_page():
     """Страница справки"""
-    return render_template_string(HELP_TEMPLATE, active_page='help')
+    # Проверяем является ли пользователь админом
+    is_admin = False
+    if 'username' in session:
+        try:
+            from db.repository import Database
+            db_url = os.getenv('DATABASE_URL', 'postgresql://postgres:postgres@localhost:5434/telegram_bot')
+            db_instance = Database(db_url)
+            with db_instance.get_session() as db_session:
+                user = db_session.query(GameUser).filter_by(username=session['username']).first()
+                if user and user.id in [1, 4]:  # Админы
+                    is_admin = True
+        except Exception:
+            pass
+    return render_template_string(HELP_TEMPLATE, active_page='help', is_admin=is_admin)
+
+
+@app.route('/admin/logs')
+@login_required
+def admin_logs():
+    """API для получения логов клиентов (только для админов)"""
+    from db.models import ClientLog
+    # Проверяем права админа
+    if 'username' not in session:
+        return jsonify({'error': 'Unauthorized'}), 401
+
+    db_url = os.getenv('DATABASE_URL', 'postgresql://postgres:postgres@localhost:5434/telegram_bot')
+    db_instance = Database(db_url)
+    with db_instance.get_session() as db_session:
+        user = db_session.query(GameUser).filter_by(username=session['username']).first()
+        if not user or user.id not in [1, 4]:
+            return jsonify({'error': 'Admin access required'}), 403
+
+        level = request.args.get('level')
+        limit = min(int(request.args.get('limit', 100)), 1000)
+        offset = int(request.args.get('offset', 0))
+
+        query = db_session.query(ClientLog)
+        if level:
+            query = query.filter(ClientLog.level == level)
+
+        total = query.count()
+        logs = query.order_by(ClientLog.created_at.desc()).offset(offset).limit(limit).all()
+
+        return jsonify({
+            'total': total,
+            'logs': [{
+                'id': log.id,
+                'session_id': log.session_id,
+                'player_id': log.player_id,
+                'level': log.level,
+                'message': log.message,
+                'context': json.loads(log.context) if log.context else None,
+                'user_agent': log.user_agent,
+                'created_at': log.created_at.isoformat()
+            } for log in logs]
+        })
+
+
+@app.route('/admin/logs/clear', methods=['POST'])
+@login_required
+def admin_clear_logs():
+    """API для очистки старых логов (только для админов)"""
+    from db.models import ClientLog
+    from datetime import timedelta
+
+    if 'username' not in session:
+        return jsonify({'error': 'Unauthorized'}), 401
+
+    db_url = os.getenv('DATABASE_URL', 'postgresql://postgres:postgres@localhost:5434/telegram_bot')
+    db_instance = Database(db_url)
+    with db_instance.get_session() as db_session:
+        user = db_session.query(GameUser).filter_by(username=session['username']).first()
+        if not user or user.id not in [1, 4]:
+            return jsonify({'error': 'Admin access required'}), 403
+
+        data = request.get_json() or {}
+        days = int(data.get('days', 7))
+        cutoff = datetime.utcnow() - timedelta(days=days)
+        deleted = db_session.query(ClientLog).filter(ClientLog.created_at < cutoff).delete()
+        db_session.commit()
+
+        return jsonify({'success': True, 'deleted': deleted})
+
+
+@app.route('/admin/debug/toggle', methods=['POST'])
+@login_required
+def admin_toggle_debug():
+    """API для переключения debug mode (только для админов)"""
+    from db.models import Config
+
+    if 'username' not in session:
+        return jsonify({'error': 'Unauthorized'}), 401
+
+    db_url = os.getenv('DATABASE_URL', 'postgresql://postgres:postgres@localhost:5434/telegram_bot')
+    db_instance = Database(db_url)
+    with db_instance.get_session() as db_session:
+        user = db_session.query(GameUser).filter_by(username=session['username']).first()
+        if not user or user.id not in [1, 4]:
+            return jsonify({'error': 'Admin access required'}), 403
+
+        config = db_session.query(Config).filter_by(key='debug_mode').first()
+        if not config:
+            config = Config(key='debug_mode', value='true', description='Debug mode for client logging')
+            db_session.add(config)
+
+        new_value = 'false' if config.value.lower() == 'true' else 'true'
+        config.value = new_value
+        db_session.commit()
+
+        return jsonify({'success': True, 'debug_mode': new_value == 'true'})
 
 
 @app.route('/export')

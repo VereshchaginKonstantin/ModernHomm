@@ -14,7 +14,7 @@ After completing ANY code changes, Claude MUST automatically execute the followi
 - Write integration tests for new functionality in `tests/`
 - Write acceptance/smoke tests for API endpoints
 
-### 3. Rebuild and Restart Containers
+### 3. Rebuild and Restart ALL Containers
 ```bash
 # Rebuild ALL containers with latest changes
 docker compose build --no-cache
@@ -22,11 +22,22 @@ docker compose build --no-cache
 # Restart containers
 docker compose up -d
 
-# Verify containers are running with latest code
+# Restart nginx to pickup new upstream IPs
+docker compose restart nginx
+
+# Wait for containers to start
+sleep 3
+
+# Verify containers are running
 docker compose ps
 ```
 
-### 4. Run Tests
+### 4. Apply Migrations (if db/models changed)
+```bash
+goose -dir migrations postgres "user=postgres password=postgres host=localhost port=5434 dbname=telegram_bot sslmode=disable" up
+```
+
+### 5. Run Tests
 ```bash
 # Run all tests
 pytest -v
@@ -34,28 +45,83 @@ pytest -v
 # If tests fail, fix them before proceeding
 ```
 
-### 5. Push Changes
+### 6. Verify Services via Diagnostic Endpoints
+Check that all services are running with the latest version:
+
+```bash
+# Check web service
+curl -s http://localhost/api/version | jq .
+
+# Check bot service
+curl -s http://localhost:8080/api/version | jq .
+
+# Check health
+curl -s http://localhost/api/health | jq .
+curl -s http://localhost:8080/api/health | jq .
+```
+
+Expected response should include current VERSION timestamp (e.g., `2025.12.17-15:30:00`).
+If version doesn't match, rebuild and restart containers again.
+
+### 7. Export Godot (if godot-arena changed)
+```bash
+# Export Godot project for web
+cd godot-arena && godot --headless --export-release "Web" build/index.html
+
+# Update version in index.html for cache busting
+# Add ?v=YYYYMMDDHHMMSS to index.js script tag
+
+# Rebuild godot-arena container
+docker compose build godot-arena
+docker compose up -d godot-arena
+docker compose restart nginx
+```
+
+### 8. Push Changes
 ```bash
 git add -A
 git commit -m "Description of changes"
 git push
 ```
 
-### 6. Update Domain Model (if db/models changed)
+### 9. Update Domain Model (if db/models changed)
 If any changes were made to `db/models/`, update `domain_model.puml`:
 - Generate PlantUML diagram reflecting current database models
 - Include all tables, relationships, and key fields
 
-### 7. Final Verification
+### 10. Final Verification
 - Run smoke/acceptance tests again after push
-- Confirm all containers are healthy
+- Confirm all containers are healthy via `/api/health`
+- Confirm versions match via `/api/version`
 - Report completion status
 
-### 8. Background Tasks
+### 11. Background Tasks
 - Wait for ALL background tasks to complete
 - Report what each background task is doing and why
 
 **IMPORTANT**: Do NOT skip any step. Do NOT proceed to next prompt until all steps are complete.
+
+---
+
+## Diagnostic Endpoints
+
+All services expose diagnostic endpoints:
+
+| Service | Version Endpoint | Health Endpoint |
+|---------|-----------------|-----------------|
+| Web (port 80) | `/api/version` | `/api/health` |
+| Bot (port 8080) | `/api/version` | `/api/health` |
+| Arena | `/arena/api/public/debug/status` | via web |
+
+### Admin Debug Panel
+Admins (user_id 1, 4) can access debug tools at `/help`:
+- Toggle client logging on/off
+- View Godot client logs
+- Clear old logs
+
+Client logs are stored in `client_logs` table and can be viewed via:
+- Admin panel at `/help`
+- API at `/admin/logs`
 
 ---
 
