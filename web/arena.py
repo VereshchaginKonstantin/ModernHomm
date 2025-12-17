@@ -16,7 +16,7 @@ from flask import Blueprint, request, jsonify, make_response, redirect
 from functools import wraps
 from werkzeug.security import generate_password_hash, check_password_hash
 
-from db.models import GameUser, Game, GameStatus, BattleUnit, Field, GameLog, Obstacle, Army, ArmyUnit, UserRace, RaceUnit, RaceUnitSkin
+from db.models import GameUser, Game, GameStatus, BattleUnit, Field, GameLog, Obstacle, Army, ArmyUnit, UserRace, RaceUnit, RaceUnitSkin, ClientLog, Config
 from db.repository import Database
 from core.game_engine import GameEngine
 
@@ -1501,3 +1501,139 @@ def api_public_user_races():
             })
 
         return jsonify({'user_races': races})
+
+
+# ============= Client Logging API =============
+
+@arena_bp.route('/api/public/debug/status')
+def api_debug_status():
+    """Публичный эндпоинт - проверить статус debug mode"""
+    with db.get_session() as session_db:
+        config = session_db.query(Config).filter_by(key='debug_mode').first()
+        debug_enabled = config.value.lower() == 'true' if config else True
+        return jsonify({'debug_mode': debug_enabled})
+
+
+@arena_bp.route('/api/public/logs', methods=['POST'])
+def api_receive_logs():
+    """Публичный эндпоинт - принять логи от клиента Godot"""
+    # Проверяем включен ли debug mode
+    with db.get_session() as session_db:
+        config = session_db.query(Config).filter_by(key='debug_mode').first()
+        debug_enabled = config.value.lower() == 'true' if config else True
+
+        if not debug_enabled:
+            return jsonify({'success': True, 'message': 'Debug mode disabled, logs ignored'})
+
+        data = request.get_json()
+        if not data:
+            return jsonify({'error': 'No data provided'}), 400
+
+        logs = data.get('logs', [])
+        session_id = data.get('session_id', 'unknown')
+        player_id = data.get('player_id')
+        user_agent = request.headers.get('User-Agent', '')[:500]
+
+        saved_count = 0
+        for log_entry in logs[:100]:  # Максимум 100 логов за раз
+            try:
+                client_log = ClientLog(
+                    session_id=session_id[:64],
+                    player_id=player_id,
+                    level=log_entry.get('level', 'info')[:20],
+                    message=log_entry.get('message', '')[:10000],
+                    context=json.dumps(log_entry.get('context', {}))[:5000] if log_entry.get('context') else None,
+                    user_agent=user_agent
+                )
+                session_db.add(client_log)
+                saved_count += 1
+            except Exception as e:
+                logger.warning(f"Failed to save log: {e}")
+
+        session_db.commit()
+        return jsonify({'success': True, 'saved': saved_count})
+
+
+@arena_bp.route('/api/admin/logs')
+@token_required
+def api_get_logs():
+    """Админский эндпоинт - получить логи клиентов"""
+    player_id = request.player_id
+
+    # Проверяем что это админ (player_id = 1 или 4)
+    if player_id not in [1, 4]:
+        return jsonify({'error': 'Admin access required'}), 403
+
+    # Параметры фильтрации
+    level = request.args.get('level')
+    session_id = request.args.get('session_id')
+    limit = min(int(request.args.get('limit', 100)), 1000)
+    offset = int(request.args.get('offset', 0))
+
+    with db.get_session() as session_db:
+        query = session_db.query(ClientLog)
+
+        if level:
+            query = query.filter(ClientLog.level == level)
+        if session_id:
+            query = query.filter(ClientLog.session_id == session_id)
+
+        total = query.count()
+        logs = query.order_by(ClientLog.created_at.desc()).offset(offset).limit(limit).all()
+
+        return jsonify({
+            'total': total,
+            'logs': [{
+                'id': log.id,
+                'session_id': log.session_id,
+                'player_id': log.player_id,
+                'level': log.level,
+                'message': log.message,
+                'context': json.loads(log.context) if log.context else None,
+                'user_agent': log.user_agent,
+                'created_at': log.created_at.isoformat()
+            } for log in logs]
+        })
+
+
+@arena_bp.route('/api/admin/logs/clear', methods=['POST'])
+@token_required
+def api_clear_logs():
+    """Админский эндпоинт - очистить старые логи"""
+    player_id = request.player_id
+
+    if player_id not in [1, 4]:
+        return jsonify({'error': 'Admin access required'}), 403
+
+    data = request.get_json() or {}
+    days = int(data.get('days', 7))
+
+    with db.get_session() as session_db:
+        cutoff = datetime.utcnow() - timedelta(days=days)
+        deleted = session_db.query(ClientLog).filter(ClientLog.created_at < cutoff).delete()
+        session_db.commit()
+
+        return jsonify({'success': True, 'deleted': deleted})
+
+
+@arena_bp.route('/api/admin/debug/toggle', methods=['POST'])
+@token_required
+def api_toggle_debug():
+    """Админский эндпоинт - переключить debug mode"""
+    player_id = request.player_id
+
+    if player_id not in [1, 4]:
+        return jsonify({'error': 'Admin access required'}), 403
+
+    with db.get_session() as session_db:
+        config = session_db.query(Config).filter_by(key='debug_mode').first()
+        if not config:
+            config = Config(key='debug_mode', value='true', description='Debug mode for client logging')
+            session_db.add(config)
+
+        # Toggle value
+        new_value = 'false' if config.value.lower() == 'true' else 'true'
+        config.value = new_value
+        session_db.commit()
+
+        return jsonify({'success': True, 'debug_mode': new_value == 'true'})

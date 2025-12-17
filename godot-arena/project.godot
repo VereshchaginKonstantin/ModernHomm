@@ -17,6 +17,7 @@ config/icon="res://icon.svg"
 
 [autoload]
 
+RemoteLogger="*res://scripts/autoload/remote_logger.gd"
 GameManager="*res://scripts/autoload/game_manager.gd"
 ApiClient="*res://scripts/autoload/api_client.gd"
 

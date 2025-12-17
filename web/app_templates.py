@@ -577,6 +577,201 @@ HELP_TEMPLATE = """
                 <p style="color: #666; margin-top: 15px;"><em>Примечание: Учитываются все убитые юниты обеих сторон. Победитель получает 90% от стоимости убитых юнитов противника, но теряет стоимость своих погибших юнитов.</em></p>
             </div>
         </div>
+
+        <!-- Admin Debug Section -->
+        <div id="debug-section" style="margin-top: 40px; background: #fff3cd; padding: 20px; border-radius: 8px; border: 1px solid #ffc107; display: none;">
+            <h2 style="color: #856404;">🔧 Отладка (только для админов)</h2>
+
+            <div style="margin: 20px 0;">
+                <h3>Debug Mode</h3>
+                <p>Когда включен, клиенты Godot Arena отправляют логи на сервер для отладки.</p>
+                <button id="toggle-debug-btn" onclick="toggleDebugMode()" style="padding: 10px 20px; font-size: 16px; cursor: pointer; background: #007bff; color: white; border: none; border-radius: 4px;">
+                    Загрузка...
+                </button>
+                <span id="debug-status" style="margin-left: 15px; font-weight: bold;"></span>
+            </div>
+
+            <div style="margin: 20px 0;">
+                <h3>Логи клиентов</h3>
+                <div style="margin-bottom: 10px;">
+                    <select id="log-level-filter" style="padding: 8px; margin-right: 10px;">
+                        <option value="">Все уровни</option>
+                        <option value="error">Только ошибки</option>
+                        <option value="warning">Предупреждения</option>
+                        <option value="info">Info</option>
+                        <option value="debug">Debug</option>
+                    </select>
+                    <button onclick="loadLogs()" style="padding: 8px 16px; cursor: pointer;">Загрузить логи</button>
+                    <button onclick="clearOldLogs()" style="padding: 8px 16px; cursor: pointer; background: #dc3545; color: white; border: none; border-radius: 4px; margin-left: 10px;">Очистить старые (>7 дней)</button>
+                </div>
+                <div id="logs-container" style="background: #1e1e1e; color: #d4d4d4; padding: 15px; border-radius: 4px; max-height: 400px; overflow-y: auto; font-family: monospace; font-size: 12px;">
+                    <p style="color: #666;">Нажмите "Загрузить логи" для просмотра</p>
+                </div>
+                <div id="logs-pagination" style="margin-top: 10px; text-align: center;"></div>
+            </div>
+        </div>
+
+        <script>
+        let authToken = null;
+        let currentOffset = 0;
+        const logsPerPage = 50;
+
+        // Проверяем права админа при загрузке
+        async function checkAdminAccess() {
+            // Получаем токен из localStorage Godot Arena
+            authToken = localStorage.getItem('arena_token');
+            if (!authToken) {
+                return;
+            }
+
+            try {
+                const response = await fetch('/arena/api/admin/logs?limit=1', {
+                    headers: {'Authorization': 'Bearer ' + authToken}
+                });
+                if (response.ok) {
+                    document.getElementById('debug-section').style.display = 'block';
+                    checkDebugStatus();
+                }
+            } catch (e) {
+                console.log('Not admin or not logged in');
+            }
+        }
+
+        async function checkDebugStatus() {
+            try {
+                const response = await fetch('/arena/api/public/debug/status');
+                const data = await response.json();
+                updateDebugButton(data.debug_mode);
+            } catch (e) {
+                console.error('Failed to check debug status:', e);
+            }
+        }
+
+        function updateDebugButton(enabled) {
+            const btn = document.getElementById('toggle-debug-btn');
+            const status = document.getElementById('debug-status');
+            if (enabled) {
+                btn.textContent = 'Выключить Debug Mode';
+                btn.style.background = '#dc3545';
+                status.textContent = '✅ Включен';
+                status.style.color = 'green';
+            } else {
+                btn.textContent = 'Включить Debug Mode';
+                btn.style.background = '#28a745';
+                status.textContent = '❌ Выключен';
+                status.style.color = 'red';
+            }
+        }
+
+        async function toggleDebugMode() {
+            if (!authToken) {
+                alert('Требуется авторизация в Godot Arena');
+                return;
+            }
+            try {
+                const response = await fetch('/arena/api/admin/debug/toggle', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': 'Bearer ' + authToken,
+                        'Content-Type': 'application/json'
+                    }
+                });
+                const data = await response.json();
+                if (data.success) {
+                    updateDebugButton(data.debug_mode);
+                } else {
+                    alert('Ошибка: ' + (data.error || 'Unknown error'));
+                }
+            } catch (e) {
+                alert('Ошибка: ' + e.message);
+            }
+        }
+
+        async function loadLogs() {
+            if (!authToken) {
+                alert('Требуется авторизация в Godot Arena');
+                return;
+            }
+            const level = document.getElementById('log-level-filter').value;
+            let url = `/arena/api/admin/logs?limit=${logsPerPage}&offset=${currentOffset}`;
+            if (level) url += `&level=${level}`;
+
+            try {
+                const response = await fetch(url, {
+                    headers: {'Authorization': 'Bearer ' + authToken}
+                });
+                const data = await response.json();
+
+                const container = document.getElementById('logs-container');
+                if (data.logs && data.logs.length > 0) {
+                    container.innerHTML = data.logs.map(log => {
+                        const color = log.level === 'error' ? '#ff6b6b' :
+                                      log.level === 'warning' ? '#ffd93d' :
+                                      log.level === 'info' ? '#6bcb77' : '#888';
+                        const context = log.context ? JSON.stringify(log.context) : '';
+                        return `<div style="margin-bottom: 8px; border-bottom: 1px solid #333; padding-bottom: 8px;">
+                            <span style="color: #888;">${log.created_at}</span>
+                            <span style="color: ${color}; font-weight: bold;">[${log.level.toUpperCase()}]</span>
+                            <span style="color: #4fc3f7;">[${log.session_id.substr(0,8)}]</span>
+                            ${log.player_id ? '<span style="color: #ba68c8;">P' + log.player_id + '</span>' : ''}
+                            <span>${log.message}</span>
+                            ${context ? '<div style="color: #666; margin-left: 20px; font-size: 11px;">' + context + '</div>' : ''}
+                        </div>`;
+                    }).join('');
+
+                    // Pagination
+                    const pagination = document.getElementById('logs-pagination');
+                    pagination.innerHTML = `
+                        <button onclick="prevPage()" ${currentOffset === 0 ? 'disabled' : ''}>← Назад</button>
+                        <span style="margin: 0 15px;">Показано ${currentOffset + 1}-${currentOffset + data.logs.length} из ${data.total}</span>
+                        <button onclick="nextPage()" ${currentOffset + logsPerPage >= data.total ? 'disabled' : ''}>Вперед →</button>
+                    `;
+                } else {
+                    container.innerHTML = '<p style="color: #666;">Логов не найдено</p>';
+                }
+            } catch (e) {
+                alert('Ошибка загрузки логов: ' + e.message);
+            }
+        }
+
+        function prevPage() {
+            currentOffset = Math.max(0, currentOffset - logsPerPage);
+            loadLogs();
+        }
+
+        function nextPage() {
+            currentOffset += logsPerPage;
+            loadLogs();
+        }
+
+        async function clearOldLogs() {
+            if (!confirm('Удалить логи старше 7 дней?')) return;
+            if (!authToken) {
+                alert('Требуется авторизация в Godot Arena');
+                return;
+            }
+            try {
+                const response = await fetch('/arena/api/admin/logs/clear', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': 'Bearer ' + authToken,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({days: 7})
+                });
+                const data = await response.json();
+                if (data.success) {
+                    alert('Удалено записей: ' + data.deleted);
+                    loadLogs();
+                }
+            } catch (e) {
+                alert('Ошибка: ' + e.message);
+            }
+        }
+
+        // Инициализация
+        checkAdminAccess();
+        </script>
     </div>
     {{ footer_html|safe }}
 </body>

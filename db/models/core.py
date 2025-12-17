@@ -53,6 +53,23 @@ class Config(Base):
         return f"<Config(key={self.key}, value={self.value})>"
 
 
+class ClientLog(Base):
+    """Модель для хранения логов клиента Godot"""
+    __tablename__ = 'client_logs'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    session_id = Column(String(64), nullable=False, index=True)  # Идентификатор сессии клиента
+    player_id = Column(Integer, nullable=True, index=True)  # ID игрока (если авторизован)
+    level = Column(String(20), nullable=False, default='info')  # error, warning, info, debug
+    message = Column(Text, nullable=False)
+    context = Column(Text, nullable=True)  # JSON с дополнительным контекстом
+    user_agent = Column(String(500), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+
+    def __repr__(self):
+        return f"<ClientLog(id={self.id}, level={self.level}, session={self.session_id})>"
+
+
 class GameUser(Base):
     """Модель игрового профиля пользователя"""
     __tablename__ = 'game_users'

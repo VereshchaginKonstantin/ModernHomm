@@ -80,19 +80,34 @@ func _ready() -> void:
 	game_over_overlay.get_node("VBox/BackButton").pressed.connect(_on_back_to_menu)
 
 	# Начинаем обновление состояния игры и запускаем polling только если авторизован
+	RemoteLogger.info("Game scene ready", {
+		"game_id": GameManager.current_game_id,
+		"player_id": GameManager.current_player_id,
+		"authenticated": ApiClient.is_authenticated()
+	})
+
 	if ApiClient.is_authenticated():
 		GameManager.refresh_game_state()
 		GameManager.start_polling()
 	else:
+		RemoteLogger.error("Not authenticated when entering game scene")
 		hint_label.text = "Ошибка: требуется авторизация"
 
 func _on_game_state_updated(state: Dictionary) -> void:
+	RemoteLogger.debug("Game state updated", {
+		"game_id": state.get("game_id"),
+		"status": state.get("status"),
+		"units_count": state.get("units", []).size(),
+		"current_player": state.get("current_player_id")
+	})
+
 	# Обновляем размер поля
 	var field_name = state.get("field", {}).get("name", "5x5")
 	var new_field_size = int(field_name.split("x")[0])
 
 	# Перерисовываем доску только если размер поля изменился или доска ещё не создана
 	if new_field_size != field_size or cells.is_empty():
+		RemoteLogger.info("Drawing board", {"field_size": new_field_size, "cells_empty": cells.is_empty()})
 		field_size = new_field_size
 		_draw_board()
 

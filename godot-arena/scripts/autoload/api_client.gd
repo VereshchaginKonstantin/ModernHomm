@@ -251,6 +251,7 @@ func _make_request(url: String, method: int, body: String = "", requires_auth: b
 ## Обработка ответа
 func _on_request_completed(result: int, response_code: int, headers: PackedStringArray, body: PackedByteArray) -> void:
 	if result != HTTPRequest.RESULT_SUCCESS:
+		RemoteLogger.error("Network error", {"result": result})
 		request_failed.emit("Network error: " + str(result))
 		return
 
@@ -259,6 +260,7 @@ func _on_request_completed(result: int, response_code: int, headers: PackedStrin
 	var parse_result = json.parse(json_string)
 
 	if parse_result != OK:
+		RemoteLogger.error("JSON parse error", {"body": json_string.substr(0, 500)})
 		request_failed.emit("JSON parse error")
 		return
 
@@ -267,12 +269,14 @@ func _on_request_completed(result: int, response_code: int, headers: PackedStrin
 	# Проверяем на ошибки авторизации
 	if response_code == 401:
 		var code = data.get("code", "")
+		RemoteLogger.warning("Auth error 401", {"code": code, "error": data.get("error", "")})
 		if code == "TOKEN_MISSING" or code == "TOKEN_INVALID":
 			auth_required.emit()
 		request_failed.emit(data.get("error", "Unauthorized"))
 		return
 
 	if response_code < 200 or response_code >= 300:
+		RemoteLogger.error("HTTP error", {"code": response_code, "error": data.get("error", "")})
 		request_failed.emit(data.get("error", "HTTP error: " + str(response_code)))
 		return
 

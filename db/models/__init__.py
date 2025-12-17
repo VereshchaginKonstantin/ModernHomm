@@ -11,7 +11,7 @@
 from .base import Base
 
 # Базовые модели
-from .core import User, Message, Config, GameUser
+from .core import User, Message, Config, ClientLog, GameUser
 
 # Модели боевой системы
 from .battle import GameStatus, Field, Game, BattleUnit, Obstacle, GameLog
@@ -27,7 +27,7 @@ __all__ = [
     # Base
     'Base',
     # Core
-    'User', 'Message', 'Config', 'GameUser',
+    'User', 'Message', 'Config', 'ClientLog', 'GameUser',
     # Battle
     'GameStatus', 'Field', 'Game', 'BattleUnit', 'Obstacle', 'GameLog',
     # Army & Races
