@@ -8,6 +8,10 @@
 
 config_version=5
 
+[editor_plugins]
+
+enabled=PackedStringArray("res://addons/gut/plugin.cfg")
+
 [application]
 
 config/name="ModernHomm Arena"

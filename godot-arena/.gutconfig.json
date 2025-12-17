@@ -1,0 +1,17 @@
+{
+    "dirs": ["res://test/unit", "res://test/integration"],
+    "double_strategy": "SCRIPT_ONLY",
+    "ignore_pause": false,
+    "include_subdirs": true,
+    "inner_class": "",
+    "log_level": 1,
+    "opacity": 100,
+    "prefix": "test_",
+    "selected": "",
+    "should_exit": true,
+    "should_exit_on_success": false,
+    "should_maximize": false,
+    "suffix": ".gd",
+    "tests": [],
+    "unit_test_name": ""
+}

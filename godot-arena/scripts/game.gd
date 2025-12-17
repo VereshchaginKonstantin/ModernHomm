@@ -310,16 +310,25 @@ func _update_units(units: Array) -> void:
 			unit_sprites[unit_id] = unit_control
 			unit_positions[unit_id] = {"x": new_x, "y": new_y}
 
-			# Загружаем текстуру/спрайт если нужно
+			# Загружаем или применяем текстуру/спрайт
 			var unit_type = unit.get("unit_type", {})
 			var sprite_url = unit_type.get("sprite_url", "")
 			var sprite_params = unit_type.get("sprite_params", null)
 			var image_url = unit_type.get("image_url", "")
 
-			if sprite_url != "" and sprite_url != null and not sprite_sheets.has(sprite_url):
-				_load_sprite_sheet(sprite_url, sprite_params, unit_id)
-			elif image_url != "" and image_url != null and not unit_textures.has(image_url):
-				_load_unit_texture(image_url, unit_id)
+			if sprite_url != "" and sprite_url != null:
+				if sprite_sheets.has(sprite_url):
+					# Спрайт уже в кэше - сразу применяем
+					_apply_animated_sprite(unit_id, sprite_url)
+				else:
+					# Загружаем спрайт
+					_load_sprite_sheet(sprite_url, sprite_params, unit_id)
+			elif image_url != "" and image_url != null:
+				if unit_textures.has(image_url):
+					# Текстура уже в кэше - сразу применяем
+					_apply_cached_texture(unit_id, image_url)
+				else:
+					_load_unit_texture(image_url, unit_id)
 
 ## Плавное перемещение юнита с анимацией
 ## target_x, target_y - целевые координаты для обновления unit_positions после анимации
@@ -388,6 +397,20 @@ func _update_unit_moved_state(unit_id: int, has_moved: bool) -> void:
 	# Меняем прозрачность всего контейнера
 	unit_control.modulate.a = 0.5 if has_moved else 1.0
 
+## Применяет кэшированную текстуру к юниту
+func _apply_cached_texture(unit_id: int, image_url: String) -> void:
+	if not unit_sprites.has(unit_id) or not unit_textures.has(image_url):
+		return
+	var unit_control = unit_sprites[unit_id]
+	var texture_rect = unit_control.get_node_or_null("UnitTexture")
+	if texture_rect:
+		texture_rect.texture = unit_textures[image_url]
+		texture_rect.visible = true
+		# Скрываем иконку
+		var icon_label = unit_control.get_node_or_null("IconLabel")
+		if icon_label:
+			icon_label.visible = false
+
 ## Загрузка текстуры юнита через HTTP
 func _load_unit_texture(image_url: String, unit_id: int) -> void:
 	var url = base_url + image_url
@@ -448,8 +471,11 @@ func _load_sprite_sheet(sprite_url: String, sprite_params: Variant, unit_id: int
 	if err != OK:
 		RemoteLogger.error("Failed to start sprite request", {"url": url, "error": err})
 		http.queue_free()
+	else:
+		RemoteLogger.debug("Sprite request sent", {"url": url, "unit_id": unit_id})
 
 func _on_sprite_sheet_loaded(result: int, response_code: int, headers: PackedStringArray, body: PackedByteArray, sprite_url: String, sprite_params: Variant, unit_id: int, http_node: HTTPRequest) -> void:
+	RemoteLogger.info("Sprite callback received", {"sprite_url": sprite_url, "result": result, "response_code": response_code, "body_size": body.size()})
 	http_node.queue_free()
 
 	if result != HTTPRequest.RESULT_SUCCESS or response_code != 200 or body.size() == 0:
@@ -495,17 +521,24 @@ func _on_sprite_sheet_loaded(result: int, response_code: int, headers: PackedStr
 
 	# Обновляем юнита с анимированным спрайтом
 	if unit_sprites.has(unit_id):
+		RemoteLogger.info("Applying sprite to unit", {"unit_id": unit_id, "sprite_url": sprite_url})
 		_apply_animated_sprite(unit_id, sprite_url)
+	else:
+		RemoteLogger.warning("Unit sprite not found after load", {"unit_id": unit_id})
 
 ## Применяет анимированный спрайт к юниту
 func _apply_animated_sprite(unit_id: int, sprite_url: String) -> void:
 	if not unit_sprites.has(unit_id) or not sprite_sheets.has(sprite_url):
+		RemoteLogger.error("Cannot apply sprite - missing data", {"unit_id": unit_id, "has_sprite": unit_sprites.has(unit_id), "has_sheet": sprite_sheets.has(sprite_url)})
 		return
 
 	var unit_control = unit_sprites[unit_id]
 	# Проверяем что узел всё ещё валиден (не удалён)
 	if not is_instance_valid(unit_control) or unit_control.is_queued_for_deletion():
+		RemoteLogger.error("Unit control invalid when applying sprite", {"unit_id": unit_id})
 		return
+
+	RemoteLogger.debug("Applying animated sprite", {"unit_id": unit_id})
 
 	var sprite_data = sprite_sheets[sprite_url]
 	var texture: Texture2D = sprite_data["texture"]
@@ -562,6 +595,7 @@ func _apply_animated_sprite(unit_id: int, sprite_url: String) -> void:
 
 	unit_control.add_child(animated_sprite)
 	animated_sprite.play("idle")
+	RemoteLogger.info("Animated sprite applied successfully", {"unit_id": unit_id, "frame_count": frame_count, "frame_size": "%dx%d" % [frame_width, frame_height]})
 
 ## Создаёт анимированный спрайт в контейнере (используется при создании юнита)
 func _create_animated_sprite_in_container(container: Control, sprite_url: String) -> void:
