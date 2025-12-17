@@ -10,12 +10,14 @@ var api_base: String = "/arena/api/public"
 
 # Буфер логов для отправки пачками
 var log_buffer: Array = []
-var max_buffer_size: int = 20
-var flush_interval: float = 5.0  # Отправлять каждые 5 секунд
+var pending_logs: Array = []  # Логи ожидающие подтверждения отправки
+var max_buffer_size: int = 50  # Увеличен размер буфера
+var flush_interval: float = 3.0  # Отправлять каждые 3 секунды (чаще)
 
 # HTTP Request для отправки логов
 var http_request: HTTPRequest
 var flush_timer: Timer
+var is_sending: bool = false  # Флаг отправки в процессе
 
 func _ready() -> void:
 	# Генерируем уникальный ID сессии
@@ -24,6 +26,7 @@ func _ready() -> void:
 	# Инициализируем HTTP Request
 	http_request = HTTPRequest.new()
 	http_request.use_threads = false
+	http_request.timeout = 10.0  # 10 секунд таймаут
 	add_child(http_request)
 	http_request.request_completed.connect(_on_logs_sent)
 
@@ -60,13 +63,17 @@ func _generate_session_id() -> String:
 
 func _get_user_agent() -> String:
 	if OS.has_feature("web"):
-		return JavaScriptBridge.eval("navigator.userAgent") or "unknown"
+		var ua = JavaScriptBridge.eval("navigator.userAgent")
+		if ua:
+			return ua
+		return "unknown"
 	return "Godot " + Engine.get_version_info().string
 
 func _check_debug_status() -> void:
 	var url = api_base + "/debug/status"
 	var check_http = HTTPRequest.new()
 	check_http.use_threads = false
+	check_http.timeout = 5.0
 	add_child(check_http)
 	check_http.request_completed.connect(_on_debug_status_received.bind(check_http))
 	check_http.request(url)
@@ -123,25 +130,54 @@ func _flush_logs() -> void:
 	if log_buffer.is_empty() or not debug_mode:
 		return
 
-	var logs_to_send = log_buffer.duplicate()
+	# Если уже идёт отправка - пропускаем этот тик
+	if is_sending:
+		return
+
+	# Перемещаем логи в pending (для возможности повторной отправки при ошибке)
+	pending_logs = log_buffer.duplicate()
 	log_buffer.clear()
 
+	is_sending = true
+
 	var url = api_base + "/logs"
+	var player_id_value = null
+	if ApiClient and ApiClient.player_id > 0:
+		player_id_value = ApiClient.player_id
+
 	var body = JSON.stringify({
 		"session_id": session_id,
-		"player_id": ApiClient.player_id if ApiClient.player_id > 0 else null,
-		"logs": logs_to_send
+		"player_id": player_id_value,
+		"logs": pending_logs
 	})
 
 	var headers = ["Content-Type: application/json"]
-	http_request.request(url, headers, HTTPClient.METHOD_POST, body)
+	var err = http_request.request(url, headers, HTTPClient.METHOD_POST, body)
+
+	if err != OK:
+		# Ошибка отправки - возвращаем логи в буфер
+		log_buffer = pending_logs + log_buffer
+		pending_logs.clear()
+		is_sending = false
 
 func _on_logs_sent(result: int, response_code: int, headers: PackedStringArray, body: PackedByteArray) -> void:
-	# Просто игнорируем результат, логи отправлены
-	pass
+	is_sending = false
+
+	if result != HTTPRequest.RESULT_SUCCESS or response_code != 200:
+		# Ошибка - возвращаем логи в буфер для повторной отправки
+		log_buffer = pending_logs + log_buffer
+		# Ограничиваем размер буфера при постоянных ошибках
+		if log_buffer.size() > max_buffer_size * 2:
+			log_buffer = log_buffer.slice(0, max_buffer_size * 2)
+
+	pending_logs.clear()
+
+## Принудительная отправка логов (вызывать перед выходом из сцены)
+func flush_now() -> void:
+	if not log_buffer.is_empty() and not is_sending:
+		_flush_logs()
 
 ## Вызывается при выходе - отправляем оставшиеся логи
 func _notification(what: int) -> void:
 	if what == NOTIFICATION_WM_CLOSE_REQUEST or what == NOTIFICATION_PREDELETE:
-		if not log_buffer.is_empty():
-			_flush_logs()
+		flush_now()

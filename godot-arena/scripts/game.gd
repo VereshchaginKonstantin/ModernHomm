@@ -54,7 +54,7 @@ var last_log_count: int = 0  # Для отслеживания изменени�
 var base_url: String = ""  # Кэшированный base URL для запросов
 
 # Константы анимации перемещения
-const MOVE_DURATION: float = 0.5  # Длительность анимации перемещения в секундах
+const MOVE_DURATION: float = 1.0  # Длительность анимации перемещения в секундах
 
 func _ready() -> void:
 	# Кэшируем base URL один раз
