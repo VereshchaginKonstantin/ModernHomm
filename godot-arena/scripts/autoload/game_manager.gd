@@ -284,3 +284,7 @@ func _on_api_response(data: Dictionary) -> void:
 func _on_api_error(error_message: String) -> void:
 	error_occurred.emit(error_message)
 	push_error("API Error: " + error_message)
+
+	# Останавливаем polling при ошибках авторизации чтобы избежать бесконечных запросов
+	if "Unauthorized" in error_message or "401" in error_message or "TOKEN" in error_message:
+		stop_polling()

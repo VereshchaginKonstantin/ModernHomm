@@ -79,9 +79,12 @@ func _ready() -> void:
 	surrender_button.pressed.connect(_on_surrender_pressed)
 	game_over_overlay.get_node("VBox/BackButton").pressed.connect(_on_back_to_menu)
 
-	# Начинаем обновление состояния игры и запускаем polling
-	GameManager.refresh_game_state()
-	GameManager.start_polling()
+	# Начинаем обновление состояния игры и запускаем polling только если авторизован
+	if ApiClient.is_authenticated():
+		GameManager.refresh_game_state()
+		GameManager.start_polling()
+	else:
+		hint_label.text = "Ошибка: требуется авторизация"
 
 func _on_game_state_updated(state: Dictionary) -> void:
 	# Обновляем размер поля
