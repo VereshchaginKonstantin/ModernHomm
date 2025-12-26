@@ -1,0 +1,144 @@
+# GitLab CI/CD configuration for ModernHomm Arena builds
+# Builds Godot game for Web, Android, and iOS platforms
+
+stages:
+  - build
+  - deploy
+
+variables:
+  GODOT_VERSION: "4.2.2"
+  EXPORT_NAME: "ModernHommArena"
+
+# Cache for Godot templates and dependencies
+cache:
+  key: godot-${GODOT_VERSION}
+  paths:
+    - .godot-templates/
+
+# Build Web version
+build:web:
+  stage: build
+  image: barichello/godot-ci:${GODOT_VERSION}
+  script:
+    - mkdir -v -p godot-arena/build
+    - cd godot-arena
+    - godot --headless --verbose --export-release "Web" build/index.html
+    - ls -la build/
+  artifacts:
+    name: "${EXPORT_NAME}-web-${CI_COMMIT_SHORT_SHA}"
+    paths:
+      - godot-arena/build/index.html
+      - godot-arena/build/index.js
+      - godot-arena/build/index.wasm
+      - godot-arena/build/index.pck
+      - godot-arena/build/index.icon.png
+      - godot-arena/build/index.apple-touch-icon.png
+    expire_in: 30 days
+  only:
+    - main
+    - develop
+    - /^release\/.*$/
+
+# Build Android APK
+build:android:
+  stage: build
+  image: barichello/godot-ci:${GODOT_VERSION}
+  before_script:
+    # Setup Android SDK if needed
+    - mkdir -v -p godot-arena/build/android
+    # Configure Android export (requires keystore setup in CI/CD variables)
+    - |
+      if [ -n "$ANDROID_KEYSTORE_BASE64" ]; then
+        echo "$ANDROID_KEYSTORE_BASE64" | base64 -d > /tmp/release.keystore
+        export GODOT_ANDROID_KEYSTORE_DEBUG_PATH=/tmp/release.keystore
+        export GODOT_ANDROID_KEYSTORE_RELEASE_PATH=/tmp/release.keystore
+        export GODOT_ANDROID_KEYSTORE_DEBUG_USER=$ANDROID_KEYSTORE_USER
+        export GODOT_ANDROID_KEYSTORE_DEBUG_PASSWORD=$ANDROID_KEYSTORE_PASSWORD
+        export GODOT_ANDROID_KEYSTORE_RELEASE_USER=$ANDROID_KEYSTORE_USER
+        export GODOT_ANDROID_KEYSTORE_RELEASE_PASSWORD=$ANDROID_KEYSTORE_PASSWORD
+      fi
+  script:
+    - cd godot-arena
+    - godot --headless --verbose --export-release "Android" build/android/${EXPORT_NAME}.apk
+    - ls -la build/android/
+  artifacts:
+    name: "${EXPORT_NAME}-android-${CI_COMMIT_SHORT_SHA}"
+    paths:
+      - godot-arena/build/android/
+    expire_in: 30 days
+  only:
+    - main
+    - /^release\/.*$/
+  allow_failure: true  # Android build may fail without keystore configuration
+
+# Build iOS IPA (requires macOS runner with Xcode)
+build:ios:
+  stage: build
+  tags:
+    - macos
+    - xcode
+  before_script:
+    - mkdir -v -p godot-arena/build/ios
+    # Download Godot if not available
+    - |
+      if ! command -v godot &> /dev/null; then
+        echo "Downloading Godot ${GODOT_VERSION}..."
+        wget -q https://downloads.tuxfamily.org/godotengine/${GODOT_VERSION}/Godot_v${GODOT_VERSION}-stable_macos.universal.zip
+        unzip -q Godot_v${GODOT_VERSION}-stable_macos.universal.zip
+        export PATH="$PWD/Godot.app/Contents/MacOS:$PATH"
+      fi
+  script:
+    - cd godot-arena
+    - godot --headless --verbose --export-release "iOS" build/ios/${EXPORT_NAME}.ipa
+    - ls -la build/ios/
+  artifacts:
+    name: "${EXPORT_NAME}-ios-${CI_COMMIT_SHORT_SHA}"
+    paths:
+      - godot-arena/build/ios/
+    expire_in: 30 days
+  only:
+    - main
+    - /^release\/.*$/
+  allow_failure: true  # iOS build requires macOS runner
+  when: manual  # Manual trigger for iOS builds
+
+# Deploy Web to server (optional)
+deploy:web:
+  stage: deploy
+  image: alpine:latest
+  dependencies:
+    - build:web
+  before_script:
+    - apk add --no-cache rsync openssh-client
+    - mkdir -p ~/.ssh
+    - echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_rsa
+    - chmod 600 ~/.ssh/id_rsa
+    - ssh-keyscan -H $DEPLOY_HOST >> ~/.ssh/known_hosts
+  script:
+    - rsync -avz --delete godot-arena/build/ $DEPLOY_USER@$DEPLOY_HOST:$DEPLOY_PATH/godot-arena/
+  only:
+    - main
+  when: manual
+  allow_failure: true
+
+# Combined job to build all platforms
+build:all:
+  stage: build
+  image: barichello/godot-ci:${GODOT_VERSION}
+  script:
+    - mkdir -v -p godot-arena/build/android godot-arena/build/ios
+    - cd godot-arena
+    # Build Web
+    - godot --headless --verbose --export-release "Web" build/index.html
+    # Build Android (may fail without keystore)
+    - godot --headless --verbose --export-release "Android" build/android/${EXPORT_NAME}.apk || echo "Android build skipped (no keystore)"
+    - ls -la build/
+    - ls -la build/android/ || true
+  artifacts:
+    name: "${EXPORT_NAME}-all-${CI_COMMIT_SHORT_SHA}"
+    paths:
+      - godot-arena/build/
+    expire_in: 30 days
+  only:
+    - main
+  when: manual

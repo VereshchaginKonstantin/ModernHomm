@@ -25,6 +25,12 @@ var is_in_battle: bool = false  # Армия в бою - нельзя редак
 var user_races: Array = []
 var create_dialog: Window = null
 
+# Диалог количества для найма
+var hire_dialog: Window = null
+var hire_race_unit_id: int = 0
+var hire_max_available: int = 0
+var hire_unit_cost: int = 0
+
 # Ожидание ответов
 enum RequestType { NONE, GET_ARMIES, CREATE_ARMY, DELETE_ARMY, GET_AVAILABLE_UNITS, HIRE_UNIT, DISMISS_UNIT, UNLOCK_LEVEL, GET_USER_RACES }
 var pending_request: RequestType = RequestType.NONE
@@ -365,6 +371,8 @@ func _create_available_unit_card(unit: Dictionary) -> Control:
 	var unlock_cost = unit.get("unlock_cost_gems", 0)
 	var is_rated = army_type == "rated"
 
+	var unit_hire_cost = unit.get("hire_cost", 0)
+
 	# Для рейтинговых армий - нет ограничений
 	if is_rated:
 		var hire_btn = Button.new()
@@ -372,7 +380,7 @@ func _create_available_unit_card(unit: Dictionary) -> Control:
 		hire_btn.disabled = not can_hire
 		if not can_hire:
 			hire_btn.tooltip_text = "Недостаточно средств"
-		hire_btn.pressed.connect(_on_hire_unit.bind(unit.get("race_unit_id", 0)))
+		hire_btn.pressed.connect(_on_hire_unit.bind(unit.get("race_unit_id", 0), 999, unit_hire_cost))
 		hbox.add_child(hire_btn)
 	else:
 		# Для наёмных армий - проверяем лимиты
@@ -411,7 +419,7 @@ func _create_available_unit_card(unit: Dictionary) -> Control:
 					hire_btn.tooltip_text = "Нет доступных юнитов (ожидайте регенерации)"
 				else:
 					hire_btn.tooltip_text = "Недостаточно средств"
-			hire_btn.pressed.connect(_on_hire_unit.bind(unit.get("race_unit_id", 0)))
+			hire_btn.pressed.connect(_on_hire_unit.bind(unit.get("race_unit_id", 0), available_to_hire, unit_hire_cost))
 			hbox.add_child(hire_btn)
 
 	return card
@@ -563,13 +571,139 @@ func _on_delete_army_pressed() -> void:
 	pending_request = RequestType.DELETE_ARMY
 	ApiClient.delete_army(selected_army_id)
 
-func _on_hire_unit(race_unit_id: int) -> void:
+func _on_hire_unit(race_unit_id: int, available: int, cost: int) -> void:
 	if selected_army_id <= 0 or race_unit_id <= 0:
 		return
 
-	status_label.text = "Найм юнита..."
+	# Для рейтинговых армий или если доступен только 1 - нанимаем сразу
+	if army_type == "rated" or available <= 1:
+		_do_hire_unit(race_unit_id, 1)
+		return
+
+	# Показываем диалог выбора количества
+	hire_race_unit_id = race_unit_id
+	hire_max_available = available
+	hire_unit_cost = cost
+	_show_hire_dialog()
+
+func _show_hire_dialog() -> void:
+	hire_dialog = Window.new()
+	hire_dialog.title = "Нанять юнитов"
+	hire_dialog.size = Vector2i(350, 250)
+	hire_dialog.unresizable = true
+	hire_dialog.close_requested.connect(_on_hire_dialog_close)
+
+	var margin = MarginContainer.new()
+	margin.set_anchors_preset(Control.PRESET_FULL_RECT)
+	margin.add_theme_constant_override("margin_left", 20)
+	margin.add_theme_constant_override("margin_right", 20)
+	margin.add_theme_constant_override("margin_top", 20)
+	margin.add_theme_constant_override("margin_bottom", 20)
+	hire_dialog.add_child(margin)
+
+	var vbox = VBoxContainer.new()
+	vbox.add_theme_constant_override("separation", 15)
+	margin.add_child(vbox)
+
+	# Информация
+	var info_label = Label.new()
+	info_label.text = "Доступно для найма: %d\nСтоимость за 1 юнита: $%d" % [hire_max_available, hire_unit_cost]
+	info_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	vbox.add_child(info_label)
+
+	# Количество
+	var count_hbox = HBoxContainer.new()
+	count_hbox.alignment = BoxContainer.ALIGNMENT_CENTER
+	count_hbox.add_theme_constant_override("separation", 10)
+	vbox.add_child(count_hbox)
+
+	var count_label = Label.new()
+	count_label.text = "Количество:"
+	count_hbox.add_child(count_label)
+
+	var count_spin = SpinBox.new()
+	count_spin.name = "CountSpin"
+	count_spin.min_value = 1
+	count_spin.max_value = hire_max_available
+	count_spin.value = 1
+	count_spin.custom_minimum_size = Vector2(100, 0)
+	count_hbox.add_child(count_spin)
+
+	# Итоговая стоимость
+	var total_label = Label.new()
+	total_label.name = "TotalLabel"
+	total_label.text = "Итого: $%d" % hire_unit_cost
+	total_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	total_label.add_theme_font_size_override("font_size", 18)
+	total_label.add_theme_color_override("font_color", Color(0.4, 0.8, 0.4))
+	vbox.add_child(total_label)
+
+	# Обновляем итого при изменении количества
+	count_spin.value_changed.connect(func(value: float):
+		var total = int(value) * hire_unit_cost
+		total_label.text = "Итого: $%d" % total
+		if total > player_balance:
+			total_label.add_theme_color_override("font_color", Color(0.9, 0.3, 0.3))
+		else:
+			total_label.add_theme_color_override("font_color", Color(0.4, 0.8, 0.4))
+	)
+
+	# Кнопки
+	var btn_hbox = HBoxContainer.new()
+	btn_hbox.add_theme_constant_override("separation", 10)
+	btn_hbox.alignment = BoxContainer.ALIGNMENT_CENTER
+	vbox.add_child(btn_hbox)
+
+	var cancel_btn = Button.new()
+	cancel_btn.text = "Отмена"
+	cancel_btn.custom_minimum_size = Vector2(90, 40)
+	cancel_btn.pressed.connect(_on_hire_dialog_close)
+	btn_hbox.add_child(cancel_btn)
+
+	var hire_one_btn = Button.new()
+	hire_one_btn.text = "Нанять 1"
+	hire_one_btn.custom_minimum_size = Vector2(90, 40)
+	hire_one_btn.pressed.connect(_on_hire_dialog_confirm.bind(1))
+	btn_hbox.add_child(hire_one_btn)
+
+	var hire_btn = Button.new()
+	hire_btn.text = "Нанять"
+	hire_btn.custom_minimum_size = Vector2(90, 40)
+	hire_btn.pressed.connect(func(): _on_hire_dialog_confirm(int(count_spin.value)))
+	btn_hbox.add_child(hire_btn)
+
+	# Кнопка "Нанять всех"
+	var hire_all_btn = Button.new()
+	hire_all_btn.text = "Нанять всех (%d)" % hire_max_available
+	hire_all_btn.custom_minimum_size = Vector2(0, 40)
+	hire_all_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	hire_all_btn.pressed.connect(_on_hire_dialog_confirm.bind(hire_max_available))
+	vbox.add_child(hire_all_btn)
+
+	add_child(hire_dialog)
+	hire_dialog.popup_centered()
+
+func _on_hire_dialog_close() -> void:
+	if hire_dialog:
+		hire_dialog.queue_free()
+		hire_dialog = null
+	hire_race_unit_id = 0
+	hire_max_available = 0
+	hire_unit_cost = 0
+
+func _on_hire_dialog_confirm(count: int) -> void:
+	var race_unit_id = hire_race_unit_id
+	_on_hire_dialog_close()
+
+	if race_unit_id <= 0 or count <= 0:
+		return
+
+	_do_hire_unit(race_unit_id, count)
+
+func _do_hire_unit(race_unit_id: int, count: int) -> void:
+	status_label.text = "Найм юнитов (%d)..." % count
 	pending_request = RequestType.HIRE_UNIT
-	ApiClient.hire_unit(selected_army_id, race_unit_id, 1)
+	ApiClient.hire_unit(selected_army_id, race_unit_id, count)
 
 func _on_dismiss_unit(race_unit_id: int) -> void:
 	if selected_army_id <= 0 or race_unit_id <= 0:
