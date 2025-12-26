@@ -20,7 +20,7 @@ var players: Array = []
 
 # Polling
 var polling_timer: Timer
-var polling_interval: float = 2.0
+var polling_interval: float = 1.0  # Уменьшен для более быстрого обновления
 
 func _ready() -> void:
 	# Подключаем сигналы API клиента
@@ -82,6 +82,7 @@ func start_game(game_id: int) -> void:
 ## Обновить состояние игры
 func refresh_game_state() -> void:
 	if current_game_id > 0:
+		RemoteLogger.debug("Refreshing game state", {"game_id": current_game_id})
 		ApiClient.get_game_state(current_game_id)
 
 ## Создать новую игру
@@ -100,8 +101,24 @@ func select_unit(unit: Dictionary) -> void:
 	if current_player_id == 0:
 		current_player_id = ApiClient.player_id
 
+	var unit_id = int(unit.get("id", 0))
+
+	# Получаем актуальные данные юнита из game_state (а не из переданного словаря)
+	var actual_unit = get_unit_by_id(unit_id)
+	if actual_unit.is_empty():
+		# Если юнит не найден в game_state, используем переданные данные
+		actual_unit = unit
+
+	RemoteLogger.debug("Selecting unit", {
+		"unit_id": unit_id,
+		"unit_player_id": actual_unit.get("player_id"),
+		"current_player_id": current_player_id,
+		"game_current_player": game_state.get("current_player_id"),
+		"has_moved": actual_unit.get("has_moved", 0)
+	})
+
 	# Проверяем можно ли выбрать юнита
-	if unit.get("player_id") != current_player_id:
+	if actual_unit.get("player_id") != current_player_id:
 		error_occurred.emit("Это юнит противника!")
 		return
 
@@ -109,13 +126,12 @@ func select_unit(unit: Dictionary) -> void:
 		error_occurred.emit("Сейчас не ваш ход!")
 		return
 
-	if unit.get("has_moved", 0) == 1:
+	if actual_unit.get("has_moved", 0) == 1:
 		error_occurred.emit("Этот юнит уже ходил!")
 		return
 
-	selected_unit = unit
+	selected_unit = actual_unit
 	current_actions = {}
-	var unit_id = unit.get("id", 0)
 	if unit_id > 0:
 		ApiClient.get_unit_actions(current_game_id, unit_id)
 	else:
@@ -175,7 +191,7 @@ func is_my_turn() -> bool:
 ## Получить юнита по ID
 func get_unit_by_id(unit_id: int) -> Dictionary:
 	for unit in game_state.get("units", []):
-		if unit.get("id") == unit_id:
+		if int(unit.get("id", 0)) == unit_id:
 			return unit
 	return {}
 
@@ -277,8 +293,10 @@ func _on_api_response(data: Dictionary) -> void:
 
 	elif data.has("success"):
 		# Это результат действия
+		RemoteLogger.info("Move completed", {"success": data.success, "message": data.get("message", "")})
 		move_completed.emit(data)
 		if data.success:
+			# Немедленно обновляем состояние игры после успешного хода
 			refresh_game_state()
 
 func _on_api_error(error_message: String) -> void:

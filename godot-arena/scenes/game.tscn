@@ -29,6 +29,7 @@ grow_vertical = 2
 [node name="BoardContainer" type="CenterContainer" parent="HBoxContainer"]
 layout_mode = 2
 size_flags_horizontal = 3
+clip_contents = true
 
 [node name="Board" type="Control" parent="HBoxContainer/BoardContainer"]
 unique_name_in_owner = true
@@ -132,13 +133,6 @@ custom_minimum_size = Vector2(130, 40)
 disabled = true
 text = "Пропустить"
 
-[node name="DeferButton" type="Button" parent="HBoxContainer/SidePanel/VBox/ActionButtons"]
-unique_name_in_owner = true
-layout_mode = 2
-custom_minimum_size = Vector2(130, 40)
-disabled = true
-text = "Отложить"
-
 [node name="SurrenderButton" type="Button" parent="HBoxContainer/SidePanel/VBox"]
 unique_name_in_owner = true
 layout_mode = 2
@@ -148,16 +142,85 @@ text = "Сдаться"
 [node name="HSeparator3" type="HSeparator" parent="HBoxContainer/SidePanel/VBox"]
 layout_mode = 2
 
-[node name="LogLabel" type="Label" parent="HBoxContainer/SidePanel/VBox"]
+[node name="ZoomContainer" type="HBoxContainer" parent="HBoxContainer/SidePanel/VBox"]
 layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="ZoomLabel" type="Label" parent="HBoxContainer/SidePanel/VBox/ZoomContainer"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 14
+text = "Масштаб:"
+
+[node name="ZoomSlider" type="HSlider" parent="HBoxContainer/SidePanel/VBox/ZoomContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+min_value = 0.5
+max_value = 3.0
+step = 0.05
+value = 1.0
+
+[node name="ZoomValue" type="Label" parent="HBoxContainer/SidePanel/VBox/ZoomContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+custom_minimum_size = Vector2(40, 0)
+theme_override_font_sizes/font_size = 14
+text = "100%"
+
+[node name="LogToggleButton" type="Button" parent="."]
+unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = 7
+anchor_left = 0.5
+anchor_top = 1.0
+anchor_right = 0.5
+anchor_bottom = 1.0
+offset_left = -60.0
+offset_top = -30.0
+offset_right = 60.0
+grow_horizontal = 2
+grow_vertical = 0
+text = "Лог боя"
+
+[node name="LogPanel" type="PanelContainer" parent="."]
+unique_name_in_owner = true
+visible = false
+layout_mode = 1
+anchors_preset = 12
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_top = -200.0
+grow_horizontal = 2
+grow_vertical = 0
+
+[node name="VBox" type="VBoxContainer" parent="LogPanel"]
+layout_mode = 2
+theme_override_constants/separation = 5
+
+[node name="Header" type="HBoxContainer" parent="LogPanel/VBox"]
+layout_mode = 2
+
+[node name="Title" type="Label" parent="LogPanel/VBox/Header"]
+layout_mode = 2
+size_flags_horizontal = 3
 theme_override_font_sizes/font_size = 16
 text = "Лог боя"
 
-[node name="LogScroll" type="ScrollContainer" parent="HBoxContainer/SidePanel/VBox"]
+[node name="CloseLogButton" type="Button" parent="LogPanel/VBox/Header"]
+unique_name_in_owner = true
+layout_mode = 2
+custom_minimum_size = Vector2(30, 30)
+text = "X"
+
+[node name="HSeparator" type="HSeparator" parent="LogPanel/VBox"]
+layout_mode = 2
+
+[node name="LogScroll" type="ScrollContainer" parent="LogPanel/VBox"]
 layout_mode = 2
 size_flags_vertical = 3
 
-[node name="LogList" type="VBoxContainer" parent="HBoxContainer/SidePanel/VBox/LogScroll"]
+[node name="LogList" type="VBoxContainer" parent="LogPanel/VBox/LogScroll"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3

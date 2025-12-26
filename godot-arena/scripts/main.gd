@@ -3,6 +3,8 @@ extends Control
 
 @onready var player_name_label: Label = %PlayerNameLabel
 @onready var player_stats: Label = %PlayerStats
+@onready var army_select: OptionButton = %ArmySelect
+@onready var army_stats: Label = %ArmyStats
 @onready var opponent_select: OptionButton = %OpponentSelect
 @onready var opponent_stats: Label = %OpponentStats
 @onready var field_5x5: Button = %Field5x5
@@ -10,6 +12,7 @@ extends Control
 @onready var field_10x10: Button = %Field10x10
 @onready var start_button: Button = %StartButton
 @onready var army_button: Button = %ArmyButton
+@onready var races_button: Button = %RacesButton
 @onready var status_label: Label = %StatusLabel
 @onready var battles_panel: PanelContainer = %BattlesPanel
 @onready var battles_toggle: Button = %BattlesToggle
@@ -37,6 +40,8 @@ var battles_panel_tween: Tween
 
 var players: Array = []
 var current_player: Dictionary = {}
+var player_armies: Array = []  # Список армий игрока
+var selected_army: Dictionary = {}  # Выбранная армия для боя
 var selected_opponent: Dictionary = {}
 var selected_field_size: String = "5x5"
 var waiting_game_id: int = 0
@@ -63,12 +68,14 @@ func _ready() -> void:
 	ApiClient.auth_required.connect(_on_auth_required)
 
 	# Подключаем UI
+	army_select.item_selected.connect(_on_army_selected)
 	opponent_select.item_selected.connect(_on_opponent_selected)
 	field_5x5.pressed.connect(_on_field_5x5_pressed)
 	field_7x7.pressed.connect(_on_field_7x7_pressed)
 	field_10x10.pressed.connect(_on_field_10x10_pressed)
 	start_button.pressed.connect(_on_start_pressed)
 	army_button.pressed.connect(_on_army_pressed)
+	races_button.pressed.connect(_on_races_pressed)
 	$VBoxContainer/BackButton.pressed.connect(_on_back_pressed)
 
 	# Подключаем панель боёв
@@ -87,11 +94,45 @@ func _ready() -> void:
 	waiting_timer.timeout.connect(_on_waiting_timeout)
 	add_child(waiting_timer)
 
-	# Начальное положение панели боёв (за экраном)
-	battles_panel.position.x = get_viewport_rect().size.x
+	# Начальное положение панели боёв (за экраном справа)
+	# Панель занимает 50% экрана (anchor_left=0.5), сдвигаем на ширину экрана
+	battles_panel.position.x = get_viewport_rect().size.x * 0.5
 
-	# Проверяем если пользователь уже авторизован
-	if ApiClient.is_authenticated():
+	# Проверяем есть ли pending debug auth check
+	_js_log("main._ready: pending=" + str(ApiClient._pending_debug_player_id) + ", completed=" + str(ApiClient._debug_auth_check_completed) + ", debug_mode=" + str(ApiClient.debug_mode) + ", player_id=" + str(ApiClient.player_id))
+
+	# Если debug_mode уже включен - сразу переходим к проверке авторизации
+	if ApiClient.debug_mode and ApiClient.player_id > 0:
+		_js_log("Debug mode already active, skipping wait")
+	# Если проверка debug auth ещё не завершена - ждём
+	elif ApiClient._pending_debug_player_id > 0 and not ApiClient._debug_auth_check_completed:
+		_js_log("Waiting for debug_auth_checked signal...")
+		await ApiClient.debug_auth_checked
+		_js_log("Got debug_auth_checked signal! debug_mode=" + str(ApiClient.debug_mode))
+	elif ApiClient._debug_auth_check_completed:
+		# Проверка уже завершилась - логируем результат
+		_js_log("Debug auth check already completed, debug_mode=" + str(ApiClient.debug_mode))
+
+	# Даём немного времени на завершение асинхронных операций
+	await get_tree().process_frame
+
+	_check_auth_and_show_ui()
+
+func _js_log(msg: String) -> void:
+	if OS.has_feature("web"):
+		# Экранируем спецсимволы для JavaScript
+		var safe_msg = msg.replace("\\", "\\\\").replace("'", "\\'").replace("\"", "\\\"").replace("\n", "\\n").replace("\r", "\\r")
+		JavaScriptBridge.eval("console.log('[Main] " + safe_msg + "')")
+
+func _check_auth_and_show_ui() -> void:
+	_js_log("_check_auth_and_show_ui: debug_mode=" + str(ApiClient.debug_mode) + ", player_id=" + str(ApiClient.player_id))
+	# Проверяем режим дебага (player_id в URL)
+	if ApiClient.debug_mode and ApiClient.player_id > 0:
+		# В режиме дебага - загружаем данные пользователя с сервера
+		_js_log("Debug mode - loading player data from server")
+		login_panel.visible = false
+		ApiClient.get_current_player()
+	elif ApiClient.is_authenticated():
 		# Пользователь уже авторизован - показываем главное меню
 		login_panel.visible = false
 		# Загружаем данные текущего пользователя
@@ -114,24 +155,29 @@ func _open_battles_panel() -> void:
 
 	battles_panel.visible = true
 	battles_panel_open = true
-	battles_toggle.text = "▶"
+	battles_toggle.text = "<"
 
+	# Панель занимает 50% экрана (anchor_left=0.5), открытая позиция = 0
 	battles_panel_tween = create_tween()
-	battles_panel_tween.tween_property(battles_panel, "position:x", get_viewport_rect().size.x - battles_panel.size.x, 0.3).set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_CUBIC)
+	battles_panel_tween.tween_property(battles_panel, "position:x", 0.0, 0.3).set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_CUBIC)
 
 func _close_battles_panel() -> void:
 	if battles_panel_tween:
 		battles_panel_tween.kill()
 
 	battles_panel_open = false
-	battles_toggle.text = "⚔️"
+	battles_toggle.text = ">"
 
+	# Закрытая позиция = 50% ширины экрана (панель уезжает за правый край)
 	battles_panel_tween = create_tween()
-	battles_panel_tween.tween_property(battles_panel, "position:x", get_viewport_rect().size.x, 0.3).set_ease(Tween.EASE_IN).set_trans(Tween.TRANS_CUBIC)
+	battles_panel_tween.tween_property(battles_panel, "position:x", get_viewport_rect().size.x * 0.5, 0.3).set_ease(Tween.EASE_IN).set_trans(Tween.TRANS_CUBIC)
 	battles_panel_tween.tween_callback(func(): battles_panel.visible = false)
 
 func _on_army_pressed() -> void:
 	get_tree().change_scene_to_file("res://scenes/army_editor.tscn")
+
+func _on_races_pressed() -> void:
+	get_tree().change_scene_to_file("res://scenes/race_manager.tscn")
 
 func _on_login_pressed() -> void:
 	var username = username_input.text.strip_edges()
@@ -241,6 +287,13 @@ func _handle_game_response(data: Dictionary) -> void:
 			_show_main_ui()
 		return
 
+	# Обрабатываем ответ на список армий
+	if data.has("armies"):
+		_js_log("Received armies response, count=" + str(data.get("armies", []).size()))
+		player_armies = data.get("armies", [])
+		_populate_armies()
+		return
+
 	# Обрабатываем ответ на ожидающие игры
 	if data.has("pending_games"):
 		pending_games = data.get("pending_games", [])
@@ -305,8 +358,11 @@ func _show_main_ui() -> void:
 		win_rate
 	]
 
-	# Теперь загружаем список противников
-	status_label.text = "Загрузка противников..."
+	# Загружаем список армий игрока
+	status_label.text = "Загрузка армий..."
+	ApiClient.get_armies()
+
+	# Загружаем список противников
 	GameManager.load_players()
 
 func _on_current_player_loaded(player: Dictionary) -> void:
@@ -324,6 +380,76 @@ func _on_players_loaded(loaded_players: Array) -> void:
 	players = loaded_players
 	status_label.text = ""
 	_populate_opponents()
+
+func _populate_armies() -> void:
+	_js_log("_populate_armies called, armies count=" + str(player_armies.size()))
+	army_select.clear()
+	army_select.add_item("Выберите армию", 0)
+
+	var available_count = 0
+	for army in player_armies:
+		var army_name = army.get("army_name", "Армия")
+		var army_cost = army.get("army_cost", 0)
+		var is_in_battle = army.get("is_in_battle", false)
+		var units_count = army.get("units", []).size()
+
+		# Формируем текст пункта
+		var text = "%s (%.0f)" % [army_name, army_cost]
+		if is_in_battle:
+			text = "[БОЙ] " + text
+		elif units_count == 0:
+			text = "[X] " + text + " [ПУСТАЯ]"
+
+		var item_idx = army_select.get_item_count()
+		army_select.add_item(text, army.get("army_id", 0))
+
+		# Делаем недоступными армии в бою или без юнитов
+		if is_in_battle or units_count == 0:
+			army_select.set_item_disabled(item_idx, true)
+		else:
+			available_count += 1
+
+	selected_army = {}
+	army_stats.text = ""
+
+	# Если нет доступных армий - показываем подсказку
+	if available_count == 0:
+		army_stats.text = "Нет доступных армий! Создайте армию или завершите текущие бои."
+
+	# Очищаем статус загрузки армий
+	if status_label.text == "Загрузка армий...":
+		status_label.text = ""
+
+	_update_start_button()
+
+	# Проверяем ожидающие игры (если игроки уже загружены)
+	if not players.is_empty():
+		_check_pending_games()
+
+func _on_army_selected(index: int) -> void:
+	var army_id = army_select.get_item_id(index)
+	if army_id == 0:
+		selected_army = {}
+		army_stats.text = ""
+		_update_start_button()
+		return
+
+	for army in player_armies:
+		if army.get("army_id") == army_id:
+			selected_army = army
+			break
+
+	# Показываем состав армии
+	var units = selected_army.get("units", [])
+	if units.size() > 0:
+		var unit_texts = []
+		for unit in units:
+			unit_texts.append("%s x%d" % [unit.get("name", "?"), unit.get("count", 0)])
+		army_stats.text = ", ".join(unit_texts)
+	else:
+		army_stats.text = "Армия пустая"
+
+	_update_start_button()
 
 func _populate_opponents() -> void:
 	if current_player.is_empty():
@@ -353,10 +479,13 @@ func _populate_opponents() -> void:
 	_check_pending_games()
 
 func _check_pending_games() -> void:
+	_js_log("_check_pending_games: current_player.is_empty=" + str(current_player.is_empty()) + ", is_authenticated=" + str(ApiClient.is_authenticated()))
 	if current_player.is_empty() or not ApiClient.is_authenticated():
+		_js_log("_check_pending_games: hiding battles_toggle")
 		battles_toggle.visible = false
 		return
 
+	_js_log("_check_pending_games: showing battles_toggle")
 	battles_toggle.visible = true
 	ApiClient.get_pending_games()
 
@@ -403,19 +532,20 @@ func _on_field_10x10_pressed() -> void:
 	field_10x10.button_pressed = true
 
 func _update_start_button() -> void:
-	start_button.disabled = current_player.is_empty() or selected_opponent.is_empty()
+	start_button.disabled = current_player.is_empty() or selected_army.is_empty() or selected_opponent.is_empty()
 
 func _on_start_pressed() -> void:
-	if current_player.is_empty() or selected_opponent.is_empty():
+	if current_player.is_empty() or selected_army.is_empty() or selected_opponent.is_empty():
 		return
 
 	start_button.disabled = true
 	status_label.text = "Создание игры..."
 
-	# Используем новый API без player_id (берётся из токена)
+	# Используем новый API с army_id
 	ApiClient.create_game(
 		selected_opponent.get("username", selected_opponent.get("name", "")),
-		selected_field_size
+		selected_field_size,
+		selected_army.get("army_id", 0)
 	)
 
 func _on_waiting_timeout() -> void:
@@ -461,7 +591,7 @@ func _display_battles_list() -> void:
 		hbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 
 		var label = Label.new()
-		label.text = "⚔️ %s вызывает вас!" % game.get("player1_name", "???")
+		label.text = "%s вызывает вас!" % game.get("player1_name", "???")
 		label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		hbox.add_child(label)
 
@@ -473,18 +603,18 @@ func _display_battles_list() -> void:
 			var army_name = army.get("army_name", "Армия")
 			var army_cost = army.get("army_cost", 0)
 			var is_matching = army.get("is_matching", false)
-			var prefix = "✅ " if is_matching else "⚠️ "
+			var prefix = "[+] " if is_matching else "[!] "
 			army_select.add_item(prefix + army_name + " (%.0f)" % army_cost, army.get("army_id", 0))
 		hbox.add_child(army_select)
 
 		var accept_btn = Button.new()
-		accept_btn.text = "✓"
+		accept_btn.text = "OK"
 		accept_btn.custom_minimum_size = Vector2(40, 0)
 		accept_btn.pressed.connect(_on_accept_game.bind(game.get("game_id", 0), army_select))
 		hbox.add_child(accept_btn)
 
 		var decline_btn = Button.new()
-		decline_btn.text = "✕"
+		decline_btn.text = "X"
 		decline_btn.custom_minimum_size = Vector2(40, 0)
 		decline_btn.pressed.connect(_on_decline_game.bind(game.get("game_id", 0)))
 		hbox.add_child(decline_btn)
@@ -503,7 +633,7 @@ func _display_battles_list() -> void:
 
 		var label = Label.new()
 		var turn_text = " (ваш ход)" if game.get("is_my_turn", false) else ""
-		label.text = "🎮 vs %s%s" % [opponent_name, turn_text]
+		label.text = "vs %s%s" % [opponent_name, turn_text]
 		label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		hbox.add_child(label)
 
@@ -527,7 +657,7 @@ func _display_battles_list() -> void:
 		if game.get("player2_id") == current_player.get("id"):
 			opponent_name = game.get("player1_name", "???")
 
-		var result_icon = "🏆" if game.get("winner_id") == current_player.get("id") else "💀"
+		var result_icon = "W" if game.get("winner_id") == current_player.get("id") else "L"
 		var label = Label.new()
 		label.text = "%s vs %s" % [result_icon, opponent_name]
 		label.size_flags_horizontal = Control.SIZE_EXPAND_FILL

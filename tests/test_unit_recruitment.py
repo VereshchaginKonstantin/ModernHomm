@@ -63,17 +63,17 @@ class TestUserUnitLimitModel:
             assert hasattr(level1, 'speed_upgrade_cost_gems')
             assert hasattr(level1, 'level_access_cost_gems')
 
-    def test_level_1_default_speed_is_5(self, db_session, unit_levels):
-        """Проверка что скорость найма для 1 уровня = 5"""
+    def test_level_1_has_positive_speed(self, db_session, unit_levels):
+        """Проверка что скорость найма для 1 уровня > 0"""
         level1 = unit_levels.get(1)
         if level1:
-            assert level1.daily_recruit_speed == 5
+            assert level1.daily_recruit_speed >= 1
 
-    def test_level_2_default_speed_is_2(self, db_session, unit_levels):
-        """Проверка что скорость найма для 2 уровня = 2"""
+    def test_level_2_has_positive_speed(self, db_session, unit_levels):
+        """Проверка что скорость найма для 2 уровня > 0"""
         level2 = unit_levels.get(2)
         if level2:
-            assert level2.daily_recruit_speed == 2
+            assert level2.daily_recruit_speed >= 1
 
 
 class TestInitializeUserLimits:

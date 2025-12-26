@@ -19,6 +19,22 @@ services:
     networks:
       - modernhomm_network
 
+  redis:
+    image: redis:7-alpine
+    container_name: modernhomm_redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - ./redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - modernhomm_network
+
   app:
     build:
       context: .
@@ -46,8 +62,11 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      redis:
+        condition: service_healthy
     environment:
       DATABASE_URL: postgresql://postgres:postgres@postgres:5432/telegram_bot
+      REDIS_URL: redis://redis:6379/0
       PORT: 5000
     volumes:
       - ./web/static:/app/static
@@ -60,6 +79,23 @@ services:
       context: ./godot-arena
       dockerfile: Dockerfile
     container_name: modernhomm_godot_arena
+    restart: unless-stopped
+    networks:
+      - modernhomm_network
+
+  jobs:
+    build:
+      context: .
+      dockerfile: Dockerfile.jobs
+    container_name: modernhomm_jobs
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/telegram_bot
+      REDIS_URL: redis://redis:6379/0
     restart: unless-stopped
     networks:
       - modernhomm_network

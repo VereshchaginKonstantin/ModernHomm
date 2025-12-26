@@ -32,15 +32,6 @@ HEADER_TEMPLATE = """
         <!-- Арена -->
         <a href="{{ url_for('arena.index') }}" class="nav-link {{ 'active' if active_page == 'arena' else '' }}">🏟️ Арена</a>
 
-        <!-- Армия -->
-        <div class="nav-dropdown">
-            <a href="#" class="nav-link {{ 'active' if active_page in ['army', 'user_race', 'army_settings'] else '' }}">⚔️ Армия ▾</a>
-            <div class="dropdown-content">
-                <a href="{{ url_for('army.user_races_list') }}" class="{{ 'active' if active_page == 'user_race' else '' }}">🏰 Мои расы</a>
-                <a href="{{ url_for('army.army_settings') }}" class="{{ 'active' if active_page == 'army_settings' else '' }}">🎖️ Армии</a>
-            </div>
-        </div>
-
         <!-- Админ настройки (dropdown) -->
         <div class="nav-dropdown">
             <a href="#" class="nav-link {{ 'active' if active_page in ['races', 'unit_levels', 'leaderboard'] else '' }}">⚙️ Админ настройки ▾</a>
@@ -55,6 +46,11 @@ HEADER_TEMPLATE = """
 
         <!-- Справка -->
         <a href="{{ url_for('help_page') }}" class="nav-link {{ 'active' if active_page == 'help' else '' }}">❓ Справка</a>
+
+        <!-- Джобы (только для админов) -->
+        {% if session.user_id in [1, 4] %}
+        <a href="{{ url_for('admin_jobs') }}" class="nav-link {{ 'active' if active_page == 'admin_jobs' else '' }}">🔧 Джобы</a>
+        {% endif %}
 
         <!-- Выход -->
         <a href="{{ url_for('logout') }}" class="nav-link" style="margin-left: auto;">🚪 Выход ({{ session.username }})</a>

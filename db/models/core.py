@@ -88,3 +88,27 @@ class GameUser(Base):
 
     def __repr__(self):
         return f"<GameUser(telegram_id={self.telegram_id}, username={self.username}, balance={self.balance})>"
+
+
+class JobLog(Base):
+    """Модель логов выполнения джоб"""
+    __tablename__ = 'job_logs'
+
+    # Статусы
+    STATUS_RUNNING = 'running'
+    STATUS_SUCCESS = 'success'
+    STATUS_FAILED = 'failed'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    job_name = Column(String(100), nullable=False, index=True)
+    status = Column(String(20), nullable=False, default=STATUS_RUNNING)
+    started_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    finished_at = Column(DateTime, nullable=True)
+    duration_ms = Column(Integer, nullable=True)
+    records_processed = Column(Integer, nullable=False, default=0)
+    error_message = Column(Text, nullable=True)
+    details = Column(Text, nullable=True)  # JSON строка
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    def __repr__(self):
+        return f"<JobLog(id={self.id}, job_name={self.job_name}, status={self.status})>"

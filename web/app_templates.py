@@ -584,12 +584,21 @@ HELP_TEMPLATE = """
             <h2 style="color: #856404;">🔧 Отладка (только для админов)</h2>
 
             <div style="margin: 20px 0;">
-                <h3>Debug Mode</h3>
+                <h3>Debug Mode (Логирование)</h3>
                 <p>Когда включен, клиенты Godot Arena отправляют логи на сервер для отладки.</p>
                 <button id="toggle-debug-btn" onclick="toggleDebugMode()" style="padding: 10px 20px; font-size: 16px; cursor: pointer; background: #007bff; color: white; border: none; border-radius: 4px;">
                     Загрузка...
                 </button>
                 <span id="debug-status" style="margin-left: 15px; font-weight: bold;"></span>
+            </div>
+
+            <div style="margin: 20px 0;">
+                <h3>Debug Auth (Аутентификация через URL)</h3>
+                <p>Когда включен, можно заходить в игру без пароля через URL: <code>/godot-arena/?player_id=5</code></p>
+                <button id="toggle-debug-auth-btn" onclick="toggleDebugAuth()" style="padding: 10px 20px; font-size: 16px; cursor: pointer; background: #007bff; color: white; border: none; border-radius: 4px;">
+                    Загрузка...
+                </button>
+                <span id="debug-auth-status" style="margin-left: 15px; font-weight: bold;"></span>
             </div>
 
             <div style="margin: 20px 0;">
@@ -730,8 +739,53 @@ HELP_TEMPLATE = """
             }
         }
 
+        // Debug Auth функции
+        async function checkDebugAuthStatus() {
+            try {
+                const response = await fetch('/arena/api/public/debug/auth_status');
+                const data = await response.json();
+                updateDebugAuthButton(data.debug_auth);
+            } catch (e) {
+                console.error('Failed to check debug auth status:', e);
+            }
+        }
+
+        function updateDebugAuthButton(enabled) {
+            const btn = document.getElementById('toggle-debug-auth-btn');
+            const status = document.getElementById('debug-auth-status');
+            if (enabled) {
+                btn.textContent = 'Выключить Debug Auth';
+                btn.style.background = '#dc3545';
+                status.textContent = '✅ Включен (можно входить через URL)';
+                status.style.color = 'green';
+            } else {
+                btn.textContent = 'Включить Debug Auth';
+                btn.style.background = '#28a745';
+                status.textContent = '❌ Выключен (требуется логин)';
+                status.style.color = 'red';
+            }
+        }
+
+        async function toggleDebugAuth() {
+            try {
+                const response = await fetch('/admin/debug/auth_toggle', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'}
+                });
+                const data = await response.json();
+                if (data.success) {
+                    updateDebugAuthButton(data.debug_auth);
+                } else {
+                    alert('Ошибка: ' + (data.error || 'Unknown error'));
+                }
+            } catch (e) {
+                alert('Ошибка: ' + e.message);
+            }
+        }
+
         // Инициализация
         checkDebugStatus();
+        checkDebugAuthStatus();
         </script>
         {% endif %}
     </div>
@@ -781,6 +835,251 @@ IMPORT_TEMPLATE = """
             </form>
         </div>
     </div>
+    {{ footer_html|safe }}
+</body>
+</html>
+"""
+
+# Шаблон страницы логов джоб
+JOBS_TEMPLATE = """
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Логи джоб - Админ панель</title>
+""" + BASE_STYLE + """
+    <style>
+        .jobs-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+            background: white;
+        }
+        .jobs-table th,
+        .jobs-table td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #ddd;
+        }
+        .jobs-table th {
+            background-color: #3498db;
+            color: white;
+            font-weight: bold;
+        }
+        .jobs-table tr:hover {
+            background-color: #f5f5f5;
+        }
+        .status-success { color: #27ae60; font-weight: bold; }
+        .status-failed { color: #e74c3c; font-weight: bold; }
+        .status-running { color: #f39c12; font-weight: bold; }
+        .job-stats {
+            display: flex;
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+        .stat-card {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            flex: 1;
+            text-align: center;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .stat-number {
+            font-size: 32px;
+            font-weight: bold;
+            color: #2c3e50;
+        }
+        .stat-label {
+            color: #7f8c8d;
+            margin-top: 5px;
+        }
+        .filters {
+            background: white;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+        .filters select, .filters button {
+            padding: 8px 16px;
+            margin-right: 10px;
+        }
+        .pagination {
+            margin-top: 20px;
+            display: flex;
+            justify-content: center;
+            gap: 10px;
+        }
+        .pagination a, .pagination span {
+            padding: 8px 12px;
+            background-color: #3498db;
+            color: white;
+            text-decoration: none;
+            border-radius: 4px;
+        }
+        .pagination span {
+            background-color: #95a5a6;
+        }
+        .error-message {
+            color: #e74c3c;
+            font-size: 12px;
+            max-width: 300px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .details-json {
+            font-family: monospace;
+            font-size: 11px;
+            background: #f8f9fa;
+            padding: 4px 8px;
+            border-radius: 4px;
+            max-width: 200px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .run-now-btn {
+            background: #27ae60;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-right: 10px;
+        }
+        .run-now-btn:hover {
+            background: #219a52;
+        }
+    </style>
+</head>
+<body>
+""" + HEADER_TEMPLATE + """
+    <div class="content">
+        <h1>🔧 Логи джоб</h1>
+
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                {% for category, message in messages %}
+                    <div class="alert alert-{{ category }}">{{ message }}</div>
+                {% endfor %}
+            {% endif %}
+        {% endwith %}
+
+        <div class="job-stats">
+            <div class="stat-card">
+                <div class="stat-number">{{ stats.total }}</div>
+                <div class="stat-label">Всего запусков</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number" style="color: #27ae60;">{{ stats.success }}</div>
+                <div class="stat-label">Успешных</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number" style="color: #e74c3c;">{{ stats.failed }}</div>
+                <div class="stat-label">С ошибками</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number" style="color: #f39c12;">{{ stats.running }}</div>
+                <div class="stat-label">Выполняются</div>
+            </div>
+        </div>
+
+        <div class="filters">
+            <form method="GET" style="display: inline;">
+                <select name="job_name">
+                    <option value="">Все джобы</option>
+                    {% for job in job_names %}
+                    <option value="{{ job }}" {{ 'selected' if selected_job == job else '' }}>{{ job }}</option>
+                    {% endfor %}
+                </select>
+                <select name="status">
+                    <option value="">Все статусы</option>
+                    <option value="success" {{ 'selected' if selected_status == 'success' else '' }}>Успешные</option>
+                    <option value="failed" {{ 'selected' if selected_status == 'failed' else '' }}>С ошибками</option>
+                    <option value="running" {{ 'selected' if selected_status == 'running' else '' }}>Выполняются</option>
+                </select>
+                <button type="submit">Применить</button>
+            </form>
+
+            <button class="run-now-btn" onclick="runJob('hourly_recruit_accumulate')">▶️ Запустить hourly_recruit_accumulate</button>
+        </div>
+
+        <table class="jobs-table">
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>Джоба</th>
+                    <th>Статус</th>
+                    <th>Начало</th>
+                    <th>Окончание</th>
+                    <th>Длительность</th>
+                    <th>Записей</th>
+                    <th>Детали / Ошибка</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for job in jobs %}
+                <tr>
+                    <td>{{ job.id }}</td>
+                    <td><strong>{{ job.job_name }}</strong></td>
+                    <td class="status-{{ job.status }}">
+                        {% if job.status == 'success' %}✅{% elif job.status == 'failed' %}❌{% else %}⏳{% endif %}
+                        {{ job.status }}
+                    </td>
+                    <td>{{ job.started_at.strftime('%Y-%m-%d %H:%M:%S') if job.started_at else '-' }}</td>
+                    <td>{{ job.finished_at.strftime('%Y-%m-%d %H:%M:%S') if job.finished_at else '-' }}</td>
+                    <td>{{ job.duration_ms }}ms</td>
+                    <td>{{ job.records_processed }}</td>
+                    <td>
+                        {% if job.error_message %}
+                        <div class="error-message" title="{{ job.error_message }}">{{ job.error_message }}</div>
+                        {% elif job.details %}
+                        <div class="details-json" title="{{ job.details }}">{{ job.details }}</div>
+                        {% else %}
+                        -
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+
+        {% if total_pages > 1 %}
+        <div class="pagination">
+            {% if page > 1 %}
+            <a href="{{ url_for('admin_jobs', page=page-1, job_name=selected_job, status=selected_status) }}">← Назад</a>
+            {% endif %}
+            <span>Страница {{ page }} из {{ total_pages }}</span>
+            {% if page < total_pages %}
+            <a href="{{ url_for('admin_jobs', page=page+1, job_name=selected_job, status=selected_status) }}">Вперед →</a>
+            {% endif %}
+        </div>
+        {% endif %}
+    </div>
+
+    <script>
+    async function runJob(jobName) {
+        if (!confirm('Запустить джобу ' + jobName + ' сейчас?')) return;
+        try {
+            const response = await fetch('/admin/jobs/run', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({job_name: jobName})
+            });
+            const data = await response.json();
+            if (data.success) {
+                alert('Джоба успешно запущена! Task ID: ' + data.task_id);
+                location.reload();
+            } else {
+                alert('Ошибка: ' + (data.error || 'Unknown error'));
+            }
+        } catch (e) {
+            alert('Ошибка: ' + e.message);
+        }
+    }
+    </script>
     {{ footer_html|safe }}
 </body>
 </html>

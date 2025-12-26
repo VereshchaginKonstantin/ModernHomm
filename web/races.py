@@ -2287,6 +2287,33 @@ EDIT_UNIT_LEVEL_TEMPLATE = """
                 <input type="number" name="prestige_max" min="0" value="{{ level.prestige_max }}" required>
             </div>
 
+            <hr style="border-color: #444; margin: 20px 0;">
+            <h3 style="color: #ffd700;">Параметры найма (наемническая армия)</h3>
+
+            <div class="form-group">
+                <label>Скорость найма (юнитов/день)</label>
+                <input type="number" name="daily_recruit_speed" min="0" value="{{ level.daily_recruit_speed }}" required>
+                <small style="display: block; color: #aaa; margin-top: 5px;">Базовое количество юнитов, которые становятся доступны каждый день</small>
+            </div>
+
+            <div class="form-group">
+                <label>Стоимость улучшения скорости (монеты)</label>
+                <input type="number" name="speed_upgrade_cost" min="0" step="0.01" value="{{ level.speed_upgrade_cost }}" required>
+                <small style="display: block; color: #aaa; margin-top: 5px;">Стоимость +1 к скорости найма в монетах</small>
+            </div>
+
+            <div class="form-group">
+                <label>Стоимость улучшения скорости (кристаллы)</label>
+                <input type="number" name="speed_upgrade_cost_gems" min="0" value="{{ level.speed_upgrade_cost_gems }}" required>
+                <small style="display: block; color: #aaa; margin-top: 5px;">Стоимость +1 к скорости найма в кристаллах</small>
+            </div>
+
+            <div class="form-group">
+                <label>Стоимость разблокировки уровня (кристаллы)</label>
+                <input type="number" name="level_access_cost_gems" min="0" value="{{ level.level_access_cost_gems }}" required>
+                <small style="display: block; color: #aaa; margin-top: 5px;">Стоимость разблокировки найма юнитов этого уровня</small>
+            </div>
+
             <button type="submit" class="btn btn-success">Сохранить</button>
             <a href="{{ url_for('races.unit_levels_list') }}" class="btn btn-secondary">Отмена</a>
         </form>
@@ -2319,6 +2346,11 @@ def edit_unit_level(level_id):
             level.icon = request.form.get('icon', '🎮')
             level.prestige_min = int(request.form.get('prestige_min', 0))
             level.prestige_max = int(request.form.get('prestige_max', 100))
+            # Параметры найма
+            level.daily_recruit_speed = int(request.form.get('daily_recruit_speed', 1))
+            level.speed_upgrade_cost = float(request.form.get('speed_upgrade_cost', 100))
+            level.speed_upgrade_cost_gems = int(request.form.get('speed_upgrade_cost_gems', 10))
+            level.level_access_cost_gems = int(request.form.get('level_access_cost_gems', 0))
             session_db.commit()
             return redirect(url_for('races.unit_levels_list'))
 

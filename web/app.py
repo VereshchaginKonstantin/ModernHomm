@@ -8,6 +8,7 @@ import json
 import zipfile
 import shutil
 import hashlib
+import logging
 from io import BytesIO
 from functools import wraps
 from datetime import datetime
@@ -21,8 +22,11 @@ from web.races import races_bp
 from web.army import army_bp
 from web.templates import get_web_version, get_bot_version, HEADER_TEMPLATE, BASE_STYLE, FOOTER_TEMPLATE
 from web.app_templates import (
-    LEADERBOARD_TEMPLATE, HELP_TEMPLATE, LOGIN_TEMPLATE
+    LEADERBOARD_TEMPLATE, HELP_TEMPLATE, LOGIN_TEMPLATE, JOBS_TEMPLATE
 )
+
+# Логгер для джоб
+scheduler_logger = logging.getLogger('jobs')
 
 # Создать Flask приложение
 app = Flask(__name__, static_folder='static', static_url_path='/static')
@@ -484,6 +488,34 @@ def admin_toggle_debug():
         return jsonify({'success': True, 'debug_mode': new_value == 'true'})
 
 
+@app.route('/admin/debug/auth_toggle', methods=['POST'])
+@login_required
+def admin_toggle_debug_auth():
+    """API для переключения debug auth (аутентификация через URL)"""
+    from db.models import Config
+
+    if 'username' not in session:
+        return jsonify({'error': 'Unauthorized'}), 401
+
+    db_url = os.getenv('DATABASE_URL', 'postgresql://postgres:postgres@localhost:5434/telegram_bot')
+    db_instance = Database(db_url)
+    with db_instance.get_session() as db_session:
+        user = db_session.query(GameUser).filter_by(username=session['username']).first()
+        if not user or user.id not in [1, 4]:
+            return jsonify({'error': 'Admin access required'}), 403
+
+        config = db_session.query(Config).filter_by(key='debug_auth').first()
+        if not config:
+            config = Config(key='debug_auth', value='true', description='Allow authentication via URL player_id parameter')
+            db_session.add(config)
+
+        new_value = 'false' if config.value.lower() == 'true' else 'true'
+        config.value = new_value
+        db_session.commit()
+
+        return jsonify({'success': True, 'debug_auth': new_value == 'true'})
+
+
 @app.route('/export')
 @login_required
 def export_units():
@@ -500,12 +532,138 @@ def import_page():
     return redirect(url_for('races.races_list'))
 
 
+@app.route('/admin/jobs')
+@login_required
+def admin_jobs():
+    """Страница логов выполнения джоб (только для админов)"""
+    from db.models import JobLog
+
+    # Проверяем права админа
+    if 'username' not in session:
+        return redirect(url_for('login'))
+
+    db_url = os.getenv('DATABASE_URL', 'postgresql://postgres:postgres@localhost:5434/telegram_bot')
+    db_instance = Database(db_url)
+
+    with db_instance.get_session() as db_session:
+        user = db_session.query(GameUser).filter_by(username=session['username']).first()
+        if not user or user.id not in [1, 4]:
+            flash('Доступ запрещен. Требуются права администратора.', 'error')
+            return redirect(url_for('index'))
+
+        # Параметры пагинации и фильтрации
+        page = request.args.get('page', 1, type=int)
+        per_page = 50
+        selected_job = request.args.get('job_name', '')
+        selected_status = request.args.get('status', '')
+
+        # Базовый запрос
+        query = db_session.query(JobLog)
+
+        # Фильтры
+        if selected_job:
+            query = query.filter(JobLog.job_name == selected_job)
+        if selected_status:
+            query = query.filter(JobLog.status == selected_status)
+
+        # Статистика
+        total_query = db_session.query(JobLog)
+        stats = {
+            'total': total_query.count(),
+            'success': total_query.filter(JobLog.status == 'success').count(),
+            'failed': total_query.filter(JobLog.status == 'failed').count(),
+            'running': total_query.filter(JobLog.status == 'running').count(),
+        }
+
+        # Уникальные названия джоб для фильтра
+        job_names = [row[0] for row in db_session.query(JobLog.job_name).distinct().all()]
+
+        # Общее количество записей с фильтрами
+        total_count = query.count()
+        total_pages = (total_count + per_page - 1) // per_page
+
+        # Пагинация
+        offset = (page - 1) * per_page
+        jobs = query.order_by(JobLog.started_at.desc()).offset(offset).limit(per_page).all()
+
+        return render_template_string(
+            JOBS_TEMPLATE,
+            jobs=jobs,
+            stats=stats,
+            job_names=job_names,
+            selected_job=selected_job,
+            selected_status=selected_status,
+            page=page,
+            total_pages=total_pages,
+            active_page='admin_jobs'
+        )
+
+
+@app.route('/admin/jobs/run', methods=['POST'])
+@login_required
+def admin_run_job():
+    """API для ручного запуска джобы (только для админов)"""
+    from db.models import JobLog
+
+    if 'username' not in session:
+        return jsonify({'error': 'Unauthorized'}), 401
+
+    db_url = os.getenv('DATABASE_URL', 'postgresql://postgres:postgres@localhost:5434/telegram_bot')
+    db_instance = Database(db_url)
+
+    with db_instance.get_session() as db_session:
+        user = db_session.query(GameUser).filter_by(username=session['username']).first()
+        if not user or user.id not in [1, 4]:
+            return jsonify({'error': 'Admin access required'}), 403
+
+    data = request.get_json() or {}
+    job_name = data.get('job_name')
+
+    if not job_name:
+        return jsonify({'error': 'job_name is required'}), 400
+
+    # Отправляем задачу в Celery
+    try:
+        import redis
+        redis_url = os.getenv('REDIS_URL', 'redis://localhost:6379/0')
+        r = redis.from_url(redis_url)
+        r.ping()  # Проверяем доступность Redis
+
+        from jobs.celery_app import celery_app
+        if job_name == 'hourly_recruit_accumulate':
+            from jobs.tasks import hourly_recruit_accumulate
+            task = hourly_recruit_accumulate.delay()
+            return jsonify({'success': True, 'task_id': task.id, 'message': 'Job queued'})
+        elif job_name == 'daily_reset_limits':
+            from jobs.tasks import daily_reset_limits
+            task = daily_reset_limits.delay()
+            return jsonify({'success': True, 'task_id': task.id, 'message': 'Job queued'})
+        else:
+            return jsonify({'error': f'Unknown job: {job_name}'}), 400
+    except Exception as e:
+        # Если Celery/Redis недоступны, запускаем синхронно
+        scheduler_logger.warning(f"Celery unavailable, running job synchronously: {e}")
+        try:
+            if job_name == 'hourly_recruit_accumulate':
+                from jobs.hourly_recruit_accumulate import accumulate_hourly_units
+                updated = accumulate_hourly_units(db_instance)
+                return jsonify({'success': True, 'task_id': 'sync', 'message': f'Job completed synchronously, updated {updated} records'})
+            else:
+                return jsonify({'error': f'Unknown job for sync execution: {job_name}'}), 400
+        except Exception as sync_error:
+            return jsonify({'error': str(sync_error)}), 500
+
+
 def main():
     """Запуск веб-приложения"""
+    # Настройка логирования
+    logging.basicConfig(level=logging.INFO)
+
     # Получить порт из переменной окружения или использовать 5000 по умолчанию
     port = int(os.getenv('PORT', 5000))
     print(f"Запуск веб-интерфейса на http://0.0.0.0:{port}")
     print("Используйте Ctrl+C для остановки")
+    print("Примечание: Фоновые задачи выполняются в отдельном контейнере jobs (Celery)")
     app.run(host='0.0.0.0', port=port, debug=False)
 
 

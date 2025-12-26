@@ -1,0 +1,117 @@
+[gd_scene load_steps=2 format=3 uid="uid://crace_manager"]
+
+[ext_resource type="Script" path="res://scripts/race_manager.gd" id="1_race"]
+
+[node name="RaceManager" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_race")
+
+[node name="Background" type="ColorRect" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+color = Color(0.101961, 0.101961, 0.180392, 1)
+
+[node name="VBoxContainer" type="VBoxContainer" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 20.0
+offset_top = 20.0
+offset_right = -20.0
+offset_bottom = -20.0
+theme_override_constants/separation = 15
+
+[node name="Header" type="HBoxContainer" parent="VBoxContainer"]
+layout_mode = 2
+
+[node name="BackButton" type="Button" parent="VBoxContainer/Header"]
+unique_name_in_owner = true
+layout_mode = 2
+custom_minimum_size = Vector2(100, 40)
+text = "<< Назад"
+
+[node name="Title" type="Label" parent="VBoxContainer/Header"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_font_sizes/font_size = 28
+text = "Мои расы - Управление наймом"
+horizontal_alignment = 1
+
+[node name="BalanceLabel" type="Label" parent="VBoxContainer/Header"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_colors/font_color = Color(0.9, 0.8, 0.2, 1)
+theme_override_font_sizes/font_size = 16
+text = "Баланс: загрузка..."
+
+[node name="HSeparator" type="HSeparator" parent="VBoxContainer"]
+layout_mode = 2
+
+[node name="ContentContainer" type="HBoxContainer" parent="VBoxContainer"]
+layout_mode = 2
+size_flags_vertical = 3
+theme_override_constants/separation = 20
+
+[node name="RacesList" type="VBoxContainer" parent="VBoxContainer/ContentContainer"]
+layout_mode = 2
+custom_minimum_size = Vector2(250, 0)
+theme_override_constants/separation = 10
+
+[node name="RacesLabel" type="Label" parent="VBoxContainer/ContentContainer/RacesList"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 18
+text = "Выберите расу:"
+
+[node name="RacesScroll" type="ScrollContainer" parent="VBoxContainer/ContentContainer/RacesList"]
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="RacesContainer" type="VBoxContainer" parent="VBoxContainer/ContentContainer/RacesList/RacesScroll"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 5
+
+[node name="LevelsPanel" type="PanelContainer" parent="VBoxContainer/ContentContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="VBox" type="VBoxContainer" parent="VBoxContainer/ContentContainer/LevelsPanel"]
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="RaceNameLabel" type="Label" parent="VBoxContainer/ContentContainer/LevelsPanel/VBox"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_font_sizes/font_size = 22
+text = "Выберите расу слева"
+horizontal_alignment = 1
+
+[node name="HSeparator" type="HSeparator" parent="VBoxContainer/ContentContainer/LevelsPanel/VBox"]
+layout_mode = 2
+
+[node name="LevelsScroll" type="ScrollContainer" parent="VBoxContainer/ContentContainer/LevelsPanel/VBox"]
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="LevelsContainer" type="VBoxContainer" parent="VBoxContainer/ContentContainer/LevelsPanel/VBox/LevelsScroll"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 10
+
+[node name="StatusLabel" type="Label" parent="VBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_colors/font_color = Color(0.952941, 0.611765, 0.0705882, 1)
+theme_override_font_sizes/font_size = 14
+text = ""
+horizontal_alignment = 1

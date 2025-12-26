@@ -16,7 +16,7 @@ from flask import Blueprint, request, jsonify, make_response, redirect
 from functools import wraps
 from werkzeug.security import generate_password_hash, check_password_hash
 
-from db.models import GameUser, Game, GameStatus, BattleUnit, Field, GameLog, Obstacle, Army, ArmyUnit, UserRace, RaceUnit, RaceUnitSkin, ClientLog, Config
+from db.models import GameUser, Game, GameStatus, BattleUnit, Field, GameLog, Obstacle, Army, ArmyUnit, UserRace, RaceUnit, RaceUnitSkin, ClientLog, Config, UnitLevel, UserUnitLimit, UserRaceUnitLimit
 from db.repository import Database
 from core.game_engine import GameEngine
 
@@ -109,9 +109,35 @@ def get_token_from_request():
 
 
 def token_required(f):
-    """Decorator to require valid JWT token for API endpoints"""
+    """Decorator to require valid JWT token for API endpoints
+
+    Поддерживает debug mode: если передан заголовок X-Debug-Player-Id
+    и флаг debug_auth включен в БД, то используется player_id из заголовка
+    вместо JWT токена (для тестирования без логина).
+    """
     @wraps(f)
     def decorated(*args, **kwargs):
+        # Проверяем debug auth mode (X-Debug-Player-Id header)
+        debug_player_id = request.headers.get('X-Debug-Player-Id')
+        if debug_player_id:
+            try:
+                player_id = int(debug_player_id)
+                if player_id > 0:
+                    # Проверяем включен ли debug_auth в БД
+                    with db.get_session() as session_db:
+                        config = session_db.query(Config).filter_by(key='debug_auth').first()
+                        debug_auth_enabled = config.value.lower() == 'true' if config else False
+
+                    if debug_auth_enabled:
+                        # Debug auth mode - используем player_id из заголовка
+                        request.player_id = player_id
+                        request.username = f"Debug Player {player_id}"
+                        logger.info(f"Debug auth: player_id={player_id}")
+                        return f(*args, **kwargs)
+            except ValueError:
+                pass
+
+        # Стандартная JWT аутентификация
         token = get_token_from_request()
         if not token:
             return jsonify({'error': 'Token is required', 'code': 'TOKEN_MISSING'}), 401
@@ -930,11 +956,9 @@ def api_public_move(game_id):
         if action == 'move':
             success, message, turn_changed = engine.move_unit(game_id, player_id, unit_id, target_x, target_y)
         elif action == 'attack':
-            success, message, turn_changed = engine.attack_unit(game_id, player_id, unit_id, target_id)
+            success, message, turn_changed = engine.attack(game_id, player_id, unit_id, target_id)
         elif action == 'skip':
-            success, message, turn_changed = engine.skip_unit(game_id, player_id, unit_id)
-        elif action == 'defer':
-            success, message, turn_changed = engine.defer_unit(game_id, player_id, unit_id)
+            success, message, turn_changed = engine.skip_unit_turn(game_id, player_id, unit_id)
         else:
             return jsonify({'error': 'Invalid action'}), 400
 
@@ -1154,6 +1178,66 @@ def _get_hire_cost(race_unit) -> int:
     return 100  # Default cost
 
 
+def _get_or_create_user_unit_limits(session_db, user_id: int) -> dict:
+    """
+    Получить или создать лимиты найма юнитов для пользователя.
+    Возвращает словарь {unit_level_id: UserUnitLimit}
+    """
+    # Получаем все уровни юнитов
+    unit_levels = session_db.query(UnitLevel).all()
+
+    # Получаем существующие лимиты пользователя
+    existing_limits = session_db.query(UserUnitLimit).filter_by(user_id=user_id).all()
+    limits_by_level = {ul.unit_level_id: ul for ul in existing_limits}
+
+    # Создаём недостающие лимиты
+    for ul in unit_levels:
+        if ul.id not in limits_by_level:
+            # Уровни 1 и 2 разблокированы по умолчанию
+            level_unlocked = ul.level_access_cost_gems == 0
+            new_limit = UserUnitLimit(
+                user_id=user_id,
+                unit_level_id=ul.id,
+                available_count=ul.daily_recruit_speed if level_unlocked else 0,
+                daily_speed=ul.daily_recruit_speed,
+                level_unlocked=level_unlocked
+            )
+            session_db.add(new_limit)
+            limits_by_level[ul.id] = new_limit
+
+    session_db.flush()
+    return limits_by_level
+
+
+def _regenerate_unit_limits(session_db, user_id: int) -> dict:
+    """
+    Регенерация доступных юнитов (раз в день).
+    Возвращает обновлённые лимиты.
+    """
+    limits_by_level = _get_or_create_user_unit_limits(session_db, user_id)
+    now = datetime.utcnow()
+
+    for limit in limits_by_level.values():
+        if limit.level_unlocked:
+            # Проверяем прошёл ли день с последнего сброса
+            time_diff = now - limit.last_reset_at
+            days_passed = time_diff.days
+
+            if days_passed >= 1:
+                # Добавляем юнитов за каждый прошедший день
+                limit.available_count += limit.daily_speed * days_passed
+                limit.last_reset_at = now
+
+    session_db.flush()
+    return limits_by_level
+
+
+def _get_unit_limit_for_level(session_db, user_id: int, unit_level_id: int) -> UserUnitLimit:
+    """Получить лимит для конкретного уровня юнита"""
+    limits = _regenerate_unit_limits(session_db, user_id)
+    return limits.get(unit_level_id)
+
+
 @arena_bp.route('/api/public/armies')
 @token_required
 def api_public_armies():
@@ -1161,6 +1245,20 @@ def api_public_armies():
     player_id = request.player_id
 
     with db.get_session() as session_db:
+        # Получаем ID армий, занятых в активных играх (waiting или in_progress)
+        from sqlalchemy import or_
+        active_games = session_db.query(Game).filter(
+            or_(Game.status == GameStatus.WAITING, Game.status == GameStatus.IN_PROGRESS),
+            or_(Game.player1_id == player_id, Game.player2_id == player_id)
+        ).all()
+
+        busy_army_ids = set()
+        for game in active_games:
+            if game.player1_id == player_id and game.player1_army_id:
+                busy_army_ids.add(game.player1_army_id)
+            if game.player2_id == player_id and game.player2_army_id:
+                busy_army_ids.add(game.player2_army_id)
+
         armies = []
         user_races = session_db.query(UserRace).filter_by(user_id=player_id).all()
         for user_race in user_races:
@@ -1174,7 +1272,6 @@ def api_public_armies():
                             'army_unit_id': au.id,
                             'race_unit_id': au.race_unit.id,
                             'name': au.race_unit.name,
-                            'icon': au.race_unit.unit_level.icon if au.race_unit.unit_level else '?',
                             'count': au.count,
                             'attack': au.race_unit.attack,
                             'defense': au.race_unit.defense,
@@ -1186,13 +1283,19 @@ def api_public_armies():
                             'has_image': skin and skin.image_data is not None,
                             'image_url': f'/arena/api/public/skins/{skin.id}/image' if skin and skin.image_data else None
                         })
+
+                # Проверяем занята ли армия в активном бою
+                is_in_battle = army.id in busy_army_ids
+
                 armies.append({
                     'army_id': army.id,
                     'army_name': army.name,
+                    'army_type': army.army_type,
                     'army_cost': army_cost,
                     'user_race_id': user_race.id,
                     'race_name': user_race.race.name if user_race.race else 'Unknown',
-                    'units': army_units
+                    'units': army_units,
+                    'is_in_battle': is_in_battle
                 })
 
         return jsonify({'armies': armies})
@@ -1206,23 +1309,26 @@ def api_public_create_army():
     data = request.get_json() or {}
     army_name = data.get('name', 'Новая армия')
     user_race_id = data.get('user_race_id')
+    army_type = data.get('army_type', Army.TYPE_MERCENARY)
+
+    # Валидация типа армии
+    if army_type not in [Army.TYPE_RATED, Army.TYPE_MERCENARY]:
+        return jsonify({'error': 'Неверный тип армии. Допустимые: rated, mercenary'}), 400
 
     with db.get_session() as session_db:
-        # Если user_race_id не указан, берём первую расу игрока
+        # Если user_race_id не указан, возвращаем ошибку
         if not user_race_id:
-            user_race = session_db.query(UserRace).filter_by(user_id=player_id).first()
-            if not user_race:
-                return jsonify({'error': 'У вас нет доступных рас. Выберите расу сначала.'}), 400
-            user_race_id = user_race.id
-        else:
-            user_race = session_db.query(UserRace).filter_by(id=user_race_id, user_id=player_id).first()
-            if not user_race:
-                return jsonify({'error': 'Раса не найдена'}), 404
+            return jsonify({'error': 'Необходимо выбрать расу (user_race_id)'}), 400
+
+        user_race = session_db.query(UserRace).filter_by(id=user_race_id, user_id=player_id).first()
+        if not user_race:
+            return jsonify({'error': 'Раса не найдена'}), 404
 
         # Создаём армию
         new_army = Army(
             name=army_name,
-            user_race_id=user_race_id
+            user_race_id=user_race_id,
+            army_type=army_type
         )
         session_db.add(new_army)
         session_db.commit()
@@ -1230,7 +1336,8 @@ def api_public_create_army():
         return jsonify({
             'success': True,
             'army_id': new_army.id,
-            'army_name': new_army.name
+            'army_name': new_army.name,
+            'army_type': new_army.army_type
         })
 
 
@@ -1315,9 +1422,48 @@ def api_public_available_units(army_id):
         if army.user_race.user_id != player_id:
             return jsonify({'error': 'Нет доступа к этой армии'}), 403
 
-        # Получаем баланс игрока
+        # Проверяем, находится ли армия в активной игре
+        from sqlalchemy import or_
+        active_games = session_db.query(Game).filter(
+            or_(Game.status == GameStatus.WAITING, Game.status == GameStatus.IN_PROGRESS),
+            or_(
+                Game.player1_army_id == army_id,
+                Game.player2_army_id == army_id
+            )
+        ).first()
+        is_in_battle = active_games is not None
+
+        # Получаем баланс и кристаллы игрока
         player = session_db.query(GameUser).filter_by(id=player_id).first()
         player_balance = float(player.balance) if player else 0
+        player_crystals = player.crystals if player else 0
+
+        # Определяем тип армии
+        is_rated = army.army_type == Army.TYPE_RATED
+
+        # Для наёмной армии получаем лимиты найма из UserRaceUnitLimit
+        unit_limits = {}
+        if not is_rated:
+            # Получаем лимиты для конкретной user_race армии
+            from core.unit_limits import initialize_user_race_unit_limits
+            limits = session_db.query(UserRaceUnitLimit).filter_by(
+                user_race_id=army.user_race_id
+            ).join(UnitLevel).all()
+
+            # Если лимитов нет - инициализируем
+            if not limits:
+                initialize_user_race_unit_limits(db, army.user_race_id)
+                limits = session_db.query(UserRaceUnitLimit).filter_by(
+                    user_race_id=army.user_race_id
+                ).join(UnitLevel).all()
+
+            for limit in limits:
+                unit_limits[limit.unit_level.level] = {
+                    'unlocked': limit.level_unlocked,
+                    'available': limit.available_count,
+                    'daily_speed': limit.daily_speed,
+                    'unlock_cost': limit.unit_level.level_access_cost_gems
+                }
 
         # Получаем юнитов расы
         race_units = session_db.query(RaceUnit).filter_by(race_id=army.user_race.race_id).all()
@@ -1333,11 +1479,13 @@ def api_public_available_units(army_id):
             current_count = existing_au.count if existing_au else 0
 
             hire_cost = _get_hire_cost(ru)
-            available_units.append({
+            unit_level = ru.unit_level.level if ru.unit_level else 1
+
+            # Базовая информация
+            unit_data = {
                 'race_unit_id': ru.id,
                 'name': ru.name,
-                'icon': ru.unit_level.icon if ru.unit_level else '?',
-                'level': ru.unit_level.level if ru.unit_level else 1,
+                'level': unit_level,
                 'attack': ru.attack,
                 'defense': ru.defense,
                 'health': ru.health,
@@ -1346,14 +1494,37 @@ def api_public_available_units(army_id):
                 'max_damage': ru.max_damage,
                 'hire_cost': hire_cost,
                 'current_count': current_count,
-                'can_afford': player_balance >= hire_cost,
                 'has_image': skin and skin.image_data is not None,
                 'image_url': f'/arena/api/public/skins/{skin.id}/image' if skin and skin.image_data else None
-            })
+            }
+
+            # Для рейтинговой армии - нет ограничений
+            if is_rated:
+                unit_data['level_unlocked'] = True
+                unit_data['available_to_hire'] = 999  # Без ограничений
+                unit_data['can_hire'] = player_balance >= hire_cost
+                unit_data['unlock_cost_gems'] = 0
+            else:
+                # Для наёмной армии - проверяем лимиты
+                limit_info = unit_limits.get(unit_level, {'unlocked': False, 'available': 0, 'unlock_cost': 0})
+                unit_data['level_unlocked'] = limit_info['unlocked']
+                unit_data['available_to_hire'] = limit_info['available']
+                unit_data['daily_speed'] = limit_info.get('daily_speed', 0)
+                unit_data['unlock_cost_gems'] = limit_info['unlock_cost']
+                unit_data['can_hire'] = (
+                    limit_info['unlocked'] and
+                    limit_info['available'] > 0 and
+                    player_balance >= hire_cost
+                )
+
+            available_units.append(unit_data)
 
         return jsonify({
             'army_id': army_id,
+            'army_type': army.army_type,
+            'is_in_battle': is_in_battle,
             'player_balance': player_balance,
+            'player_crystals': player_crystals,
             'units': available_units
         })
 
@@ -1381,6 +1552,18 @@ def api_public_hire_unit(army_id):
         if army.user_race.user_id != player_id:
             return jsonify({'error': 'Нет доступа к этой армии'}), 403
 
+        # Проверяем, находится ли армия в активной игре
+        from sqlalchemy import or_
+        active_game = session_db.query(Game).filter(
+            or_(Game.status == GameStatus.WAITING, Game.status == GameStatus.IN_PROGRESS),
+            or_(
+                Game.player1_army_id == army_id,
+                Game.player2_army_id == army_id
+            )
+        ).first()
+        if active_game:
+            return jsonify({'error': 'Нельзя нанимать юнитов в армию, которая находится в бою'}), 400
+
         # Получаем юнита расы
         race_unit = session_db.query(RaceUnit).filter_by(id=race_unit_id).first()
         if not race_unit:
@@ -1396,6 +1579,26 @@ def api_public_hire_unit(army_id):
         total_cost = hire_cost * count
         if player.balance < total_cost:
             return jsonify({'error': f'Недостаточно средств. Нужно: {total_cost}, у вас: {player.balance}'}), 400
+
+        # Для наёмной армии проверяем лимиты через UserRaceUnitLimit
+        unit_limit = None
+        if army.army_type != Army.TYPE_RATED:
+            if not race_unit.unit_level:
+                return jsonify({'error': 'Юнит не имеет уровня'}), 400
+
+            # Получаем лимит для конкретной user_race армии
+            unit_limit = session_db.query(UserRaceUnitLimit).filter_by(
+                user_race_id=army.user_race_id,
+                unit_level_id=race_unit.unit_level.id
+            ).first()
+            if not unit_limit:
+                return jsonify({'error': 'Лимит не найден'}), 400
+
+            if not unit_limit.level_unlocked:
+                return jsonify({'error': f'Уровень {race_unit.unit_level.level} не разблокирован'}), 400
+
+            if unit_limit.available_count < count:
+                return jsonify({'error': f'Недостаточно доступных юнитов. Доступно: {unit_limit.available_count}'}), 400
 
         # Находим или создаём ArmyUnit
         army_unit = session_db.query(ArmyUnit).filter_by(
@@ -1415,6 +1618,11 @@ def api_public_hire_unit(army_id):
 
         # Списываем деньги
         player.balance -= total_cost
+
+        # Уменьшаем доступное количество для наёмной армии
+        if unit_limit:
+            unit_limit.available_count -= count
+
         session_db.commit()
 
         return jsonify({
@@ -1422,7 +1630,8 @@ def api_public_hire_unit(army_id):
             'hired_count': count,
             'total_cost': total_cost,
             'new_balance': float(player.balance),
-            'new_unit_count': army_unit.count
+            'new_unit_count': army_unit.count,
+            'available_remaining': unit_limit.available_count if unit_limit else 999
         })
 
 
@@ -1448,6 +1657,18 @@ def api_public_dismiss_unit(army_id):
 
         if army.user_race.user_id != player_id:
             return jsonify({'error': 'Нет доступа к этой армии'}), 403
+
+        # Проверяем, находится ли армия в активной игре
+        from sqlalchemy import or_
+        active_game = session_db.query(Game).filter(
+            or_(Game.status == GameStatus.WAITING, Game.status == GameStatus.IN_PROGRESS),
+            or_(
+                Game.player1_army_id == army_id,
+                Game.player2_army_id == army_id
+            )
+        ).first()
+        if active_game:
+            return jsonify({'error': 'Нельзя распускать юнитов из армии, которая находится в бою'}), 400
 
         # Находим юнита в армии
         army_unit = session_db.query(ArmyUnit).filter_by(
@@ -1503,6 +1724,143 @@ def api_public_user_races():
         return jsonify({'user_races': races})
 
 
+# ============= Unit Limits API =============
+
+@arena_bp.route('/api/public/unit_limits')
+@token_required
+def api_public_unit_limits():
+    """Получить лимиты найма юнитов для текущего игрока"""
+    player_id = request.player_id
+
+    with db.get_session() as session_db:
+        player = session_db.query(GameUser).filter_by(id=player_id).first()
+        if not player:
+            return jsonify({'error': 'Игрок не найден'}), 404
+
+        # Получаем и регенерируем лимиты
+        limits = _regenerate_unit_limits(session_db, player_id)
+        session_db.commit()
+
+        levels_data = []
+        for limit in limits.values():
+            unit_level = session_db.query(UnitLevel).filter_by(id=limit.unit_level_id).first()
+            if unit_level:
+                levels_data.append({
+                    'level': unit_level.level,
+                    'unlocked': limit.level_unlocked,
+                    'available': limit.available_count,
+                    'daily_speed': limit.daily_speed,
+                    'unlock_cost_gems': unit_level.level_access_cost_gems,
+                    'upgrade_cost_gems': unit_level.speed_upgrade_cost_gems
+                })
+
+        # Сортируем по уровню
+        levels_data.sort(key=lambda x: x['level'])
+
+        return jsonify({
+            'crystals': player.crystals,
+            'levels': levels_data
+        })
+
+
+@arena_bp.route('/api/public/unit_levels/<int:level>/unlock', methods=['POST'])
+@token_required
+def api_public_unlock_level(level):
+    """Разблокировать уровень юнитов за кристаллы"""
+    player_id = request.player_id
+
+    with db.get_session() as session_db:
+        player = session_db.query(GameUser).filter_by(id=player_id).first()
+        if not player:
+            return jsonify({'error': 'Игрок не найден'}), 404
+
+        # Находим уровень
+        unit_level = session_db.query(UnitLevel).filter_by(level=level).first()
+        if not unit_level:
+            return jsonify({'error': f'Уровень {level} не найден'}), 404
+
+        # Проверяем стоимость
+        unlock_cost = unit_level.level_access_cost_gems
+        if unlock_cost == 0:
+            return jsonify({'error': 'Этот уровень уже бесплатно разблокирован'}), 400
+
+        if player.crystals < unlock_cost:
+            return jsonify({'error': f'Недостаточно кристаллов. Нужно: {unlock_cost}, у вас: {player.crystals}'}), 400
+
+        # Получаем лимит пользователя
+        limits = _get_or_create_user_unit_limits(session_db, player_id)
+        user_limit = limits.get(unit_level.id)
+
+        if not user_limit:
+            return jsonify({'error': 'Лимит не найден'}), 400
+
+        if user_limit.level_unlocked:
+            return jsonify({'error': 'Уровень уже разблокирован'}), 400
+
+        # Списываем кристаллы и разблокируем
+        player.crystals -= unlock_cost
+        user_limit.level_unlocked = True
+        user_limit.available_count = unit_level.daily_recruit_speed
+        user_limit.daily_speed = unit_level.daily_recruit_speed
+        user_limit.last_reset_at = datetime.utcnow()
+
+        session_db.commit()
+
+        return jsonify({
+            'success': True,
+            'level': level,
+            'new_crystals': player.crystals,
+            'available_count': user_limit.available_count,
+            'daily_speed': user_limit.daily_speed
+        })
+
+
+@arena_bp.route('/api/public/unit_levels/<int:level>/upgrade_speed', methods=['POST'])
+@token_required
+def api_public_upgrade_speed(level):
+    """Увеличить скорость регенерации юнитов за кристаллы"""
+    player_id = request.player_id
+
+    with db.get_session() as session_db:
+        player = session_db.query(GameUser).filter_by(id=player_id).first()
+        if not player:
+            return jsonify({'error': 'Игрок не найден'}), 404
+
+        # Находим уровень
+        unit_level = session_db.query(UnitLevel).filter_by(level=level).first()
+        if not unit_level:
+            return jsonify({'error': f'Уровень {level} не найден'}), 404
+
+        # Получаем лимит пользователя
+        limits = _get_or_create_user_unit_limits(session_db, player_id)
+        user_limit = limits.get(unit_level.id)
+
+        if not user_limit:
+            return jsonify({'error': 'Лимит не найден'}), 400
+
+        if not user_limit.level_unlocked:
+            return jsonify({'error': 'Сначала разблокируйте уровень'}), 400
+
+        # Проверяем стоимость апгрейда
+        upgrade_cost = unit_level.speed_upgrade_cost_gems
+        if player.crystals < upgrade_cost:
+            return jsonify({'error': f'Недостаточно кристаллов. Нужно: {upgrade_cost}, у вас: {player.crystals}'}), 400
+
+        # Списываем кристаллы и увеличиваем скорость
+        player.crystals -= upgrade_cost
+        user_limit.daily_speed += 1
+
+        session_db.commit()
+
+        return jsonify({
+            'success': True,
+            'level': level,
+            'new_crystals': player.crystals,
+            'new_daily_speed': user_limit.daily_speed,
+            'upgrade_cost': upgrade_cost
+        })
+
+
 # ============= Client Logging API =============
 
 @arena_bp.route('/api/public/debug/status')
@@ -1512,6 +1870,15 @@ def api_debug_status():
         config = session_db.query(Config).filter_by(key='debug_mode').first()
         debug_enabled = config.value.lower() == 'true' if config else True
         return jsonify({'debug_mode': debug_enabled})
+
+
+@arena_bp.route('/api/public/debug/auth_status')
+def api_debug_auth_status():
+    """Публичный эндпоинт - проверить статус debug auth (аутентификация через URL)"""
+    with db.get_session() as session_db:
+        config = session_db.query(Config).filter_by(key='debug_auth').first()
+        debug_auth_enabled = config.value.lower() == 'true' if config else False
+        return jsonify({'debug_auth': debug_auth_enabled})
 
 
 @arena_bp.route('/api/public/logs', methods=['POST'])
@@ -1637,3 +2004,150 @@ def api_toggle_debug():
         session_db.commit()
 
         return jsonify({'success': True, 'debug_mode': new_value == 'true'})
+
+
+# =============================================================================
+# API для управления лимитами найма юнитов по расам
+# =============================================================================
+
+@arena_bp.route('/api/public/races/<int:user_race_id>/unit-limits', methods=['GET'])
+@token_required
+def api_get_race_unit_limits(user_race_id):
+    """Получить лимиты найма для расы пользователя"""
+    player_id = request.player_id
+
+    with db.get_session() as session_db:
+        # Проверяем, что раса принадлежит пользователю
+        user_race = session_db.query(UserRace).filter_by(id=user_race_id, user_id=player_id).first()
+        if not user_race:
+            return jsonify({'error': 'Раса не найдена'}), 404
+
+        # Получаем лимиты
+        limits = session_db.query(UserRaceUnitLimit).filter_by(
+            user_race_id=user_race_id
+        ).join(UnitLevel).order_by(UnitLevel.level).all()
+
+        # Если лимитов нет - инициализируем
+        if not limits:
+            from core.unit_limits import initialize_user_race_unit_limits
+            initialize_user_race_unit_limits(db, user_race_id)
+            limits = session_db.query(UserRaceUnitLimit).filter_by(
+                user_race_id=user_race_id
+            ).join(UnitLevel).order_by(UnitLevel.level).all()
+
+        result = []
+        for limit in limits:
+            result.append({
+                'id': limit.id,
+                'unit_level_id': limit.unit_level_id,
+                'level': limit.unit_level.level,
+                'level_icon': limit.unit_level.icon,
+                'available_count': limit.available_count,
+                'daily_speed': limit.daily_speed,
+                'level_unlocked': limit.level_unlocked,
+                'accumulated_fraction': float(limit.accumulated_fraction),
+                'unlock_cost_gems': limit.unit_level.level_access_cost_gems,
+                'speed_upgrade_cost': float(limit.unit_level.speed_upgrade_cost),
+                'speed_upgrade_cost_gems': limit.unit_level.speed_upgrade_cost_gems
+            })
+
+        return jsonify({'limits': result})
+
+
+@arena_bp.route('/api/public/races/<int:user_race_id>/unlock-level', methods=['POST'])
+@token_required
+def api_unlock_race_level(user_race_id):
+    """Разблокировать уровень найма для расы"""
+    player_id = request.player_id
+    data = request.get_json() or {}
+    unit_level_id = data.get('unit_level_id')
+
+    if not unit_level_id:
+        return jsonify({'error': 'unit_level_id обязателен'}), 400
+
+    from core.unit_limits import unlock_race_unit_level
+    success, message, data_result = unlock_race_unit_level(db, player_id, user_race_id, unit_level_id)
+
+    if success:
+        return jsonify({'success': True, 'message': message, 'data': data_result})
+    else:
+        return jsonify({'error': message}), 400
+
+
+@arena_bp.route('/api/public/races/<int:user_race_id>/upgrade-speed', methods=['POST'])
+@token_required
+def api_upgrade_race_speed(user_race_id):
+    """Увеличить скорость найма для расы"""
+    player_id = request.player_id
+    data = request.get_json() or {}
+    unit_level_id = data.get('unit_level_id')
+    use_gems = data.get('use_gems', False)
+
+    if not unit_level_id:
+        return jsonify({'error': 'unit_level_id обязателен'}), 400
+
+    from core.unit_limits import upgrade_race_recruit_speed
+    success, message, data_result = upgrade_race_recruit_speed(db, player_id, user_race_id, unit_level_id, use_gems)
+
+    if success:
+        return jsonify({'success': True, 'message': message, 'data': data_result})
+    else:
+        return jsonify({'error': message}), 400
+
+
+@arena_bp.route('/api/public/user/races-with-limits', methods=['GET'])
+@token_required
+def api_get_user_races_with_limits():
+    """Получить все расы пользователя с лимитами найма"""
+    player_id = request.player_id
+
+    with db.get_session() as session_db:
+        user_races = session_db.query(UserRace).filter_by(user_id=player_id).all()
+
+        result = []
+        for ur in user_races:
+            # Получаем лимиты
+            limits = session_db.query(UserRaceUnitLimit).filter_by(
+                user_race_id=ur.id
+            ).join(UnitLevel).order_by(UnitLevel.level).all()
+
+            # Если лимитов нет - инициализируем
+            if not limits:
+                from core.unit_limits import initialize_user_race_unit_limits
+                initialize_user_race_unit_limits(db, ur.id)
+                limits = session_db.query(UserRaceUnitLimit).filter_by(
+                    user_race_id=ur.id
+                ).join(UnitLevel).order_by(UnitLevel.level).all()
+
+            limits_data = []
+            for limit in limits:
+                limits_data.append({
+                    'id': limit.id,
+                    'unit_level_id': limit.unit_level_id,
+                    'level': limit.unit_level.level,
+                    'level_icon': limit.unit_level.icon,
+                    'available_count': limit.available_count,
+                    'daily_speed': limit.daily_speed,
+                    'level_unlocked': limit.level_unlocked,
+                    'unlock_cost_gems': limit.unit_level.level_access_cost_gems,
+                    'speed_upgrade_cost': float(limit.unit_level.speed_upgrade_cost),
+                    'speed_upgrade_cost_gems': limit.unit_level.speed_upgrade_cost_gems
+                })
+
+            result.append({
+                'id': ur.id,
+                'race_id': ur.race_id,
+                'race_name': ur.race.name,
+                'race_description': ur.race.description,
+                'unit_limits': limits_data
+            })
+
+        # Также вернём баланс пользователя
+        user = session_db.query(GameUser).filter_by(id=player_id).first()
+        user_balance = {
+            'balance': float(user.balance) if user.balance else 0,
+            'crystals': user.crystals or 0,
+            'glory': user.glory or 0
+        }
+
+        return jsonify({'races': result, 'user_balance': user_balance})

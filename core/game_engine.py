@@ -1652,23 +1652,39 @@ class GameEngine:
 
     def _save_battle_units_damage(self, game: Game):
         """
-        Сохранить урон юнитов после завершения игры
+        Сохранить урон юнитов после завершения игры.
+
+        Для рейтинговых армий (rated) - юниты НЕ списываются.
+        Для наёмных армий (mercenary) - юниты списываются, пустые армии удаляются.
 
         Args:
             game: Игра
         """
+        from db.models.army import Army
+
         units_to_delete = []
+        armies_to_check = set()  # Армии которые нужно проверить на пустоту
+
         for battle_unit in game.battle_units:
+            army_unit = battle_unit.army_unit
+            army = army_unit.army
+            unit_stats = self._get_unit_stats(battle_unit)
+
             # Подсчитать живых юнитов
             alive_count = self._count_alive_units(battle_unit)
-
-            # Обновить количество юнитов в армии
-            army_unit = battle_unit.army_unit
-            unit_stats = self._get_unit_stats(battle_unit)
             old_count = army_unit.count
-            army_unit.count = alive_count
+            killed_count = old_count - alive_count
 
-            logger.info(f"Обновление юнитов после игры: {unit_stats['name']} игрока (ID: {battle_unit.player_id}) - было {old_count}, стало {alive_count}, потеряно {old_count - alive_count}")
+            # Для рейтинговых армий - юниты НЕ списываются
+            if army.army_type == Army.TYPE_RATED:
+                logger.info(f"Рейтинговая армия '{army.name}': {unit_stats['name']} - потеряно {killed_count} (НЕ списываются)")
+                continue
+
+            # Для наёмных армий - списываем юнитов
+            army_unit.count = alive_count
+            armies_to_check.add(army)
+
+            logger.info(f"Наёмная армия '{army.name}': {unit_stats['name']} - было {old_count}, стало {alive_count}, потеряно {killed_count}")
 
             # Помечаем записи с count=0 для удаления
             if alive_count == 0:
@@ -1677,6 +1693,21 @@ class GameEngine:
         # Удаляем записи о юнитах с количеством 0
         for army_unit in units_to_delete:
             self.db.delete(army_unit)
+
+        self.db.flush()
+
+        # Проверяем армии на пустоту и удаляем пустые
+        armies_to_delete = []
+        for army in armies_to_check:
+            # Перезагружаем армию чтобы получить актуальный список юнитов
+            self.db.refresh(army)
+            remaining_units = [u for u in army.army_units if u.count > 0]
+            if not remaining_units:
+                logger.info(f"Армия '{army.name}' (ID: {army.id}) полностью уничтожена - удаляем")
+                armies_to_delete.append(army)
+
+        for army in armies_to_delete:
+            self.db.delete(army)
 
         self.db.flush()
 

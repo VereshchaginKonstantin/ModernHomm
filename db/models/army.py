@@ -188,6 +188,35 @@ class UserUnitLimit(Base):
         return f"<UserUnitLimit(id={self.id}, user_id={self.user_id}, level={self.unit_level_id}, available={self.available_count}, speed={self.daily_speed})>"
 
 
+class UserRaceUnitLimit(Base):
+    """Модель лимитов найма юнитов для каждой расы пользователя"""
+    __tablename__ = 'user_race_unit_limits'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_race_id = Column(Integer, ForeignKey('user_races.id', ondelete='CASCADE'), nullable=False, index=True)
+    unit_level_id = Column(Integer, ForeignKey('unit_levels.id', ondelete='CASCADE'), nullable=False, index=True)
+
+    available_count = Column(Integer, nullable=False, default=0)  # Доступно для найма юнитов
+    daily_speed = Column(Integer, nullable=False, default=1)  # Юнитов в день (может быть увеличена)
+    level_unlocked = Column(Boolean, nullable=False, default=False)  # Уровень разблокирован для найма
+    accumulated_fraction = Column(Numeric(10, 6), nullable=False, default=0)  # Накопленная дробная часть
+
+    last_accumulate_at = Column(DateTime, default=datetime.utcnow, nullable=False)  # Когда последний раз накапливались
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    # Связи
+    user_race = relationship("UserRace", back_populates="unit_limits")
+    unit_level = relationship("UnitLevel")
+
+    __table_args__ = (
+        UniqueConstraint('user_race_id', 'unit_level_id', name='unique_user_race_unit_limit'),
+    )
+
+    def __repr__(self):
+        return f"<UserRaceUnitLimit(id={self.id}, user_race_id={self.user_race_id}, level={self.unit_level_id}, available={self.available_count}, speed={self.daily_speed})>"
+
+
 class UserRace(Base):
     """Модель пользовательской расы (связь пользователя с расой)"""
     __tablename__ = 'user_races'
@@ -202,6 +231,7 @@ class UserRace(Base):
     race = relationship("GameRace")
     user_race_units = relationship("UserRaceUnit", back_populates="user_race", cascade="all, delete-orphan")
     armies = relationship("Army", back_populates="user_race", cascade="all, delete-orphan")
+    unit_limits = relationship("UserRaceUnitLimit", back_populates="user_race", cascade="all, delete-orphan")
 
     __table_args__ = (
         # Уникальность пользователь + раса

@@ -26,17 +26,17 @@ anchor_top = 0.5
 anchor_right = 0.5
 anchor_bottom = 0.5
 offset_left = -300.0
-offset_top = -280.0
+offset_top = -350.0
 offset_right = 300.0
-offset_bottom = 280.0
+offset_bottom = 350.0
 grow_horizontal = 2
 grow_vertical = 2
-theme_override_constants/separation = 15
+theme_override_constants/separation = 12
 
 [node name="Title" type="Label" parent="VBoxContainer"]
 layout_mode = 2
 theme_override_font_sizes/font_size = 48
-text = "⚔️ ModernHomm Arena"
+text = "ModernHomm Arena"
 horizontal_alignment = 1
 
 [node name="Subtitle" type="Label" parent="VBoxContainer"]
@@ -67,6 +67,28 @@ text = "Загрузка..."
 horizontal_alignment = 1
 
 [node name="PlayerStats" type="Label" parent="VBoxContainer/PlayerSection"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_colors/font_color = Color(0.6, 0.6, 0.6, 1)
+theme_override_font_sizes/font_size = 14
+text = ""
+horizontal_alignment = 1
+
+[node name="ArmySection" type="VBoxContainer" parent="VBoxContainer"]
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="ArmyLabel" type="Label" parent="VBoxContainer/ArmySection"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 16
+text = "Выберите армию для боя:"
+
+[node name="ArmySelect" type="OptionButton" parent="VBoxContainer/ArmySection"]
+unique_name_in_owner = true
+layout_mode = 2
+custom_minimum_size = Vector2(400, 40)
+
+[node name="ArmyStats" type="Label" parent="VBoxContainer/ArmySection"]
 unique_name_in_owner = true
 layout_mode = 2
 theme_override_colors/font_color = Color(0.6, 0.6, 0.6, 1)
@@ -145,13 +167,19 @@ unique_name_in_owner = true
 layout_mode = 2
 custom_minimum_size = Vector2(200, 50)
 disabled = true
-text = "⚔️ Вызвать на бой!"
+text = "Вызвать на бой!"
 
 [node name="ArmyButton" type="Button" parent="VBoxContainer/ButtonsRow"]
 unique_name_in_owner = true
 layout_mode = 2
-custom_minimum_size = Vector2(200, 50)
-text = "🛡️ Мои армии"
+custom_minimum_size = Vector2(150, 50)
+text = "Мои армии"
+
+[node name="RacesButton" type="Button" parent="VBoxContainer/ButtonsRow"]
+unique_name_in_owner = true
+layout_mode = 2
+custom_minimum_size = Vector2(150, 50)
+text = "Мои расы"
 
 [node name="StatusLabel" type="Label" parent="VBoxContainer"]
 unique_name_in_owner = true
@@ -164,7 +192,7 @@ horizontal_alignment = 1
 [node name="BackButton" type="Button" parent="VBoxContainer"]
 layout_mode = 2
 custom_minimum_size = Vector2(0, 40)
-text = "← Выход"
+text = "<< Выход"
 
 [node name="BattlesToggle" type="Button" parent="."]
 unique_name_in_owner = true
@@ -180,7 +208,7 @@ offset_top = -60.0
 offset_bottom = 60.0
 grow_horizontal = 0
 grow_vertical = 2
-text = "⚔️"
+text = ">"
 icon_alignment = 1
 
 [node name="BattlesPanel" type="PanelContainer" parent="."]
@@ -188,11 +216,11 @@ unique_name_in_owner = true
 visible = false
 layout_mode = 1
 anchors_preset = 11
-anchor_left = 1.0
+anchor_left = 0.6
 anchor_right = 1.0
 anchor_bottom = 1.0
-offset_left = -350.0
-grow_horizontal = 0
+offset_left = 0.0
+grow_horizontal = 2
 grow_vertical = 2
 
 [node name="VBox" type="VBoxContainer" parent="BattlesPanel"]
@@ -206,13 +234,13 @@ layout_mode = 2
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_font_sizes/font_size = 18
-text = "⚔️ Бои"
+text = "Бои"
 
 [node name="CloseButton" type="Button" parent="BattlesPanel/VBox/Header"]
 unique_name_in_owner = true
 layout_mode = 2
 custom_minimum_size = Vector2(30, 30)
-text = "✕"
+text = "X"
 
 [node name="HSeparator" type="HSeparator" parent="BattlesPanel/VBox"]
 layout_mode = 2
@@ -252,7 +280,7 @@ theme_override_constants/separation = 20
 [node name="Title" type="Label" parent="LoginPanel/CenterContainer/VBox"]
 layout_mode = 2
 theme_override_font_sizes/font_size = 32
-text = "⚔️ ModernHomm Arena"
+text = "ModernHomm Arena"
 horizontal_alignment = 1
 
 [node name="Subtitle" type="Label" parent="LoginPanel/CenterContainer/VBox"]
