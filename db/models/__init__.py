@@ -14,7 +14,11 @@ from .base import Base
 from .core import User, Message, Config, ClientLog, GameUser, JobLog
 
 # Модели боевой системы
-from .battle import GameStatus, Field, Game, BattleUnit, Obstacle, GameLog
+from .battle import (
+    GameStatus, DecorationType, Field,
+    BattleFieldTemplate, BattleFieldObstacle, BattleFieldDecoration,
+    Game, BattleUnit, Obstacle, GameLog
+)
 
 # Модели армии и рас
 from .army import (
@@ -29,7 +33,9 @@ __all__ = [
     # Core
     'User', 'Message', 'Config', 'ClientLog', 'GameUser', 'JobLog',
     # Battle
-    'GameStatus', 'Field', 'Game', 'BattleUnit', 'Obstacle', 'GameLog',
+    'GameStatus', 'DecorationType', 'Field',
+    'BattleFieldTemplate', 'BattleFieldObstacle', 'BattleFieldDecoration',
+    'Game', 'BattleUnit', 'Obstacle', 'GameLog',
     # Army & Races
     'GameRace', 'RaceUnit', 'RaceUnitSkin', 'UnitLevel', 'UserUnitLimit', 'UserRaceUnitLimit',
     'UserRace', 'UserRaceUnit',

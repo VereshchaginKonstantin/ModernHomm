@@ -38,6 +38,7 @@ class RaceUnit(Base):
     name = Column(String(255), nullable=False)
     is_flying = Column(Boolean, nullable=False, default=False)  # Летающий юнит
     is_kamikaze = Column(Boolean, nullable=False, default=False)  # Камикадзе
+    is_big = Column(Boolean, nullable=False, default=False)  # Большой юнит (занимает 4 клетки 2x2)
 
     # Боевые характеристики (перенесены из UserRaceUnit)
     attack = Column(Integer, nullable=False, default=10)  # Атака

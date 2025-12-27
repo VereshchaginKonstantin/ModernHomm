@@ -4,11 +4,21 @@
 """
 
 from datetime import datetime
-from sqlalchemy import Column, Integer, String, Text, DateTime, ForeignKey, Numeric, Enum, CheckConstraint
+from sqlalchemy import Column, Integer, String, Text, DateTime, ForeignKey, Numeric, Enum, CheckConstraint, Boolean, LargeBinary
 from sqlalchemy.orm import relationship
 import enum
 
 from .base import Base
+
+
+class DecorationType(enum.Enum):
+    """Типы декоративных элементов"""
+    TREE = "tree"
+    RIVER = "river"
+    ROCK = "rock"
+    BUSH = "bush"
+    FLOWER = "flower"
+    CUSTOM = "custom"
 
 
 class GameStatus(enum.Enum):
@@ -35,6 +45,72 @@ class Field(Base):
         return f"<Field(name={self.name}, width={self.width}, height={self.height})>"
 
 
+class BattleFieldTemplate(Base):
+    """Модель шаблона боевого поля (предустановленные поля)"""
+    __tablename__ = 'battle_field_templates'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String(255), nullable=False)  # Название поля
+    description = Column(Text, nullable=True)  # Описание поля
+    field_size_id = Column(Integer, ForeignKey('fields.id', ondelete='RESTRICT'), nullable=False, index=True)
+    is_active = Column(Boolean, nullable=False, default=True)  # Активно ли поле для выбора
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    # Связи
+    field_size = relationship("Field")
+    obstacles = relationship("BattleFieldObstacle", back_populates="template", cascade="all, delete-orphan")
+    decorations = relationship("BattleFieldDecoration", back_populates="template", cascade="all, delete-orphan")
+
+    def __repr__(self):
+        return f"<BattleFieldTemplate(id={self.id}, name={self.name}, field_size_id={self.field_size_id})>"
+
+
+class BattleFieldObstacle(Base):
+    """Модель препятствия на шаблоне поля"""
+    __tablename__ = 'battle_field_obstacles'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    template_id = Column(Integer, ForeignKey('battle_field_templates.id', ondelete='CASCADE'), nullable=False, index=True)
+    position_x = Column(Integer, nullable=False)  # Позиция X внутри поля
+    position_y = Column(Integer, nullable=False)  # Позиция Y внутри поля
+    sprite_data = Column(LargeBinary, nullable=True)  # Спрайт препятствия
+    sprite_mime_type = Column(String(50), nullable=True)  # MIME тип спрайта
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    # Связи
+    template = relationship("BattleFieldTemplate", back_populates="obstacles")
+
+    __table_args__ = (
+        CheckConstraint('position_x >= 0', name='positive_obstacle_pos_x'),
+        CheckConstraint('position_y >= 0', name='positive_obstacle_pos_y'),
+    )
+
+    def __repr__(self):
+        return f"<BattleFieldObstacle(id={self.id}, template_id={self.template_id}, position=({self.position_x}, {self.position_y}))>"
+
+
+class BattleFieldDecoration(Base):
+    """Модель декоративного элемента вокруг поля"""
+    __tablename__ = 'battle_field_decorations'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    template_id = Column(Integer, ForeignKey('battle_field_templates.id', ondelete='CASCADE'), nullable=False, index=True)
+    decoration_type = Column(Enum(DecorationType, values_callable=lambda obj: [e.value for e in obj], name='decoration_type', create_type=False), nullable=False, default=DecorationType.TREE)
+    position_x = Column(Integer, nullable=False)  # Позиция X (может быть отрицательной)
+    position_y = Column(Integer, nullable=False)  # Позиция Y (может быть отрицательной)
+    sprite_data = Column(LargeBinary, nullable=True)  # Спрайт декорации
+    sprite_mime_type = Column(String(50), nullable=True)  # MIME тип спрайта
+    z_index = Column(Integer, nullable=False, default=0)  # Порядок отрисовки
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    # Связи
+    template = relationship("BattleFieldTemplate", back_populates="decorations")
+
+    def __repr__(self):
+        return f"<BattleFieldDecoration(id={self.id}, template_id={self.template_id}, type={self.decoration_type}, position=({self.position_x}, {self.position_y}))>"
+
+
 class Game(Base):
     """Модель начатой игры"""
     __tablename__ = 'games'
@@ -45,6 +121,7 @@ class Game(Base):
     player1_army_id = Column(Integer, ForeignKey('armies.id', ondelete='SET NULL'), nullable=True)  # Армия игрока 1
     player2_army_id = Column(Integer, ForeignKey('armies.id', ondelete='SET NULL'), nullable=True)  # Армия игрока 2
     field_id = Column(Integer, ForeignKey('fields.id', ondelete='CASCADE'), nullable=False)
+    battle_field_template_id = Column(Integer, ForeignKey('battle_field_templates.id', ondelete='SET NULL'), nullable=True)  # Шаблон поля
     status = Column(Enum(GameStatus, values_callable=lambda obj: [e.value for e in obj], name='game_status', create_type=False), nullable=False, default=GameStatus.WAITING)
     current_player_id = Column(Integer, ForeignKey('game_users.id'), nullable=True)  # Чей сейчас ход
     winner_id = Column(Integer, ForeignKey('game_users.id'), nullable=True)  # Победитель
@@ -59,6 +136,7 @@ class Game(Base):
     player1_army = relationship("Army", foreign_keys=[player1_army_id])
     player2_army = relationship("Army", foreign_keys=[player2_army_id])
     field = relationship("Field")
+    battle_field_template = relationship("BattleFieldTemplate")
     current_player = relationship("GameUser", foreign_keys=[current_player_id])
     winner = relationship("GameUser", foreign_keys=[winner_id])
     battle_units = relationship("BattleUnit", back_populates="game", cascade="all, delete-orphan")

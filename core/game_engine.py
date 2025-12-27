@@ -9,7 +9,7 @@ from datetime import datetime, timedelta
 from decimal import Decimal
 from typing import List, Tuple, Optional, Dict, Set
 from sqlalchemy.orm import Session
-from db.models import Game, GameStatus, BattleUnit, GameUser, Field, Obstacle, GameLog, Army, ArmyUnit, RaceUnit, UserRace, UserRaceUnit
+from db.models import Game, GameStatus, BattleUnit, GameUser, Field, Obstacle, GameLog, Army, ArmyUnit, RaceUnit, UserRace, UserRaceUnit, BattleFieldTemplate, BattleFieldObstacle
 
 logger = logging.getLogger(__name__)
 
@@ -983,17 +983,39 @@ class GameEngine:
         """
         field = game.field
 
-        # Определить стартовые позиции
+        # Определить стартовые позиции с учётом больших юнитов (2x2)
+        # Сначала определяем доступные позиции
         if side == 1:
             # Игрок 1 - левая сторона
-            positions = [(0, y) for y in range(min(len(army_units), field.height))]
+            start_x = 0
         else:
             # Игрок 2 - правая сторона
-            positions = [(field.width - 1, y) for y in range(min(len(army_units), field.height))]
+            start_x = field.width - 1
 
-        for i, army_unit in enumerate(army_units[:len(positions)]):
-            x, y = positions[i]
+        current_y = 0
+        for army_unit in army_units:
+            if current_y >= field.height:
+                break  # Нет места для размещения
+
             race_unit = army_unit.race_unit
+            is_big = race_unit.is_big if race_unit else False
+
+            # Для больших юнитов нужно 2 ряда
+            if is_big:
+                if current_y + 1 >= field.height:
+                    # Недостаточно места для большого юнита, пропускаем
+                    continue
+                # Большой юнит занимает 2x2, размещаем его так, чтобы было место
+                if side == 1:
+                    x = start_x
+                else:
+                    x = start_x - 1  # Для правой стороны смещаем влево
+                y = current_y
+                current_y += 2  # Следующий юнит начнётся через 2 клетки
+            else:
+                x = start_x
+                y = current_y
+                current_y += 1
 
             # Получаем здоровье из RaceUnit (+ бусты если есть UserRaceUnit)
             health = race_unit.health
@@ -1014,42 +1036,79 @@ class GameEngine:
 
     def _generate_obstacles(self, game: Game):
         """
-        Генерировать случайные препятствия на игровом поле
+        Генерировать препятствия на игровом поле.
+
+        Если есть активные шаблоны полей соответствующего размера,
+        выбирается случайный шаблон и используются его препятствия.
+        Иначе генерируются случайные препятствия.
 
         Args:
             game: Игра
         """
         field = game.field
 
-        # Количество препятствий зависит от размера поля (примерно 10-15% клеток)
-        num_obstacles = random.randint(field.width * field.height // 10, field.width * field.height // 7)
-
         # Получить занятые позиции (юниты)
         occupied = set()
         for battle_unit in game.battle_units:
             occupied.add((battle_unit.position_x, battle_unit.position_y))
+            # Для больших юнитов занимаем 4 клетки (2x2)
+            if battle_unit.army_unit and battle_unit.army_unit.race_unit and battle_unit.army_unit.race_unit.is_big:
+                occupied.add((battle_unit.position_x + 1, battle_unit.position_y))
+                occupied.add((battle_unit.position_x, battle_unit.position_y + 1))
+                occupied.add((battle_unit.position_x + 1, battle_unit.position_y + 1))
 
-        # Сгенерировать препятствия
-        obstacles_generated = 0
-        attempts = 0
-        max_attempts = num_obstacles * 3  # Максимум попыток
+        # Попробовать найти активный шаблон поля подходящего размера
+        templates = self.db.query(BattleFieldTemplate).filter(
+            BattleFieldTemplate.field_size_id == field.id,
+            BattleFieldTemplate.is_active == True
+        ).all()
 
-        while obstacles_generated < num_obstacles and attempts < max_attempts:
-            x = random.randint(0, field.width - 1)
-            y = random.randint(0, field.height - 1)
+        if templates:
+            # Выбираем случайный шаблон
+            template = random.choice(templates)
+            game.battle_field_template_id = template.id
 
-            # Проверить, что позиция не занята
-            if (x, y) not in occupied:
-                obstacle = Obstacle(
-                    game_id=game.id,
-                    position_x=x,
-                    position_y=y
-                )
-                self.db.add(obstacle)
-                occupied.add((x, y))
-                obstacles_generated += 1
+            # Копируем препятствия из шаблона
+            for template_obstacle in template.obstacles:
+                # Проверяем, что позиция не занята юнитами
+                if (template_obstacle.position_x, template_obstacle.position_y) not in occupied:
+                    obstacle = Obstacle(
+                        game_id=game.id,
+                        position_x=template_obstacle.position_x,
+                        position_y=template_obstacle.position_y
+                    )
+                    self.db.add(obstacle)
+                    occupied.add((template_obstacle.position_x, template_obstacle.position_y))
 
-            attempts += 1
+            logger.info(f"Game {game.id}: Using field template '{template.name}' with {len(template.obstacles)} obstacles")
+        else:
+            # Если шаблонов нет - генерируем случайные препятствия
+            # Количество препятствий зависит от размера поля (примерно 10-15% клеток)
+            num_obstacles = random.randint(field.width * field.height // 10, field.width * field.height // 7)
+
+            # Сгенерировать препятствия
+            obstacles_generated = 0
+            attempts = 0
+            max_attempts = num_obstacles * 3  # Максимум попыток
+
+            while obstacles_generated < num_obstacles and attempts < max_attempts:
+                x = random.randint(0, field.width - 1)
+                y = random.randint(0, field.height - 1)
+
+                # Проверить, что позиция не занята
+                if (x, y) not in occupied:
+                    obstacle = Obstacle(
+                        game_id=game.id,
+                        position_x=x,
+                        position_y=y
+                    )
+                    self.db.add(obstacle)
+                    occupied.add((x, y))
+                    obstacles_generated += 1
+
+                attempts += 1
+
+            logger.info(f"Game {game.id}: Generated {obstacles_generated} random obstacles")
 
     def _has_line_of_sight(self, start_x: int, start_y: int, end_x: int, end_y: int, game: Game) -> bool:
         """

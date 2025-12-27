@@ -584,6 +584,7 @@ EDIT_RACE_TEMPLATE = """
                     <div class="stats">
                         {% if unit.is_flying %}🦅 Летающий{% endif %}
                         {% if unit.is_kamikaze %}💥 Камикадзе{% endif %}
+                        {% if unit.is_big %}🏔️ Большой{% endif %}
                         <br>🎨 Скинов: {{ unit.skins|length }}
                     </div>
                     <div style="margin-top: 10px;">
@@ -701,6 +702,11 @@ EDIT_UNIT_TEMPLATE = """
                 <div class="checkbox-group">
                     <input type="checkbox" name="is_kamikaze" id="is_kamikaze" {% if unit.is_kamikaze %}checked{% endif %}>
                     <label for="is_kamikaze" style="margin-bottom: 0;">💥 Камикадзе</label>
+                </div>
+
+                <div class="checkbox-group">
+                    <input type="checkbox" name="is_big" id="is_big" {% if unit.is_big %}checked{% endif %}>
+                    <label for="is_big" style="margin-bottom: 0;">🏔️ Большой юнит (занимает 4 клетки 2x2)</label>
                 </div>
             </div>
 
@@ -1189,6 +1195,7 @@ def edit_race_unit(race_id, unit_id):
             unit.name = request.form.get('name')
             unit.is_flying = request.form.get('is_flying') == 'on'
             unit.is_kamikaze = request.form.get('is_kamikaze') == 'on'
+            unit.is_big = request.form.get('is_big') == 'on'
 
             # Combat stats
             unit.attack = int(request.form.get('attack', 10))

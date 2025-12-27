@@ -20,6 +20,7 @@ from decimal import Decimal
 from web.arena import arena_bp
 from web.races import races_bp
 from web.army import army_bp
+from web.fields import fields_bp
 from web.templates import get_web_version, get_bot_version, HEADER_TEMPLATE, BASE_STYLE, FOOTER_TEMPLATE
 from web.app_templates import (
     LEADERBOARD_TEMPLATE, HELP_TEMPLATE, LOGIN_TEMPLATE, JOBS_TEMPLATE
@@ -40,6 +41,8 @@ app.register_blueprint(arena_bp)
 app.register_blueprint(races_bp)
 # Регистрация Blueprint для управления армией
 app.register_blueprint(army_bp)
+# Регистрация Blueprint для редактора полей
+app.register_blueprint(fields_bp)
 
 
 @app.context_processor

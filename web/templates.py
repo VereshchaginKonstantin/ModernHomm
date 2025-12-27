@@ -34,11 +34,12 @@ HEADER_TEMPLATE = """
 
         <!-- Админ настройки (dropdown) -->
         <div class="nav-dropdown">
-            <a href="#" class="nav-link {{ 'active' if active_page in ['races', 'unit_levels', 'leaderboard'] else '' }}">⚙️ Админ настройки ▾</a>
+            <a href="#" class="nav-link {{ 'active' if active_page in ['races', 'unit_levels', 'leaderboard', 'fields'] else '' }}">⚙️ Админ настройки ▾</a>
             <div class="dropdown-content">
-                {% if session.username == 'okarien' %}
+                {% if session.username == 'okarien' or session.user_id in [1, 4] %}
                 <a href="{{ url_for('races.races_list') }}" class="{{ 'active' if active_page == 'races' else '' }}">🏰 Расы</a>
                 <a href="{{ url_for('races.unit_levels_list') }}" class="{{ 'active' if active_page == 'unit_levels' else '' }}">📊 Уровни юнитов</a>
+                <a href="{{ url_for('fields.fields_list') }}" class="{{ 'active' if active_page == 'fields' else '' }}">🗺️ Редактор полей</a>
                 {% endif %}
                 <a href="{{ url_for('leaderboard') }}" class="{{ 'active' if active_page == 'leaderboard' else '' }}">🏆 Рейтинг</a>
             </div>
