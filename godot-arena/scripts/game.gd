@@ -32,16 +32,29 @@ var TILE_DEPTH: int = 24
 var BOARD_OFFSET_X: int = 400  # Смещение поля по X (центрирование)
 var BOARD_OFFSET_Y: int = 60   # Смещение поля по Y
 const COLORS = {
-	"light_tile": Color(0.941, 0.851, 0.710),
-	"dark_tile": Color(0.710, 0.533, 0.388),
-	"tile_side_light": Color(0.75, 0.65, 0.55),
-	"tile_side_dark": Color(0.55, 0.45, 0.35),
-	"obstacle": Color(0.333, 0.333, 0.333),
-	"obstacle_side": Color(0.2, 0.2, 0.2),
+	# Травяное поле (поляна)
+	"grass_base": Color(0.298, 0.600, 0.298),      # Базовый зелёный RGB(76, 153, 76)
+	"grass_light": Color(0.361, 0.678, 0.361),    # Светлый оттенок RGB(92, 173, 92)
+	"grass_dark": Color(0.235, 0.522, 0.235),     # Тёмный оттенок RGB(60, 133, 60)
+	"grid_line": Color(0.157, 0.314, 0.157, 0.4), # Линии сетки (полупрозрачные)
+
+	# Камни (препятствия)
+	"rock_top": Color(0.502, 0.502, 0.471),       # Верх камня RGB(128, 128, 120)
+	"rock_side": Color(0.376, 0.376, 0.353),      # Бок камня RGB(96, 96, 90)
+	"rock_shadow": Color(0.251, 0.251, 0.235),    # Тень камня
+
+	# Деревья по границам
+	"tree_trunk": Color(0.396, 0.263, 0.129),     # Ствол RGB(101, 67, 33)
+	"tree_leaves": Color(0.133, 0.545, 0.133),    # Крона RGB(34, 139, 34)
+	"tree_leaves_dark": Color(0.098, 0.420, 0.098), # Тёмная крона
+
+	# Цвета игроков
 	"player1": Color(0.906, 0.298, 0.235),
 	"player1_dark": Color(0.7, 0.2, 0.15),
 	"player2": Color(0.180, 0.800, 0.443),
 	"player2_dark": Color(0.1, 0.6, 0.3),
+
+	# Подсветка действий
 	"move_highlight": Color(0.153, 0.682, 0.376, 0.6),
 	"attack_highlight": Color(0.906, 0.298, 0.235, 0.6),
 	"selected": Color(0.945, 0.769, 0.059, 0.8),
@@ -478,21 +491,14 @@ func _create_iso_tile(grid_x: int, grid_y: int, is_obstacle: bool = false) -> Co
 	container.size = Vector2(TILE_WIDTH, TILE_HEIGHT + TILE_DEPTH)
 	container.z_index = grid_x + grid_y  # Для правильного z-order
 
-	# Определяем цвета
-	var top_color: Color
-	var side_color: Color
-	if is_obstacle:
-		top_color = COLORS.obstacle
-		side_color = COLORS.obstacle_side
-	elif (grid_x + grid_y) % 2 == 0:
-		top_color = COLORS.light_tile
-		side_color = COLORS.tile_side_light
-	else:
-		top_color = COLORS.dark_tile
-		side_color = COLORS.tile_side_dark
+	# Случайная вариация оттенка травы для естественности
+	var rng = RandomNumberGenerator.new()
+	rng.seed = hash(str(grid_x) + "_" + str(grid_y))  # Детерминированный seed
+	var shade_variation = rng.randf_range(-0.05, 0.05)
+	var grass_color = COLORS.grass_base
+	grass_color = grass_color.lightened(shade_variation) if shade_variation > 0 else grass_color.darkened(-shade_variation)
 
-	# Рисуем тайл через Polygon2D
-	# Верхняя грань (ромб)
+	# Рисуем травяную ячейку (плоский ромб)
 	var top_face = Polygon2D.new()
 	top_face.polygon = PackedVector2Array([
 		Vector2(TILE_WIDTH / 2, 0),           # Верх
@@ -500,30 +506,26 @@ func _create_iso_tile(grid_x: int, grid_y: int, is_obstacle: bool = false) -> Co
 		Vector2(TILE_WIDTH / 2, TILE_HEIGHT), # Низ
 		Vector2(0, TILE_HEIGHT / 2)           # Лево
 	])
-	top_face.color = top_color
+	top_face.color = grass_color
 	container.add_child(top_face)
 
-	# Левая боковая грань
-	var left_side = Polygon2D.new()
-	left_side.polygon = PackedVector2Array([
-		Vector2(0, TILE_HEIGHT / 2),
-		Vector2(TILE_WIDTH / 2, TILE_HEIGHT),
-		Vector2(TILE_WIDTH / 2, TILE_HEIGHT + TILE_DEPTH),
-		Vector2(0, TILE_HEIGHT / 2 + TILE_DEPTH)
-	])
-	left_side.color = side_color.darkened(0.2)
-	container.add_child(left_side)
-
-	# Правая боковая грань
-	var right_side = Polygon2D.new()
-	right_side.polygon = PackedVector2Array([
-		Vector2(TILE_WIDTH / 2, TILE_HEIGHT),
+	# Тонкие линии-контуры для разделения ячеек
+	var line_width = 1.0
+	var grid_line = Line2D.new()
+	grid_line.points = PackedVector2Array([
+		Vector2(TILE_WIDTH / 2, 0),
 		Vector2(TILE_WIDTH, TILE_HEIGHT / 2),
-		Vector2(TILE_WIDTH, TILE_HEIGHT / 2 + TILE_DEPTH),
-		Vector2(TILE_WIDTH / 2, TILE_HEIGHT + TILE_DEPTH)
+		Vector2(TILE_WIDTH / 2, TILE_HEIGHT),
+		Vector2(0, TILE_HEIGHT / 2),
+		Vector2(TILE_WIDTH / 2, 0)  # Замыкаем контур
 	])
-	right_side.color = side_color
-	container.add_child(right_side)
+	grid_line.width = line_width
+	grid_line.default_color = COLORS.grid_line
+	container.add_child(grid_line)
+
+	# Если это препятствие - рисуем камень поверх травы
+	if is_obstacle:
+		_add_rock_to_tile(container)
 
 	# Невидимая область для кликов (поверх всего тайла)
 	var click_area = Control.new()
@@ -533,6 +535,55 @@ func _create_iso_tile(grid_x: int, grid_y: int, is_obstacle: bool = false) -> Co
 	container.add_child(click_area)
 
 	return container
+
+## Добавляет камень на ячейку (для препятствий)
+func _add_rock_to_tile(container: Control) -> void:
+	# Основной камень (овальная форма)
+	var rock_main = Polygon2D.new()
+	var cx = TILE_WIDTH / 2
+	var cy = TILE_HEIGHT / 2
+	var rx = TILE_WIDTH * 0.35  # Радиус по X
+	var ry = TILE_HEIGHT * 0.4  # Радиус по Y
+
+	# Создаём овальную форму камня
+	var rock_points: PackedVector2Array = []
+	for i in range(8):
+		var angle = i * PI * 2 / 8
+		var px = cx + cos(angle) * rx
+		var py = cy + sin(angle) * ry * 0.7
+		rock_points.append(Vector2(px, py))
+	rock_main.polygon = rock_points
+	rock_main.color = COLORS.rock_top
+	container.add_child(rock_main)
+
+	# Тень камня (смещённая вниз)
+	var shadow = Polygon2D.new()
+	var shadow_points: PackedVector2Array = []
+	for i in range(8):
+		var angle = i * PI * 2 / 8
+		var px = cx + cos(angle) * rx * 0.9
+		var py = cy + sin(angle) * ry * 0.6 + TILE_HEIGHT * 0.15
+		shadow_points.append(Vector2(px, py))
+	shadow.polygon = shadow_points
+	shadow.color = COLORS.rock_shadow
+	shadow.z_index = -1  # Под основным камнем
+	container.add_child(shadow)
+
+	# Блик на камне (маленький светлый овал)
+	var highlight = Polygon2D.new()
+	var hl_points: PackedVector2Array = []
+	var hl_cx = cx - rx * 0.3
+	var hl_cy = cy - ry * 0.2
+	var hl_rx = rx * 0.25
+	var hl_ry = ry * 0.2
+	for i in range(6):
+		var angle = i * PI * 2 / 6
+		var px = hl_cx + cos(angle) * hl_rx
+		var py = hl_cy + sin(angle) * hl_ry
+		hl_points.append(Vector2(px, py))
+	highlight.polygon = hl_points
+	highlight.color = COLORS.rock_top.lightened(0.3)
+	container.add_child(highlight)
 
 func _calculate_tile_size() -> void:
 	# Масштабируем тайлы в зависимости от размера поля
@@ -570,13 +621,16 @@ func _draw_board() -> void:
 	# Обновляем форму hover подсветки
 	_update_hover_highlight_shape()
 
-	# Вычисляем размер доски для изометрии
-	var board_width = (field_size * 2) * (TILE_WIDTH / 2) + BOARD_OFFSET_X
-	var board_height = (field_size * 2) * (TILE_HEIGHT / 2) + TILE_DEPTH + BOARD_OFFSET_Y + 100
+	# Вычисляем размер доски для изометрии (увеличиваем для деревьев)
+	var board_width = (field_size * 2 + 4) * (TILE_WIDTH / 2) + BOARD_OFFSET_X
+	var board_height = (field_size * 2 + 4) * (TILE_HEIGHT / 2) + TILE_DEPTH + BOARD_OFFSET_Y + 100
 	board.custom_minimum_size = Vector2(board_width, board_height)
 
 	# Обновляем pivot для центрирования при масштабировании
 	_update_board_pivot()
+
+	# Рисуем деревья по границам (под ячейками, чтобы z-order был правильный)
+	_draw_border_trees()
 
 	# Собираем препятствия в словарь для быстрого доступа
 	var obstacles_set = {}
@@ -592,6 +646,74 @@ func _draw_board() -> void:
 			var cell = _create_iso_tile(x, y, is_obstacle)
 			board.add_child(cell)
 			cells.append(cell)
+
+## Рисует деревья по границам поляны
+func _draw_border_trees() -> void:
+	var tree_size = TILE_WIDTH * 0.8  # Размер дерева
+
+	# Рисуем деревья вокруг поля
+	# Верхняя граница (от -1 до field_size)
+	for i in range(-1, field_size + 1):
+		_create_tree(-1, i, tree_size)
+		_create_tree(field_size, i, tree_size)
+
+	# Левая и правая границы
+	for i in range(0, field_size):
+		_create_tree(i, -1, tree_size)
+		_create_tree(i, field_size, tree_size)
+
+## Создаёт одно дерево в изометрической позиции
+func _create_tree(grid_x: int, grid_y: int, size: float) -> void:
+	var container = Control.new()
+	var iso_pos = grid_to_iso(grid_x, grid_y)
+	container.position = iso_pos
+	container.z_index = 1000 + grid_x + grid_y  # Деревья поверх всего
+
+	var trunk_width = size * 0.15
+	var trunk_height = size * 0.4
+	var crown_radius = size * 0.4
+
+	# Ствол дерева (прямоугольник)
+	var trunk = Polygon2D.new()
+	var trunk_x = TILE_WIDTH / 2 - trunk_width / 2
+	var trunk_y = TILE_HEIGHT / 2 - trunk_height
+	trunk.polygon = PackedVector2Array([
+		Vector2(trunk_x, trunk_y + trunk_height),
+		Vector2(trunk_x + trunk_width, trunk_y + trunk_height),
+		Vector2(trunk_x + trunk_width, trunk_y),
+		Vector2(trunk_x, trunk_y)
+	])
+	trunk.color = COLORS.tree_trunk
+	container.add_child(trunk)
+
+	# Крона дерева (несколько кругов/треугольников для объёма)
+	var crown_y = trunk_y - crown_radius * 0.5
+
+	# Задняя часть кроны (тёмная)
+	var crown_back = Polygon2D.new()
+	var back_points: PackedVector2Array = []
+	for i in range(12):
+		var angle = i * PI * 2 / 12
+		var px = TILE_WIDTH / 2 + cos(angle) * crown_radius
+		var py = crown_y + sin(angle) * crown_radius * 0.6
+		back_points.append(Vector2(px, py))
+	crown_back.polygon = back_points
+	crown_back.color = COLORS.tree_leaves_dark
+	container.add_child(crown_back)
+
+	# Передняя часть кроны (светлая, смещена немного)
+	var crown_front = Polygon2D.new()
+	var front_points: PackedVector2Array = []
+	for i in range(10):
+		var angle = i * PI * 2 / 10
+		var px = TILE_WIDTH / 2 + cos(angle) * crown_radius * 0.85
+		var py = crown_y - crown_radius * 0.15 + sin(angle) * crown_radius * 0.55
+		front_points.append(Vector2(px, py))
+	crown_front.polygon = front_points
+	crown_front.color = COLORS.tree_leaves
+	container.add_child(crown_front)
+
+	board.add_child(container)
 
 func _update_units(units: Array) -> void:
 	# Собираем ID юнитов из нового состояния
