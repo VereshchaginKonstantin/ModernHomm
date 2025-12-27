@@ -44,8 +44,8 @@ enum RequestType { NONE, GET_ARMIES, CREATE_ARMY, DELETE_ARMY, GET_AVAILABLE_UNI
 var pending_request: RequestType = RequestType.NONE
 
 func _ready() -> void:
-	# Вычисляем размер спрайта - половина ширины экрана
-	sprite_size = int(get_viewport().get_visible_rect().size.x / 2)
+	# Вычисляем размер спрайта - половина высоты экрана
+	sprite_size = int(get_viewport().get_visible_rect().size.y / 2)
 
 	# Получаем базовый URL (origin) для загрузки спрайтов
 	if OS.has_feature("web"):
