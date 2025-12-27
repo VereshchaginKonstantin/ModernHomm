@@ -1481,6 +1481,27 @@ def api_public_available_units(army_id):
             hire_cost = _get_hire_cost(ru)
             unit_level = ru.unit_level.level if ru.unit_level else 1
 
+            # Информация о спрайтах
+            has_image = skin and skin.image_data is not None
+            has_sprite = skin and skin.sprite_frames_data is not None
+            skin_id = skin.id if skin else None
+
+            image_url = None
+            sprite_url = None
+            sprite_params = None
+
+            if has_sprite:
+                sprite_url = f'/arena/api/public/skins/{skin_id}/sprite'
+                sprite_params = {
+                    'frame_count': skin.sprite_frame_count or 1,
+                    'fps': skin.sprite_fps or 10,
+                    'columns': skin.sprite_columns or 1,
+                    'rows': skin.sprite_rows or 1
+                }
+
+            if has_image:
+                image_url = f'/arena/api/public/skins/{skin_id}/image'
+
             # Базовая информация
             unit_data = {
                 'race_unit_id': ru.id,
@@ -1494,8 +1515,11 @@ def api_public_available_units(army_id):
                 'max_damage': ru.max_damage,
                 'hire_cost': hire_cost,
                 'current_count': current_count,
-                'has_image': skin and skin.image_data is not None,
-                'image_url': f'/arena/api/public/skins/{skin.id}/image' if skin and skin.image_data else None
+                'has_image': has_image,
+                'has_sprite': has_sprite,
+                'image_url': image_url,
+                'sprite_url': sprite_url,
+                'sprite_params': sprite_params
             }
 
             # Для рейтинговой армии - нет ограничений

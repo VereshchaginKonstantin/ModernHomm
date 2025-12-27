@@ -1,5 +1,6 @@
 extends Control
 ## Редактор армий - создание армий, найм и роспуск юнитов
+## Объединённый интерфейс: спрайт юнита справа, найм/роспуск слева
 
 @onready var back_button: Button = %BackButton
 @onready var create_army_button: Button = %CreateArmyButton
@@ -7,9 +8,11 @@ extends Control
 @onready var army_name_label: Label = %ArmyNameLabel
 @onready var delete_army_button: Button = %DeleteArmyButton
 @onready var balance_label: Label = %BalanceLabel
-@onready var army_units_list: VBoxContainer = %ArmyUnitsList
-@onready var available_units_list: VBoxContainer = %AvailableUnitsList
+@onready var units_list: VBoxContainer = %UnitsList
 @onready var status_label: Label = %StatusLabel
+
+# Размер спрайта в карточке юнита
+const SPRITE_SIZE: int = 64
 
 # Состояние
 var armies: Array = []
@@ -31,11 +34,19 @@ var hire_race_unit_id: int = 0
 var hire_max_available: int = 0
 var hire_unit_cost: int = 0
 
+# Кэш спрайтов
+var sprite_sheets: Dictionary = {}  # url -> { texture, params }
+var pending_sprite_loads: Dictionary = {}  # url -> true
+var base_url: String = ""
+
 # Ожидание ответов
 enum RequestType { NONE, GET_ARMIES, CREATE_ARMY, DELETE_ARMY, GET_AVAILABLE_UNITS, HIRE_UNIT, DISMISS_UNIT, UNLOCK_LEVEL, GET_USER_RACES }
 var pending_request: RequestType = RequestType.NONE
 
 func _ready() -> void:
+	# Получаем базовый URL из ApiClient
+	base_url = ApiClient.base_url
+
 	# Подключаем сигналы UI
 	back_button.pressed.connect(_on_back_pressed)
 	create_army_button.pressed.connect(_on_create_army_pressed)
@@ -116,7 +127,7 @@ func _handle_available_units_response(data: Dictionary) -> void:
 
 	# Обновляем метку баланса с кристаллами
 	balance_label.text = "Баланс: $%.0f | Кристаллы: %d" % [player_balance, player_crystals]
-	_display_available_units()
+	_display_units_list()
 
 	# После обновления доступных юнитов обновляем список армий
 	_load_armies()
@@ -238,72 +249,16 @@ func _display_selected_army() -> void:
 	# Нельзя удалять армию в бою
 	delete_army_button.visible = not army_in_battle
 
-	# Отображаем юнитов в армии
-	for child in army_units_list.get_children():
-		child.queue_free()
-
-	var units = selected_army.get("units", [])
-	if units.is_empty():
-		var label = Label.new()
-		label.text = "В армии нет юнитов.\nНаймите юнитов во вкладке \"Нанять юнитов\""
-		label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		army_units_list.add_child(label)
-	else:
-		for unit in units:
-			var unit_card = _create_army_unit_card(unit, army_in_battle)
-			army_units_list.add_child(unit_card)
-
 func _clear_selected_army() -> void:
 	army_name_label.text = "Выберите армию"
 	delete_army_button.visible = false
 
-	for child in army_units_list.get_children():
-		child.queue_free()
-	for child in available_units_list.get_children():
+	for child in units_list.get_children():
 		child.queue_free()
 
-func _create_army_unit_card(unit: Dictionary, army_in_battle: bool = false) -> Control:
-	var card = PanelContainer.new()
-	card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-
-	var hbox = HBoxContainer.new()
-	hbox.add_theme_constant_override("separation", 10)
-	card.add_child(hbox)
-
-	# Иконка и имя
-	var info_vbox = VBoxContainer.new()
-	info_vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-
-	var name_label = Label.new()
-	name_label.text = "%s x%d" % [unit.get("name", "Юнит"), unit.get("count", 0)]
-	name_label.add_theme_font_size_override("font_size", 18)
-	info_vbox.add_child(name_label)
-
-	var stats_label = Label.new()
-	stats_label.text = "A:%d D:%d H:%d S:%d" % [
-		unit.get("attack", 0),
-		unit.get("defense", 0),
-		unit.get("health", 0),
-		unit.get("speed", 0)
-	]
-	stats_label.add_theme_color_override("font_color", Color(0.6, 0.6, 0.6))
-	info_vbox.add_child(stats_label)
-
-	hbox.add_child(info_vbox)
-
-	# Кнопка роспуска (заблокирована если армия в бою)
-	var dismiss_btn = Button.new()
-	dismiss_btn.text = "Распустить"
-	dismiss_btn.disabled = army_in_battle
-	if army_in_battle:
-		dismiss_btn.tooltip_text = "Нельзя распускать юнитов - армия в бою"
-	dismiss_btn.pressed.connect(_on_dismiss_unit.bind(unit.get("race_unit_id", 0)))
-	hbox.add_child(dismiss_btn)
-
-	return card
-
-func _display_available_units() -> void:
-	for child in available_units_list.get_children():
+## Отображает объединённый список юнитов
+func _display_units_list() -> void:
+	for child in units_list.get_children():
 		child.queue_free()
 
 	# Если армия в бою - показываем предупреждение
@@ -313,116 +268,367 @@ func _display_available_units() -> void:
 		warning_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		warning_label.add_theme_color_override("font_color", Color(0.9, 0.3, 0.3))
 		warning_label.add_theme_font_size_override("font_size", 18)
-		available_units_list.add_child(warning_label)
-		return
+		units_list.add_child(warning_label)
 
 	if available_units.is_empty():
 		var label = Label.new()
-		label.text = "Нет доступных юнитов для найма"
+		label.text = "Нет доступных юнитов"
 		label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		available_units_list.add_child(label)
+		units_list.add_child(label)
 		return
 
-	for unit in available_units:
-		var unit_card = _create_available_unit_card(unit)
-		available_units_list.add_child(unit_card)
+	# Сортируем юнитов по уровню
+	var sorted_units = available_units.duplicate()
+	sorted_units.sort_custom(func(a, b): return a.get("level", 1) < b.get("level", 1))
 
-func _create_available_unit_card(unit: Dictionary) -> Control:
+	for unit in sorted_units:
+		var current_count = unit.get("current_count", 0)
+		var level_unlocked = unit.get("level_unlocked", true)
+		var available_to_hire = unit.get("available_to_hire", 0)
+		var is_rated = army_type == "rated"
+
+		# Показываем юнита если:
+		# 1. Есть в армии (current_count > 0)
+		# 2. Можно нанять (level_unlocked и available_to_hire > 0) или рейтинговая армия
+		# 3. Уровень заблокирован но можно разблокировать
+		var should_show = current_count > 0 or (level_unlocked and available_to_hire > 0) or is_rated or not level_unlocked
+
+		if should_show:
+			var unit_card = _create_unit_card(unit)
+			units_list.add_child(unit_card)
+
+## Создаёт карточку юнита с объединённым интерфейсом
+func _create_unit_card(unit: Dictionary) -> Control:
 	var card = PanelContainer.new()
 	card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	card.custom_minimum_size = Vector2(0, SPRITE_SIZE + 20)
 
-	var vbox = VBoxContainer.new()
-	vbox.add_theme_constant_override("separation", 5)
-	card.add_child(vbox)
+	var main_hbox = HBoxContainer.new()
+	main_hbox.add_theme_constant_override("separation", 10)
+	card.add_child(main_hbox)
 
-	var hbox = HBoxContainer.new()
-	hbox.add_theme_constant_override("separation", 10)
-	vbox.add_child(hbox)
+	# === Левая часть: информация и кнопки ===
+	var left_vbox = VBoxContainer.new()
+	left_vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	left_vbox.add_theme_constant_override("separation", 3)
+	main_hbox.add_child(left_vbox)
 
-	# Информация о юните
-	var info_vbox = VBoxContainer.new()
-	info_vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-
-	var name_label = Label.new()
 	var current_count = unit.get("current_count", 0)
 	var level = unit.get("level", 1)
-	var count_text = " (в армии: %d)" % current_count if current_count > 0 else ""
-	name_label.text = "[Ур.%d] %s%s" % [level, unit.get("name", "Юнит"), count_text]
-	name_label.add_theme_font_size_override("font_size", 18)
-	info_vbox.add_child(name_label)
+	var level_unlocked = unit.get("level_unlocked", true)
+	var available_to_hire = unit.get("available_to_hire", 999)
+	var can_hire = unit.get("can_hire", false)
+	var unlock_cost = unit.get("unlock_cost_gems", 0)
+	var is_rated = army_type == "rated"
+	var unit_hire_cost = unit.get("hire_cost", 0)
+	var race_unit_id = unit.get("race_unit_id", 0)
 
+	# Название юнита с уровнем и количеством в армии
+	var name_hbox = HBoxContainer.new()
+	name_hbox.add_theme_constant_override("separation", 5)
+	left_vbox.add_child(name_hbox)
+
+	var level_label = Label.new()
+	level_label.text = "[%d]" % level
+	level_label.add_theme_font_size_override("font_size", 16)
+	level_label.add_theme_color_override("font_color", _get_level_color(level))
+	name_hbox.add_child(level_label)
+
+	var name_label = Label.new()
+	name_label.text = unit.get("name", "Юнит")
+	name_label.add_theme_font_size_override("font_size", 18)
+	name_hbox.add_child(name_label)
+
+	# Количество в армии (если есть)
+	if current_count > 0:
+		var count_label = Label.new()
+		count_label.text = "x%d" % current_count
+		count_label.add_theme_font_size_override("font_size", 18)
+		count_label.add_theme_color_override("font_color", Color(0.4, 0.9, 0.4))
+		name_hbox.add_child(count_label)
+
+	# Статы юнита
 	var stats_label = Label.new()
 	stats_label.text = "A:%d D:%d H:%d S:%d | $%d" % [
 		unit.get("attack", 0),
 		unit.get("defense", 0),
 		unit.get("health", 0),
 		unit.get("speed", 0),
-		unit.get("hire_cost", 0)
+		unit_hire_cost
 	]
 	stats_label.add_theme_color_override("font_color", Color(0.6, 0.6, 0.6))
-	info_vbox.add_child(stats_label)
+	stats_label.add_theme_font_size_override("font_size", 13)
+	left_vbox.add_child(stats_label)
 
-	hbox.add_child(info_vbox)
+	# Кнопки действий
+	var buttons_hbox = HBoxContainer.new()
+	buttons_hbox.add_theme_constant_override("separation", 5)
+	left_vbox.add_child(buttons_hbox)
 
-	# Проверяем тип армии и доступность
-	var level_unlocked = unit.get("level_unlocked", true)
-	var available_to_hire = unit.get("available_to_hire", 999)
-	var can_hire = unit.get("can_hire", false)
-	var unlock_cost = unit.get("unlock_cost_gems", 0)
-	var is_rated = army_type == "rated"
+	# Логика отображения кнопок
+	if not level_unlocked and not is_rated:
+		# Уровень заблокирован - показываем кнопку разблокировки
+		var unlock_btn = Button.new()
+		unlock_btn.text = "Разблокировать (%d крист.)" % unlock_cost
+		unlock_btn.disabled = player_crystals < unlock_cost or is_in_battle
+		if player_crystals < unlock_cost:
+			unlock_btn.tooltip_text = "Недостаточно кристаллов"
+		unlock_btn.pressed.connect(_on_unlock_level.bind(level))
+		buttons_hbox.add_child(unlock_btn)
 
-	var unit_hire_cost = unit.get("hire_cost", 0)
-
-	# Для рейтинговых армий - нет ограничений
-	if is_rated:
-		var hire_btn = Button.new()
-		hire_btn.text = "Нанять"
-		hire_btn.disabled = not can_hire
-		if not can_hire:
-			hire_btn.tooltip_text = "Недостаточно средств"
-		hire_btn.pressed.connect(_on_hire_unit.bind(unit.get("race_unit_id", 0), 999, unit_hire_cost))
-		hbox.add_child(hire_btn)
+		var lock_label = Label.new()
+		lock_label.text = "ЗАБЛОКИРОВАНО"
+		lock_label.add_theme_color_override("font_color", Color(0.8, 0.3, 0.3))
+		lock_label.add_theme_font_size_override("font_size", 12)
+		buttons_hbox.add_child(lock_label)
 	else:
-		# Для наёмных армий - проверяем лимиты
-		if not level_unlocked:
-			# Уровень заблокирован - показываем кнопку разблокировки
-			var unlock_btn = Button.new()
-			unlock_btn.text = "Разблокировать (%d крист.)" % unlock_cost
-			unlock_btn.disabled = player_crystals < unlock_cost
-			if player_crystals < unlock_cost:
-				unlock_btn.tooltip_text = "Недостаточно кристаллов"
-			unlock_btn.pressed.connect(_on_unlock_level.bind(level))
-			hbox.add_child(unlock_btn)
-
-			# Показываем что уровень заблокирован
-			var lock_label = Label.new()
-			lock_label.text = "ЗАБЛОКИРОВАНО"
-			lock_label.add_theme_color_override("font_color", Color(0.8, 0.3, 0.3))
-			lock_label.add_theme_font_size_override("font_size", 12)
-			vbox.add_child(lock_label)
-		else:
-			# Уровень разблокирован - показываем лимит и кнопку найма
-			var limit_label = Label.new()
-			limit_label.text = "Доступно для найма: %d" % available_to_hire
-			if available_to_hire <= 0:
-				limit_label.add_theme_color_override("font_color", Color(0.8, 0.5, 0.3))
-			else:
-				limit_label.add_theme_color_override("font_color", Color(0.5, 0.8, 0.5))
-			limit_label.add_theme_font_size_override("font_size", 12)
-			vbox.add_child(limit_label)
-
-			var hire_btn = Button.new()
+		# Уровень разблокирован
+		# Кнопка найма
+		var hire_btn = Button.new()
+		if is_rated:
 			hire_btn.text = "Нанять"
-			hire_btn.disabled = not can_hire
-			if not can_hire:
-				if available_to_hire <= 0:
-					hire_btn.tooltip_text = "Нет доступных юнитов (ожидайте регенерации)"
-				else:
-					hire_btn.tooltip_text = "Недостаточно средств"
-			hire_btn.pressed.connect(_on_hire_unit.bind(unit.get("race_unit_id", 0), available_to_hire, unit_hire_cost))
-			hbox.add_child(hire_btn)
+		else:
+			hire_btn.text = "Нанять (%d)" % available_to_hire
+		hire_btn.disabled = not can_hire or is_in_battle
+		if is_in_battle:
+			hire_btn.tooltip_text = "Армия в бою"
+		elif not can_hire:
+			if available_to_hire <= 0 and not is_rated:
+				hire_btn.tooltip_text = "Нет доступных юнитов"
+			else:
+				hire_btn.tooltip_text = "Недостаточно средств"
+		hire_btn.pressed.connect(_on_hire_unit.bind(race_unit_id, available_to_hire, unit_hire_cost))
+		buttons_hbox.add_child(hire_btn)
+
+		# Кнопка роспуска (если есть юниты в армии)
+		if current_count > 0:
+			var dismiss_btn = Button.new()
+			dismiss_btn.text = "Распустить"
+			dismiss_btn.disabled = is_in_battle
+			if is_in_battle:
+				dismiss_btn.tooltip_text = "Армия в бою"
+			dismiss_btn.pressed.connect(_on_dismiss_unit.bind(race_unit_id))
+			buttons_hbox.add_child(dismiss_btn)
+
+	# === Правая часть: анимированный спрайт ===
+	var sprite_container = Control.new()
+	sprite_container.custom_minimum_size = Vector2(SPRITE_SIZE, SPRITE_SIZE)
+	main_hbox.add_child(sprite_container)
+
+	# Загружаем и отображаем спрайт
+	var sprite_url = unit.get("sprite_url", "")
+	var sprite_params = unit.get("sprite_params", null)
+	var image_url = unit.get("image_url", "")
+
+	if sprite_url != "" and sprite_params != null:
+		# Анимированный спрайт
+		if sprite_sheets.has(sprite_url):
+			_apply_sprite_to_container(sprite_container, sprite_url)
+		else:
+			_load_sprite_sheet(sprite_url, sprite_params, sprite_container)
+	elif image_url != "":
+		# Статическое изображение
+		if sprite_sheets.has(image_url):
+			_apply_static_image_to_container(sprite_container, image_url)
+		else:
+			_load_static_image(image_url, sprite_container)
+	else:
+		# Иконка-заглушка
+		var icon_label = Label.new()
+		icon_label.text = "?"
+		icon_label.add_theme_font_size_override("font_size", 32)
+		icon_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		icon_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		icon_label.set_anchors_preset(Control.PRESET_FULL_RECT)
+		sprite_container.add_child(icon_label)
 
 	return card
+
+## Возвращает цвет для уровня юнита
+func _get_level_color(level: int) -> Color:
+	match level:
+		1: return Color(0.7, 0.7, 0.7)  # Серый
+		2: return Color(0.5, 0.8, 0.5)  # Зелёный
+		3: return Color(0.5, 0.5, 0.9)  # Синий
+		4: return Color(0.8, 0.5, 0.8)  # Фиолетовый
+		5: return Color(0.9, 0.7, 0.3)  # Золотой
+		_: return Color(0.9, 0.3, 0.3)  # Красный для высоких уровней
+
+## Загружает спрайт-лист через HTTP
+func _load_sprite_sheet(sprite_url: String, sprite_params: Variant, container: Control) -> void:
+	if pending_sprite_loads.has(sprite_url):
+		return
+	pending_sprite_loads[sprite_url] = true
+
+	var url = base_url + sprite_url
+
+	var http = HTTPRequest.new()
+	http.use_threads = false
+	add_child(http)
+	http.request_completed.connect(_on_sprite_sheet_loaded.bind(sprite_url, sprite_params, container, http))
+
+	var headers: PackedStringArray = []
+	if ApiClient.auth_token != "":
+		headers.append("Authorization: Bearer " + ApiClient.auth_token)
+
+	var err = http.request(url, headers)
+	if err != OK:
+		pending_sprite_loads.erase(sprite_url)
+		http.queue_free()
+
+func _on_sprite_sheet_loaded(result: int, response_code: int, _headers: PackedStringArray, body: PackedByteArray, sprite_url: String, sprite_params: Variant, container: Control, http_node: HTTPRequest) -> void:
+	http_node.queue_free()
+	pending_sprite_loads.erase(sprite_url)
+
+	if result != HTTPRequest.RESULT_SUCCESS or response_code != 200 or body.size() == 0:
+		return
+
+	var image = Image.new()
+	var error = ERR_FILE_UNRECOGNIZED
+
+	if body.size() >= 4:
+		var header = body.slice(0, 4)
+		if header[0] == 0x52 and header[1] == 0x49 and header[2] == 0x46 and header[3] == 0x46:
+			error = image.load_webp_from_buffer(body)
+		elif header[0] == 0x89 and header[1] == 0x50 and header[2] == 0x4E and header[3] == 0x47:
+			error = image.load_png_from_buffer(body)
+		elif header[0] == 0xFF and header[1] == 0xD8:
+			error = image.load_jpg_from_buffer(body)
+
+	if error != OK:
+		error = image.load_png_from_buffer(body)
+	if error != OK:
+		error = image.load_jpg_from_buffer(body)
+	if error != OK:
+		error = image.load_webp_from_buffer(body)
+
+	if error != OK:
+		return
+
+	var texture = ImageTexture.create_from_image(image)
+
+	sprite_sheets[sprite_url] = {
+		"texture": texture,
+		"params": sprite_params if sprite_params else {"frame_count": 1, "fps": 10, "columns": 1, "rows": 1}
+	}
+
+	if is_instance_valid(container):
+		_apply_sprite_to_container(container, sprite_url)
+
+## Применяет анимированный спрайт к контейнеру
+func _apply_sprite_to_container(container: Control, sprite_url: String) -> void:
+	if not sprite_sheets.has(sprite_url):
+		return
+
+	# Очищаем контейнер
+	for child in container.get_children():
+		child.queue_free()
+
+	var sprite_data = sprite_sheets[sprite_url]
+	var texture: Texture2D = sprite_data["texture"]
+	var params: Dictionary = sprite_data["params"]
+
+	var animated_sprite = AnimatedSprite2D.new()
+	animated_sprite.name = "AnimatedSprite"
+
+	var sprite_frames = SpriteFrames.new()
+	sprite_frames.add_animation("idle")
+	sprite_frames.set_animation_loop("idle", true)
+	sprite_frames.set_animation_speed("idle", params.get("fps", 10))
+
+	var frame_count: int = maxi(1, params.get("frame_count", 1))
+	var columns: int = maxi(1, params.get("columns", 1))
+	var rows: int = maxi(1, params.get("rows", 1))
+
+	var tex_width = texture.get_width()
+	var tex_height = texture.get_height()
+	var frame_width = tex_width / columns
+	var frame_height = tex_height / rows
+
+	for i in range(frame_count):
+		var col = i % columns
+		var row = i / columns
+
+		var atlas_texture = AtlasTexture.new()
+		atlas_texture.atlas = texture
+		atlas_texture.region = Rect2(col * frame_width, row * frame_height, frame_width, frame_height)
+		sprite_frames.add_frame("idle", atlas_texture)
+
+	animated_sprite.sprite_frames = sprite_frames
+	animated_sprite.animation = "idle"
+
+	# Позиционирование и масштабирование
+	animated_sprite.position = Vector2(SPRITE_SIZE / 2, SPRITE_SIZE / 2)
+	var scale_factor = float(SPRITE_SIZE) / maxf(frame_width, frame_height)
+	animated_sprite.scale = Vector2(scale_factor, scale_factor)
+
+	container.add_child(animated_sprite)
+	animated_sprite.play("idle")
+
+## Загружает статическое изображение
+func _load_static_image(image_url: String, container: Control) -> void:
+	if pending_sprite_loads.has(image_url):
+		return
+	pending_sprite_loads[image_url] = true
+
+	var url = base_url + image_url
+
+	var http = HTTPRequest.new()
+	http.use_threads = false
+	add_child(http)
+	http.request_completed.connect(_on_static_image_loaded.bind(image_url, container, http))
+
+	var headers: PackedStringArray = []
+	if ApiClient.auth_token != "":
+		headers.append("Authorization: Bearer " + ApiClient.auth_token)
+
+	var err = http.request(url, headers)
+	if err != OK:
+		pending_sprite_loads.erase(image_url)
+		http.queue_free()
+
+func _on_static_image_loaded(result: int, response_code: int, _headers: PackedStringArray, body: PackedByteArray, image_url: String, container: Control, http_node: HTTPRequest) -> void:
+	http_node.queue_free()
+	pending_sprite_loads.erase(image_url)
+
+	if result != HTTPRequest.RESULT_SUCCESS or response_code != 200 or body.size() == 0:
+		return
+
+	var image = Image.new()
+	var error = image.load_jpg_from_buffer(body)
+	if error != OK:
+		error = image.load_png_from_buffer(body)
+	if error != OK:
+		error = image.load_webp_from_buffer(body)
+
+	if error != OK:
+		return
+
+	var texture = ImageTexture.create_from_image(image)
+	sprite_sheets[image_url] = {"texture": texture, "params": null}
+
+	if is_instance_valid(container):
+		_apply_static_image_to_container(container, image_url)
+
+## Применяет статическое изображение к контейнеру
+func _apply_static_image_to_container(container: Control, image_url: String) -> void:
+	if not sprite_sheets.has(image_url):
+		return
+
+	for child in container.get_children():
+		child.queue_free()
+
+	var sprite_data = sprite_sheets[image_url]
+	var texture: Texture2D = sprite_data["texture"]
+
+	var texture_rect = TextureRect.new()
+	texture_rect.texture = texture
+	texture_rect.expand_mode = TextureRect.EXPAND_FIT_WIDTH_PROPORTIONAL
+	texture_rect.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	texture_rect.custom_minimum_size = Vector2(SPRITE_SIZE, SPRITE_SIZE)
+	texture_rect.size = Vector2(SPRITE_SIZE, SPRITE_SIZE)
+
+	container.add_child(texture_rect)
 
 func _on_back_pressed() -> void:
 	get_tree().change_scene_to_file("res://scenes/main.tscn")
