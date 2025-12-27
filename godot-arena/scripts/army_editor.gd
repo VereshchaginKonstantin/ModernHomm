@@ -11,8 +11,8 @@ extends Control
 @onready var units_list: VBoxContainer = %UnitsList
 @onready var status_label: Label = %StatusLabel
 
-# Размер спрайта в карточке юнита
-const SPRITE_SIZE: int = 128
+# Размер спрайта вычисляется динамически (половина ширины экрана)
+var sprite_size: int = 128
 
 # Состояние
 var armies: Array = []
@@ -44,6 +44,9 @@ enum RequestType { NONE, GET_ARMIES, CREATE_ARMY, DELETE_ARMY, GET_AVAILABLE_UNI
 var pending_request: RequestType = RequestType.NONE
 
 func _ready() -> void:
+	# Вычисляем размер спрайта - половина ширины экрана
+	sprite_size = int(get_viewport().get_visible_rect().size.x / 2)
+
 	# Получаем базовый URL (origin) для загрузки спрайтов
 	if OS.has_feature("web"):
 		var js_code = """
@@ -311,7 +314,7 @@ func _display_units_list() -> void:
 func _create_unit_card(unit: Dictionary) -> Control:
 	var card = PanelContainer.new()
 	card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	card.custom_minimum_size = Vector2(0, SPRITE_SIZE + 20)
+	card.custom_minimum_size = Vector2(0, sprite_size + 20)
 
 	var main_hbox = HBoxContainer.new()
 	main_hbox.add_theme_constant_override("separation", 10)
@@ -422,7 +425,7 @@ func _create_unit_card(unit: Dictionary) -> Control:
 
 	# === Правая часть: анимированный спрайт ===
 	var sprite_container = Control.new()
-	sprite_container.custom_minimum_size = Vector2(SPRITE_SIZE, SPRITE_SIZE)
+	sprite_container.custom_minimum_size = Vector2(sprite_size, sprite_size)
 	main_hbox.add_child(sprite_container)
 
 	# Загружаем и отображаем спрайт
@@ -570,8 +573,8 @@ func _apply_sprite_to_container(container: Control, sprite_url: String) -> void:
 	animated_sprite.animation = "idle"
 
 	# Позиционирование и масштабирование
-	animated_sprite.position = Vector2(SPRITE_SIZE / 2, SPRITE_SIZE / 2)
-	var scale_factor = float(SPRITE_SIZE) / maxf(frame_width, frame_height)
+	animated_sprite.position = Vector2(sprite_size / 2, sprite_size / 2)
+	var scale_factor = float(sprite_size) / maxf(frame_width, frame_height)
 	animated_sprite.scale = Vector2(scale_factor, scale_factor)
 
 	container.add_child(animated_sprite)
@@ -637,8 +640,8 @@ func _apply_static_image_to_container(container: Control, image_url: String) -> 
 	texture_rect.texture = texture
 	texture_rect.expand_mode = TextureRect.EXPAND_FIT_WIDTH_PROPORTIONAL
 	texture_rect.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-	texture_rect.custom_minimum_size = Vector2(SPRITE_SIZE, SPRITE_SIZE)
-	texture_rect.size = Vector2(SPRITE_SIZE, SPRITE_SIZE)
+	texture_rect.custom_minimum_size = Vector2(sprite_size, sprite_size)
+	texture_rect.size = Vector2(sprite_size, sprite_size)
 
 	container.add_child(texture_rect)
 
