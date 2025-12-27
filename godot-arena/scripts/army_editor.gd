@@ -12,7 +12,7 @@ extends Control
 @onready var status_label: Label = %StatusLabel
 
 # Размер спрайта в карточке юнита
-const SPRITE_SIZE: int = 64
+const SPRITE_SIZE: int = 128
 
 # Состояние
 var armies: Array = []
@@ -44,8 +44,18 @@ enum RequestType { NONE, GET_ARMIES, CREATE_ARMY, DELETE_ARMY, GET_AVAILABLE_UNI
 var pending_request: RequestType = RequestType.NONE
 
 func _ready() -> void:
-	# Получаем базовый URL из ApiClient
-	base_url = ApiClient.base_url
+	# Получаем базовый URL (origin) для загрузки спрайтов
+	if OS.has_feature("web"):
+		var js_code = """
+			(function() {
+				return window.location.origin;
+			})()
+		"""
+		var result = JavaScriptBridge.eval(js_code)
+		if result:
+			base_url = result
+	else:
+		base_url = ""
 
 	# Подключаем сигналы UI
 	back_button.pressed.connect(_on_back_pressed)
@@ -461,6 +471,7 @@ func _load_sprite_sheet(sprite_url: String, sprite_params: Variant, container: C
 	pending_sprite_loads[sprite_url] = true
 
 	var url = base_url + sprite_url
+	print("Loading sprite: ", url)
 
 	var http = HTTPRequest.new()
 	http.use_threads = false
@@ -481,6 +492,7 @@ func _on_sprite_sheet_loaded(result: int, response_code: int, _headers: PackedSt
 	pending_sprite_loads.erase(sprite_url)
 
 	if result != HTTPRequest.RESULT_SUCCESS or response_code != 200 or body.size() == 0:
+		print("Sprite load failed: ", sprite_url, " result=", result, " code=", response_code, " size=", body.size())
 		return
 
 	var image = Image.new()
@@ -781,14 +793,10 @@ func _on_hire_unit(race_unit_id: int, available: int, cost: int) -> void:
 	if selected_army_id <= 0 or race_unit_id <= 0:
 		return
 
-	# Для рейтинговых армий или если доступен только 1 - нанимаем сразу
-	if army_type == "rated" or available <= 1:
-		_do_hire_unit(race_unit_id, 1)
-		return
-
-	# Показываем диалог выбора количества
+	# Всегда показываем диалог выбора количества
 	hire_race_unit_id = race_unit_id
-	hire_max_available = available
+	# Для рейтинговых армий устанавливаем большой лимит
+	hire_max_available = available if available > 0 else 999
 	hire_unit_cost = cost
 	_show_hire_dialog()
 
