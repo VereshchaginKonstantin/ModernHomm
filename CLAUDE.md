@@ -39,8 +39,14 @@ goose -dir migrations postgres "user=postgres password=postgres host=localhost p
 
 ### 5. Run Tests
 ```bash
-# Run all tests
-pytest -v
+# Run unit and integration tests
+pytest tests/ -v --ignore=tests/smoke/ --ignore=tests/acceptance/
+
+# Run smoke tests (проверка контейнеров)
+pytest tests/smoke/ -v
+
+# Run acceptance tests (полные сценарии через API)
+pytest tests/acceptance/ -v
 
 # If tests fail, fix them before proceeding
 ```
