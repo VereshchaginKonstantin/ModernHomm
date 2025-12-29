@@ -719,9 +719,15 @@ def api_public_pending_games():
         if not player:
             return jsonify({"error": "Player not found", "pending_games": [], "active_games": [], "history": []}), 404
 
-        # Ожидающие игры (где игрок - player2 и статус waiting)
+        # Ожидающие игры (где игрок - player2 и статус waiting) - входящие вызовы
         pending = session_db.query(Game).filter(
             Game.player2_id == player_id,
+            Game.status == GameStatus.WAITING
+        ).all()
+
+        # Мои созданные игры, ожидающие принятия (где игрок - player1 и статус waiting) - исходящие вызовы
+        my_waiting = session_db.query(Game).filter(
+            Game.player1_id == player_id,
             Game.status == GameStatus.WAITING
         ).all()
 
@@ -790,6 +796,7 @@ def api_public_pending_games():
 
         return jsonify({
             "pending_games": [game_to_dict(g, is_pending=True) for g in pending],
+            "my_waiting_games": [game_to_dict(g) for g in my_waiting],  # Мои исходящие вызовы
             "active_games": [game_to_dict(g) for g in active],
             "history": [game_to_dict(g) for g in history]
         })
@@ -891,7 +898,7 @@ def api_public_create_game():
 @token_required
 def api_public_accept_game(game_id):
     """Публичный эндпоинт - принять игру для Godot (требуется токен)"""
-    data = request.get_json()
+    data = request.get_json() or {}
     player_id = request.player_id  # Из токена
     army_id = data.get('army_id')  # ID армии для боя
 
@@ -922,6 +929,32 @@ def api_public_accept_game(game_id):
             return jsonify({'status': 'in_progress', 'game_id': game_id})
         else:
             return jsonify({'error': message}), 400
+
+
+@arena_bp.route('/api/public/games/<int:game_id>/decline', methods=['POST'])
+@token_required
+def api_public_decline_game(game_id):
+    """Публичный эндпоинт - отклонить/отменить игру для Godot (требуется токен)"""
+    player_id = request.player_id  # Из токена
+
+    with db.get_session() as session_db:
+        game = session_db.query(Game).filter_by(id=game_id).first()
+        if not game:
+            return jsonify({'error': 'Game not found'}), 404
+
+        # Проверяем что игрок участвует в игре
+        if game.player1_id != player_id and game.player2_id != player_id:
+            return jsonify({'error': 'Not your game'}), 403
+
+        # Можно отменить только игру в статусе WAITING
+        if game.status != GameStatus.WAITING:
+            return jsonify({'error': 'Game already started or completed'}), 400
+
+        # Удаляем игру (она ещё не начиналась)
+        session_db.delete(game)
+        session_db.commit()
+
+        return jsonify({'status': 'cancelled', 'game_id': game_id})
 
 
 @arena_bp.route('/api/public/games/<int:game_id>/move', methods=['POST'])

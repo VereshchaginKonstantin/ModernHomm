@@ -281,10 +281,11 @@ class TestGodotArenaGameFlow:
         assert 'field' in game_state, "Нет информации о поле"
         assert 'units' in game_state, "Нет информации о юнитах"
 
-        # Проверяем поле
+        # Проверяем поле (размер определяется динамически)
         field = game_state['field']
-        assert field.get('width') == 5, "Неверная ширина поля"
-        assert field.get('height') == 5, "Неверная высота поля"
+        assert field.get('width') in [5, 7, 10], f"Неверная ширина поля: {field.get('width')}"
+        assert field.get('height') in [5, 7, 10], f"Неверная высота поля: {field.get('height')}"
+        assert field.get('width') == field.get('height'), "Поле должно быть квадратным"
 
         # Проверяем юнитов
         units = game_state['units']

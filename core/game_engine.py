@@ -144,7 +144,55 @@ class GameEngine:
             'units': units_state
         }
 
-    def create_game(self, player1_id: int, player2_username: str, player1_army_id: int, field_name: str = "7x7") -> Tuple[Optional[Game], str]:
+    def _determine_field_size(self, army1_units: List[ArmyUnit], army2_units: List[ArmyUnit] = None) -> str:
+        """
+        Определить размер поля на основе состава армий.
+
+        Правила:
+        - Если есть большие юниты -> 10x10
+        - Если суммарно юнитов (по уровням/типам) > 5 -> 10x10
+        - Если юнитов < 3 -> 5x5
+        - Если юнитов от 3 до 5 и нет больших -> 7x7
+
+        Args:
+            army1_units: Юниты первой армии
+            army2_units: Юниты второй армии (может быть None)
+
+        Returns:
+            str: Название поля ("5x5", "7x7" или "10x10")
+        """
+        all_units = list(army1_units)
+        if army2_units:
+            all_units.extend(army2_units)
+
+        has_big_units = False
+        total_unit_types = 0  # Количество типов юнитов (стеков)
+
+        for army_unit in all_units:
+            if army_unit.count > 0:
+                total_unit_types += 1
+                # Проверяем, большой ли юнит
+                if army_unit.race_unit and army_unit.race_unit.is_big:
+                    has_big_units = True
+
+        logger.info(f"Field size calculation: total_unit_types={total_unit_types}, has_big_units={has_big_units}")
+
+        # Если есть большие юниты -> 10x10
+        if has_big_units:
+            return "10x10"
+
+        # Если юнитов больше 5 -> 10x10
+        if total_unit_types > 5:
+            return "10x10"
+
+        # Если юнитов меньше 3 -> 5x5
+        if total_unit_types < 3:
+            return "5x5"
+
+        # Иначе (от 3 до 5 юнитов, без больших) -> 7x7
+        return "7x7"
+
+    def create_game(self, player1_id: int, player2_username: str, player1_army_id: int, field_name: str = None) -> Tuple[Optional[Game], str]:
         """
         Создание новой игры с выбранной армией
 
@@ -152,7 +200,7 @@ class GameEngine:
             player1_id: ID игрока, создающего игру
             player2_username: Имя второго игрока
             player1_army_id: ID армии игрока 1
-            field_name: Название поля (по умолчанию "7x7")
+            field_name: Название поля (если None, будет определено автоматически)
 
         Returns:
             Tuple[Game, str]: Созданная игра и сообщение
@@ -187,6 +235,12 @@ class GameEngine:
         ).all()
         if not player1_army_units:
             return None, "В вашей армии нет юнитов"
+
+        # Определить размер поля на основе армии игрока 1 (пока без армии игрока 2)
+        # Окончательный размер будет пересчитан при accept_game
+        if not field_name:
+            field_name = self._determine_field_size(player1_army_units)
+            logger.info(f"Auto-selected field size: {field_name} for player1 army")
 
         # Найти или создать поле
         field = self.db.query(Field).filter_by(name=field_name).first()
@@ -260,6 +314,33 @@ class GameEngine:
         ).all()
         if not player2_army_units:
             return False, "В вашей армии нет юнитов"
+
+        # Получить юниты армии игрока 1 для пересчёта размера поля
+        player1_army_units = self.db.query(ArmyUnit).filter(
+            ArmyUnit.army_id == game.player1_army_id,
+            ArmyUnit.count > 0
+        ).all()
+
+        # Пересчитать размер поля с учётом обеих армий
+        new_field_name = self._determine_field_size(player1_army_units, player2_army_units)
+        new_field = self.db.query(Field).filter_by(name=new_field_name).first()
+
+        if new_field and new_field.id != game.field_id:
+            logger.info(f"Changing field size from {game.field.name} to {new_field_name} based on both armies")
+            # Удаляем существующие юниты и препятствия
+            self.db.query(BattleUnit).filter_by(game_id=game.id).delete()
+            self.db.query(Obstacle).filter_by(game_id=game.id).delete()
+
+            # Меняем поле
+            game.field_id = new_field.id
+            game.battle_field_template_id = None  # Сбрасываем шаблон, будет выбран заново
+
+            # Заново размещаем юниты игрока 1
+            player1 = self.db.query(GameUser).filter_by(id=game.player1_id).first()
+            self._place_army_units(game, player1, player1_army_units, 1)
+
+            # Генерируем препятствия для нового поля
+            self._generate_obstacles(game)
 
         # Разместить юниты армии игрока 2
         player2 = self.db.query(GameUser).filter_by(id=player_id).first()
