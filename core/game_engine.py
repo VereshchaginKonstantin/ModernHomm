@@ -149,10 +149,9 @@ class GameEngine:
         Определить размер поля на основе состава армий.
 
         Правила:
-        - Если есть большие юниты -> 10x10
-        - Если суммарно юнитов (по уровням/типам) > 5 -> 10x10
-        - Если юнитов < 3 -> 5x5
-        - Если юнитов от 3 до 5 и нет больших -> 7x7
+        - Юниты одного игрока должны помещаться в один ряд поля
+        - Большие юниты занимают 2 клетки в ряду
+        - Выбирается минимальное подходящее поле: 5x5, 7x7 или 10x10
 
         Args:
             army1_units: Юниты первой армии
@@ -161,36 +160,34 @@ class GameEngine:
         Returns:
             str: Название поля ("5x5", "7x7" или "10x10")
         """
-        all_units = list(army1_units)
-        if army2_units:
-            all_units.extend(army2_units)
+        def calc_row_width(units: List[ArmyUnit]) -> int:
+            """Посчитать сколько клеток нужно для размещения юнитов в ряд"""
+            width = 0
+            for army_unit in units:
+                if army_unit.count > 0:
+                    # Большие юниты занимают 2 клетки
+                    if army_unit.race_unit and army_unit.race_unit.is_big:
+                        width += 2
+                    else:
+                        width += 1
+            return width
 
-        has_big_units = False
-        total_unit_types = 0  # Количество типов юнитов (стеков)
+        # Считаем необходимую ширину для каждой армии
+        army1_width = calc_row_width(army1_units)
+        army2_width = calc_row_width(army2_units) if army2_units else 0
 
-        for army_unit in all_units:
-            if army_unit.count > 0:
-                total_unit_types += 1
-                # Проверяем, большой ли юнит
-                if army_unit.race_unit and army_unit.race_unit.is_big:
-                    has_big_units = True
+        # Берём максимум - обе армии должны помещаться
+        max_width = max(army1_width, army2_width)
 
-        logger.info(f"Field size calculation: total_unit_types={total_unit_types}, has_big_units={has_big_units}")
+        logger.info(f"Field size calculation: army1_width={army1_width}, army2_width={army2_width}, max_width={max_width}")
 
-        # Если есть большие юниты -> 10x10
-        if has_big_units:
-            return "10x10"
-
-        # Если юнитов больше 5 -> 10x10
-        if total_unit_types > 5:
-            return "10x10"
-
-        # Если юнитов меньше 3 -> 5x5
-        if total_unit_types < 3:
+        # Выбираем минимальное поле, куда помещаются юниты
+        if max_width <= 5:
             return "5x5"
-
-        # Иначе (от 3 до 5 юнитов, без больших) -> 7x7
-        return "7x7"
+        elif max_width <= 7:
+            return "7x7"
+        else:
+            return "10x10"
 
     def create_game(self, player1_id: int, player2_username: str, player1_army_id: int, field_name: str = None) -> Tuple[Optional[Game], str]:
         """
