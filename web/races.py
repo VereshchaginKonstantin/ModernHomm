@@ -727,7 +727,7 @@ EDIT_UNIT_TEMPLATE = """
                     </div>
                     <div class="form-group">
                         <label>Скорость</label>
-                        <input type="number" name="speed" value="{{ unit.speed or 4 }}" min="1" max="20">
+                        <input type="number" name="speed" value="{{ unit.speed if unit.speed is not none else 4 }}" min="0" max="20">
                     </div>
                 </div>
 
@@ -742,7 +742,7 @@ EDIT_UNIT_TEMPLATE = """
                     </div>
                     <div class="form-group">
                         <label>Инициатива</label>
-                        <input type="number" name="initiative" value="{{ unit.initiative or 10 }}" min="1" max="30">
+                        <input type="number" name="initiative" value="{{ unit.initiative if unit.initiative is not none else 10 }}" min="0" max="30">
                     </div>
                     <div class="form-group">
                         <label>Дальность</label>
