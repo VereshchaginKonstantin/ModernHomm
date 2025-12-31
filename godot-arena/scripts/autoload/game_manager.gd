@@ -17,6 +17,7 @@ var game_state: Dictionary = {}
 var selected_unit: Dictionary = {}
 var current_actions: Dictionary = {}
 var players: Array = []
+var is_challenge_game: bool = false  # Флаг что это PvE челлендж
 
 # Polling
 var polling_timer: Timer
@@ -222,6 +223,9 @@ func return_to_menu() -> void:
 	deselect_unit()
 	current_game_id = 0
 	game_state = {}
+	is_challenge_game = false
+	# Отменяем все незавершённые запросы перед сменой сцены
+	ApiClient.cancel_all_requests()
 	# Всегда переключаем сцену внутри Godot (не редирект на веб)
 	get_tree().change_scene_to_file("res://scenes/main.tscn")
 

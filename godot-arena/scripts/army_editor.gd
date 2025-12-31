@@ -300,11 +300,11 @@ func _display_units_list() -> void:
 		var available_to_hire = unit.get("available_to_hire", 0)
 		var is_rated = army_type == "rated"
 
-		# Показываем юнита если:
+		# Показываем юнита только если:
 		# 1. Есть в армии (current_count > 0)
 		# 2. Можно нанять (level_unlocked и available_to_hire > 0) или рейтинговая армия
-		# 3. Уровень заблокирован но можно разблокировать
-		var should_show = current_count > 0 or (level_unlocked and available_to_hire > 0) or is_rated or not level_unlocked
+		# НЕ показываем заблокированные уровни
+		var should_show = current_count > 0 or (level_unlocked and available_to_hire > 0) or is_rated
 
 		if should_show:
 			var unit_card = _create_unit_card(unit)

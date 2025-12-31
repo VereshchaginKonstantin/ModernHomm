@@ -143,6 +143,64 @@ class TestPriceFormulaUpdate:
         expected_price = Decimal("9350.00")
         assert price == expected_price, f"Ожидаемая цена {expected_price}, получено {price}"
 
+    def test_tower_price_defense_divided_by_3(self):
+        """Тест что для башен (speed=0) защита делится на 3"""
+        damage = 50
+        defense = 30  # Будет 10 после деления на 3
+        health = 100
+        unit_range = 3
+        speed = 0  # Башня!
+        luck = 0
+        crit_chance = 0
+        dodge_chance = 0
+        counterattack_chance = 0
+
+        price = calculate_unit_price(
+            damage, defense, health, unit_range, speed,
+            luck, crit_chance, dodge_chance,
+            is_kamikaze=0, counterattack_chance=counterattack_chance
+        )
+
+        # Расчет: defense_value = 30/3 = 10
+        # 50 + 10 + 100 + 2*3*(50+10) + 0*(50+10) + 0 + 0 + 0 + 0
+        # = 50 + 10 + 100 + 360 + 0 = 520.0
+        expected_price = Decimal("520.00")
+        assert price == expected_price, f"Ожидаемая цена {expected_price}, получено {price}"
+
+    def test_tower_vs_mobile_unit_same_stats(self):
+        """Тест что башня дешевле мобильного юнита с теми же статами"""
+        damage = 50
+        defense = 30
+        health = 100
+        unit_range = 3
+        luck = 0
+        crit_chance = 0
+        dodge_chance = 0.2
+        counterattack_chance = 0
+
+        # Башня (speed=0)
+        tower_price = calculate_unit_price(
+            damage, defense, health, unit_range, 0,
+            luck, crit_chance, dodge_chance,
+            is_kamikaze=0, counterattack_chance=counterattack_chance
+        )
+
+        # Мобильный юнит (speed=2)
+        mobile_price = calculate_unit_price(
+            damage, defense, health, unit_range, 2,
+            luck, crit_chance, dodge_chance,
+            is_kamikaze=0, counterattack_chance=counterattack_chance
+        )
+
+        # Башня: defense_value = 10, speed=0
+        # 50 + 10 + 100 + 2*3*(50+10) + 0 + 0 + 0 + 10*0.2*(50+10) = 50+10+100+360+0+120 = 640.0
+        # Мобильный: defense_value = 30, speed=2
+        # 50 + 30 + 100 + 2*3*(50+30) + 2*(50+30) + 0 + 0 + 10*0.2*(50+30) = 50+30+100+480+160+160 = 980.0
+
+        assert tower_price == Decimal("640.00"), f"Ожидаемая цена башни 640.00, получено {tower_price}"
+        assert mobile_price == Decimal("980.00"), f"Ожидаемая цена мобильного 980.00, получено {mobile_price}"
+        assert tower_price < mobile_price, "Башня должна быть дешевле мобильного юнита"
+
 
 if __name__ == '__main__':
     pytest.main([__file__, '-v'])

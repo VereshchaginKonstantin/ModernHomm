@@ -9,7 +9,7 @@ from datetime import datetime, timedelta
 from decimal import Decimal
 from typing import List, Tuple, Optional, Dict, Set
 from sqlalchemy.orm import Session
-from db.models import Game, GameStatus, BattleUnit, GameUser, Field, Obstacle, GameLog, Army, ArmyUnit, RaceUnit, UserRace, UserRaceUnit, BattleFieldTemplate, BattleFieldObstacle
+from db.models import Game, GameStatus, BattleUnit, GameUser, Field, Obstacle, GameDecoration, GameLog, Army, ArmyUnit, RaceUnit, UserRace, UserRaceUnit, BattleFieldTemplate, BattleFieldObstacle, Challenge, ChallengeUnit, ChallengeCompletion, AIDifficulty
 
 logger = logging.getLogger(__name__)
 
@@ -118,14 +118,21 @@ class GameEngine:
 
         units_state = []
         for unit in units:
-            # Получаем информацию о юните из армии
+            # Получаем информацию о юните из армии или напрямую из race_unit (для AI)
             unit_name = 'Unknown'
             unit_icon = '?'
+            race_unit = None
             if unit.army_unit and unit.army_unit.race_unit:
-                unit_name = unit.army_unit.race_unit.name
+                race_unit = unit.army_unit.race_unit
+            elif unit.race_unit:
+                # AI юниты имеют прямую ссылку на race_unit
+                race_unit = unit.race_unit
+
+            if race_unit:
+                unit_name = race_unit.name
                 # Используем иконку уровня юнита
-                if unit.army_unit.race_unit.unit_level:
-                    unit_icon = unit.army_unit.race_unit.unit_level.icon
+                if race_unit.unit_level:
+                    unit_icon = race_unit.unit_level.icon
             unit_info = {
                 'id': unit.id,
                 'player_id': unit.player_id,
@@ -267,7 +274,7 @@ class GameEngine:
         self._generate_obstacles(game)
 
         # Логировать создание игры
-        self._log_event(game.id, "game_created", f"⚔️ Игра создана! {player1.username} вызвал на бой {player2.username}")
+        self._log_event(game.id, "game_created", f"Игра создана! {player1.username} вызвал на бой {player2.username}")
 
         self.db.commit()
         return game, f"Игра создана! Ожидание принятия игроком {player2_username}"
@@ -354,7 +361,7 @@ class GameEngine:
 
         # Логировать начало игры
         player1 = self.db.query(GameUser).filter_by(id=game.player1_id).first()
-        self._log_event(game.id, "game_started", f"🎮 Игра началась! Первый ход: {player1.username}")
+        self._log_event(game.id, "game_started", f"Игра началась! Первый ход: {player1.username}")
 
         self.db.commit()
         return True, "Игра начата! Ходит первый игрок"
@@ -406,14 +413,15 @@ class GameEngine:
         if occupied:
             return False, "Эта позиция занята", False
 
-        # Проверить, что на цели нет препятствия
-        obstacle = self.db.query(Obstacle).filter(
-            Obstacle.game_id == game_id,
-            Obstacle.position_x == target_x,
-            Obstacle.position_y == target_y
-        ).first()
-        if obstacle:
-            return False, "На этой позиции препятствие", False
+        # Проверить, что на цели нет препятствия (учитывая размеры препятствий)
+        obstacles = self.db.query(Obstacle).filter(Obstacle.game_id == game_id).all()
+        for obstacle in obstacles:
+            obs_width = obstacle.width or 1
+            obs_height = obstacle.height or 1
+            # Проверяем, попадает ли target в зону препятствия
+            if (obstacle.position_x <= target_x < obstacle.position_x + obs_width and
+                obstacle.position_y <= target_y < obstacle.position_y + obs_height):
+                return False, "На этой позиции препятствие", False
 
         # Получить характеристики юнита
         unit = self._get_unit_stats(battle_unit)
@@ -440,7 +448,7 @@ class GameEngine:
         # Логируем перемещение
         player = self.db.query(GameUser).filter_by(id=player_id).first()
         unit_name = unit['name'] if unit else "Юнит"
-        self._log_event(game.id, "move", f"🚶 {player.username}: {unit_name} {old_pos} → ({target_x}, {target_y})")
+        self._log_event(game.id, "move", f"{player.username}: {unit_name} {old_pos} -> ({target_x}, {target_y})")
 
         self.db.commit()
 
@@ -488,9 +496,11 @@ class GameEngine:
                 if alive_count > 0:
                     occupied_positions.add((bu.position_x, bu.position_y))
 
-        # Добавить препятствия
+        # Добавить препятствия (учитываем размер препятствия)
         for obstacle in game.obstacles:
-            occupied_positions.add((obstacle.position_x, obstacle.position_y))
+            for ox in range(obstacle.width or 1):
+                for oy in range(obstacle.height or 1):
+                    occupied_positions.add((obstacle.position_x + ox, obstacle.position_y + oy))
 
         # BFS для поиска всех достижимых клеток
         available_cells = []
@@ -659,27 +669,27 @@ class GameEngine:
                 if counterattack_damage > 0:
                     counter_units_killed = self._apply_damage(attacker, counterattack_damage)
 
-                    combat_log += f"\n\n🔄 КОНТРАТАКА! {target_unit['name']} наносит ответный урон {attacker_unit['name']}!\n"
+                    combat_log += f"\n\nКОНТРАТАКА! {target_unit['name']} наносит ответный урон {attacker_unit['name']}!\n"
                     combat_log += f"   Вероятность контратаки: 50.0% (бросок: {counterattack_roll*100:.1f}%)\n"
                     combat_log += f"   Коэффициент урона контратаки: {counterattack_coef*100:.1f}%\n"
                     combat_log += f"   Базовый урон: {base_counter_damage} x {alive_defenders} юнитов x {counterattack_coef:.2f} = {counterattack_damage}\n"
-                    combat_log += f"   ⚡ Урон от контратаки: {counterattack_damage}"
+                    combat_log += f"   Урон от контратаки: {counterattack_damage}"
 
                     if counter_units_killed > 0:
-                        combat_log += f"\n   ⚰️ Убито атакующих юнитов: {counter_units_killed}"
+                        combat_log += f"\n   Убито атакующих юнитов: {counter_units_killed}"
             else:
                 # Контратака не сработала
-                combat_log += f"\n\n❌ Контратака не сработала (вероятность 50%, бросок: {counterattack_roll*100:.1f}%)"
+                combat_log += f"\n\nКонтратака не сработала (вероятность 50%, бросок: {counterattack_roll*100:.1f}%)"
 
         # Обработать камикадзе - уменьшить счетчик юнитов на 1 после атаки
         if attacker_unit['is_kamikaze'] and attacker.total_count > 0:
             attacker.total_count -= 1
-            combat_log += f"\n\n💣 КАМИКАДЗЕ: {attacker_unit['name']} потерял 1 юнита после атаки (осталось: {attacker.total_count})"
+            combat_log += f"\n\nКАМИКАДЗЕ: {attacker_unit['name']} потерял 1 юнита после атаки (осталось: {attacker.total_count})"
 
             # Если камикадзе юниты закончились, обнулить HP
             if attacker.total_count == 0:
                 attacker.remaining_hp = 0
-                combat_log += f"\n⚰️ Все камикадзе юниты {attacker_unit['name']} погибли!"
+                combat_log += f"\nВсе камикадзе юниты {attacker_unit['name']} погибли!"
 
         # Обновить кураж (morale) в зависимости от результата атаки
         if units_killed > 0:
@@ -717,11 +727,11 @@ class GameEngine:
 
         # Добавляем информацию об убитых юнитах защитника в combat_log
         if units_killed > 0:
-            combat_log += f"\n\n⚰️ Убито юнитов: {units_killed}"
+            combat_log += f"\n\nУбито юнитов: {units_killed}"
 
         # Логировать атаку ПЕРЕД завершением игры, чтобы game_ended был последним
         attacker_player = self.db.query(GameUser).filter_by(id=player_id).first()
-        self._log_event(game.id, "attack", f"⚔️ {attacker_player.username}: {combat_log}")
+        self._log_event(game.id, "attack", f"{attacker_player.username}: {combat_log}")
 
         # Проверить, все ли юниты игрока мертвы
         turn_switched = False
@@ -958,7 +968,7 @@ class GameEngine:
 
     def _get_unit_stats(self, battle_unit: BattleUnit) -> dict:
         """
-        Получить характеристики юнита из армии
+        Получить характеристики юнита из армии или напрямую из race_unit (для AI)
 
         Args:
             battle_unit: Юнит в бою
@@ -967,7 +977,13 @@ class GameEngine:
             dict: Характеристики юнита
         """
         army_unit = battle_unit.army_unit
-        race_unit = army_unit.race_unit if army_unit else None
+        # Для обычных юнитов берем из army_unit, для AI - напрямую из race_unit
+        race_unit = None
+        if army_unit and army_unit.race_unit:
+            race_unit = army_unit.race_unit
+        elif battle_unit.race_unit:
+            # AI юниты имеют прямую ссылку на race_unit
+            race_unit = battle_unit.race_unit
 
         if not race_unit:
             return {
@@ -1123,7 +1139,16 @@ class GameEngine:
         Args:
             game: Игра
         """
+        # Явно загружаем field, если relationship не подгружен
         field = game.field
+        if field is None:
+            field = self.db.query(Field).filter_by(id=game.field_id).first()
+
+        if not field:
+            logger.error(f"Game {game.id}: Field not found for field_id={game.field_id}")
+            return
+
+        logger.info(f"Game {game.id}: Generating obstacles for field '{field.name}' (id={field.id})")
 
         # Получить занятые позиции (юниты)
         occupied = set()
@@ -1141,6 +1166,8 @@ class GameEngine:
             BattleFieldTemplate.is_active == True
         ).all()
 
+        logger.info(f"Game {game.id}: Found {len(templates)} active templates for field_size_id={field.id}")
+
         if templates:
             # Выбираем случайный шаблон
             template = random.choice(templates)
@@ -1148,17 +1175,46 @@ class GameEngine:
 
             # Копируем препятствия из шаблона
             for template_obstacle in template.obstacles:
-                # Проверяем, что позиция не занята юнитами
-                if (template_obstacle.position_x, template_obstacle.position_y) not in occupied:
+                # Проверяем, что ни одна из ячеек препятствия не занята юнитами
+                obstacle_blocked = False
+                for ox in range(template_obstacle.width or 1):
+                    for oy in range(template_obstacle.height or 1):
+                        if (template_obstacle.position_x + ox, template_obstacle.position_y + oy) in occupied:
+                            obstacle_blocked = True
+                            break
+                    if obstacle_blocked:
+                        break
+
+                if not obstacle_blocked:
                     obstacle = Obstacle(
                         game_id=game.id,
+                        obstacle_template_id=template_obstacle.obstacle_template_id,  # Ссылка на шаблон для спрайта
                         position_x=template_obstacle.position_x,
-                        position_y=template_obstacle.position_y
+                        position_y=template_obstacle.position_y,
+                        width=template_obstacle.width or 1,
+                        height=template_obstacle.height or 1
                     )
                     self.db.add(obstacle)
-                    occupied.add((template_obstacle.position_x, template_obstacle.position_y))
+                    # Добавляем все занятые клетки для больших препятствий
+                    for ox in range(template_obstacle.width or 1):
+                        for oy in range(template_obstacle.height or 1):
+                            occupied.add((template_obstacle.position_x + ox, template_obstacle.position_y + oy))
 
-            logger.info(f"Game {game.id}: Using field template '{template.name}' with {len(template.obstacles)} obstacles")
+            # Копируем декорации из шаблона
+            for template_decoration in template.decorations:
+                decoration = GameDecoration(
+                    game_id=game.id,
+                    decoration_template_id=template_decoration.decoration_template_id,
+                    decoration_type=template_decoration.decoration_type,
+                    position_x=template_decoration.position_x,
+                    position_y=template_decoration.position_y,
+                    width=template_decoration.width or 1,
+                    height=template_decoration.height or 1,
+                    z_index=template_decoration.z_index or 0
+                )
+                self.db.add(decoration)
+
+            logger.info(f"Game {game.id}: Using field template '{template.name}' with {len(template.obstacles)} obstacles and {len(template.decorations)} decorations")
         else:
             # Если шаблонов нет - генерируем случайные препятствия
             # Количество препятствий зависит от размера поля (примерно 10-15% клеток)
@@ -1214,9 +1270,11 @@ class GameEngine:
             if alive_count > 0:
                 occupied.add((battle_unit.position_x, battle_unit.position_y))
 
-        # Добавить позиции препятствий
+        # Добавить позиции препятствий (учитываем размер препятствия)
         for obstacle in game.obstacles:
-            occupied.add((obstacle.position_x, obstacle.position_y))
+            for ox in range(obstacle.width or 1):
+                for oy in range(obstacle.height or 1):
+                    occupied.add((obstacle.position_x + ox, obstacle.position_y + oy))
 
         # Убрать начальную и конечную точки из проверки
         if (start_x, start_y) in occupied:
@@ -1307,11 +1365,11 @@ class GameEngine:
 
         if is_dodged:
             # Уклонение успешно - урон 0
-            attacker_display = f"x{actual_attackers}" if not is_kamikaze else f"x{actual_attackers} 💣КАМИКАДЗЕ💣"
-            log = f"⚔️ {attacker_unit['name']} ({attacker_display}) атакует {target_unit['name']}\n\n"
-            log += f"🌀 УКЛОНЕНИЕ! {target_unit['name']} уклонился от атаки!\n"
+            attacker_display = f"x{actual_attackers}" if not is_kamikaze else f"x{actual_attackers} КАМИКАДЗЕ"
+            log = f"{attacker_unit['name']} ({attacker_display}) атакует {target_unit['name']}\n\n"
+            log += f"УКЛОНЕНИЕ! {target_unit['name']} уклонился от атаки!\n"
             log += f"   Шанс уклонения: {dodge_chance*100:.1f}% (бросок: {dodge_roll*100:.1f}%)\n"
-            log += f"   ⚡ ИТОГОВЫЙ УРОН: 0"
+            log += f"   ИТОГОВЫЙ УРОН: 0"
             return 0, False, log
 
         # Базовый урон: случайное значение между min_damage и max_damage
@@ -1374,47 +1432,47 @@ class GameEngine:
         total_damage = damage_multiplied - defense_reduction
 
         # Создать детальный лог с формулой расчета
-        attacker_display = f"x{actual_attackers}" if not is_kamikaze else f"x{actual_attackers} 💣КАМИКАДЗЕ💣"
-        log = f"⚔️ {attacker_unit['name']} ({attacker_display}) атакует {target_unit['name']}\n"
+        attacker_display = f"x{actual_attackers}" if not is_kamikaze else f"x{actual_attackers} КАМИКАДЗЕ"
+        log = f"{attacker_unit['name']} ({attacker_display}) атакует {target_unit['name']}\n"
         if is_kamikaze:
-            log += f"⚠️ КАМИКАДЗЕ: урон рассчитывается только за 1 юнита (вместо {actual_attackers})\n"
-        log += f"\n📊 Расчет урона:\n"
-        log += f"1️⃣ Базовый урон: {min_dmg}-{max_dmg} → {base_damage}\n"
+            log += f"КАМИКАДЗЕ: урон рассчитывается только за 1 юнита (вместо {actual_attackers})\n"
+        log += f"\nРасчет урона:\n"
+        log += f"1. Базовый урон: {min_dmg}-{max_dmg} -> {base_damage}\n"
 
         if attacker.fatigue > 0:
-            log += f"2️⃣ Усталость: {float(attacker.fatigue):.1f}% → штраф -{fatigue_penalty*100:.1f}% (x{fatigue_modifier:.2f})\n"
+            log += f"2. Усталость: {float(attacker.fatigue):.1f}% -> штраф -{fatigue_penalty*100:.1f}% (x{fatigue_modifier:.2f})\n"
 
         if attacker.morale != 100:
             morale_display = "повышен" if attacker.morale > 100 else "понижен"
-            log += f"3️⃣ Кураж: {morale_display} (x{morale_modifier:.2f})\n"
+            log += f"3. Кураж: {morale_display} (x{morale_modifier:.2f})\n"
 
         log += f"   = {damage_before_modifiers} урона\n"
 
         # Информация о критическом ударе
-        log += f"\n4️⃣ Шанс крита: {base_crit_chance*100:.1f}%"
+        log += f"\n4. Шанс крита: {base_crit_chance*100:.1f}%"
         if attacker.morale > 0 or attacker.fatigue > 0:
-            log += f" → {crit_modifier*100:.1f}%"
+            log += f" -> {crit_modifier*100:.1f}%"
         log += f" (бросок: {crit_roll*100:.1f}%)\n"
 
         if is_crit:
-            log += f"   💥 КРИТИЧЕСКИЙ УДАР! x2 = {damage} урона\n"
+            log += f"   КРИТИЧЕСКИЙ УДАР! x2 = {damage} урона\n"
 
         # Информация об удаче
-        log += f"5️⃣ Шанс удачи: {luck_modifier*100:.1f}% (бросок: {luck_roll*100:.1f}%)\n"
+        log += f"5. Шанс удачи: {luck_modifier*100:.1f}% (бросок: {luck_roll*100:.1f}%)\n"
         if is_lucky:
-            log += f"   🍀 УДАЧА! x1.5 = {damage} урона\n"
+            log += f"   УДАЧА! x1.5 = {damage} урона\n"
 
         # Умножение на количество атакующих
-        log += f"\n6️⃣ Количество атакующих: x{alive_attackers}\n"
+        log += f"\n6. Количество атакующих: x{alive_attackers}\n"
         log += f"   Урон до защиты: {damage_multiplied}\n"
 
         # Вычисление задетых юнитов
-        log += f"\n7️⃣ Задетые юниты: 1 + floor(0.5 * ({damage_multiplied} - {target_health}) / {target_health}) = {affected_units}\n"
+        log += f"\n7. Задетые юниты: 1 + floor(0.5 * ({damage_multiplied} - {target_health}) / {target_health}) = {affected_units}\n"
 
         # Защита
-        log += f"\n8️⃣ Защита цели: {target_unit['defense']} × |{affected_units}| = {defense_reduction}\n"
+        log += f"\n8. Защита цели: {target_unit['defense']} x |{affected_units}| = {defense_reduction}\n"
         log += f"   Урон после защиты: {damage_multiplied} - {defense_reduction} = {total_damage}\n"
-        log += f"   ⚡ ИТОГОВЫЙ УРОН: {int(total_damage)}"
+        log += f"   ИТОГОВЫЙ УРОН: {int(total_damage)}"
 
         return total_damage, is_crit, log
 
@@ -1557,7 +1615,7 @@ class GameEngine:
         # Добавить запись в лог о смене хода
         current_player = self.db.query(GameUser).filter_by(id=game.current_player_id).first()
         player_name = current_player.username if current_player else "Игрок"
-        self._log_event(game.id, "turn_switch", f"🔄 Ход переходит к {player_name}")
+        self._log_event(game.id, "turn_switch", f"Ход переходит к {player_name}")
 
     def _apply_turn_start_effects(self, game: Game, player_id: int):
         """
@@ -1581,17 +1639,18 @@ class GameEngine:
             # Применить регенерацию
             regeneration = unit_type.get('regeneration_health', 0) or 0
             if regeneration > 0:
-                self._apply_regeneration(battle_unit, regeneration)
+                self._apply_regeneration(game, battle_unit, regeneration)
 
             # Применить яд
             if battle_unit.poison_remaining_turns > 0:
                 self._apply_poison_damage(game, battle_unit)
 
-    def _apply_regeneration(self, battle_unit: BattleUnit, regeneration_health: int):
+    def _apply_regeneration(self, game: Game, battle_unit: BattleUnit, regeneration_health: int):
         """
         Применить регенерацию к юниту (увеличить количество юнитов)
 
         Args:
+            game: Игра
             battle_unit: Юнит в бою
             regeneration_health: Количество здоровья для регенерации
         """
@@ -1619,10 +1678,14 @@ class GameEngine:
         else:
             battle_unit.remaining_hp = new_hp
 
-        # Логирование регенерации
+        # Логирование регенерации в игровой лог
         if battle_unit.total_count > old_count or battle_unit.remaining_hp > old_hp:
             units_gained = battle_unit.total_count - old_count
             hp_gained = battle_unit.remaining_hp - old_hp if battle_unit.total_count == old_count else regeneration_health
+            log_msg = f"РЕГЕНЕРАЦИЯ: {unit_type['name']} восстановил +{hp_gained} HP"
+            if units_gained > 0:
+                log_msg += f" (+{units_gained} юнит(ов))"
+            self._log_event(game.id, "regeneration", log_msg)
             logger.info(f"Регенерация: {unit_type['name']} восстановил {regeneration_health} HP (+{units_gained} юнитов)")
 
     def _apply_poison_damage(self, game: Game, battle_unit: BattleUnit):
@@ -1646,7 +1709,7 @@ class GameEngine:
         battle_unit.poison_remaining_turns -= 1
 
         # Логирование
-        log_msg = f"☠️ ЯД: {unit_type['name']} получает {poison_damage} урона от отравления"
+        log_msg = f"ЯД: {unit_type['name']} получает {poison_damage} урона от отравления"
         if units_killed > 0:
             log_msg += f", погибло юнитов: {units_killed}"
         if battle_unit.poison_remaining_turns > 0:
@@ -1685,13 +1748,13 @@ class GameEngine:
         # Проверить иммунитет к яду у цели
         poison_immunity = target_unit.get('poison_immunity', False)
         if poison_immunity:
-            return f"\n\n🛡️ {target_unit['name']} имеет иммунитет к яду!"
+            return f"\n\n{target_unit['name']} имеет иммунитет к яду!"
 
         # Применить отравление к цели
         target.poison_damage_per_turn = poison_damage
         target.poison_remaining_turns = poison_turns
 
-        return f"\n\n☠️ ОТРАВЛЕНИЕ! {target_unit['name']} отравлен на {poison_turns} ходов ({poison_damage} урона/ход)"
+        return f"\n\nОТРАВЛЕНИЕ! {target_unit['name']} отравлен на {poison_turns} ходов ({poison_damage} урона/ход)"
 
     def _check_game_over(self, game: Game) -> Optional[int]:
         """
@@ -1861,7 +1924,7 @@ class GameEngine:
         """
         from decimal import Decimal
 
-        logger.info(f"🏆 Завершение игры #{game.id}, победитель ID: {winner_id}")
+        logger.info(f"Завершение игры #{game.id}, победитель ID: {winner_id}")
 
         game.status = GameStatus.COMPLETED
         game.winner_id = winner_id
@@ -1920,30 +1983,30 @@ class GameEngine:
         # Сохранить урон юнитов ПОСЛЕ расчета награды
         self._save_battle_units_damage(game)
 
-        logger.info(f"📊 Статистика обновлена:")
-        logger.info(f"  • {winner.username}: Побед {old_winner_wins} → {winner.wins}, Баланс {old_winner_balance:.2f} → {float(winner.balance):.2f} монет (+{float(reward):.2f})")
-        logger.info(f"  • {loser.username}: Поражений {old_loser_losses} → {loser.losses}")
-        logger.info(f"\n💰 Финансовая статистика:")
+        logger.info(f"Статистика обновлена:")
+        logger.info(f"  - {winner.username}: Побед {old_winner_wins} -> {winner.wins}, Баланс {old_winner_balance:.2f} -> {float(winner.balance):.2f} монет (+{float(reward):.2f})")
+        logger.info(f"  - {loser.username}: Поражений {old_loser_losses} -> {loser.losses}")
+        logger.info(f"\nФинансовая статистика:")
         if killed_enemy_details:
-            logger.info(f"  • Убито юнитов противника ({loser.username}): {', '.join(killed_enemy_details)}")
+            logger.info(f"  - Убито юнитов противника ({loser.username}): {', '.join(killed_enemy_details)}")
             logger.info(f"    Общая стоимость: {float(killed_enemy_value):.2f} монет")
         if lost_own_details:
-            logger.info(f"  • Потеряно своих юнитов ({winner.username}): {', '.join(lost_own_details)}")
+            logger.info(f"  - Потеряно своих юнитов ({winner.username}): {', '.join(lost_own_details)}")
             logger.info(f"    Общая стоимость: {float(lost_own_value):.2f} монет")
-        logger.info(f"  • Награда (70% от убитых + 100% своих потерь): {float(reward):.2f} монет")
-        logger.info(f"  • Чистая прибыль (70% от убитых): {float(net_profit):.2f} монет")
+        logger.info(f"  - Награда (70% от убитых + 100% своих потерь): {float(reward):.2f} монет")
+        logger.info(f"  - Чистая прибыль (70% от убитых): {float(net_profit):.2f} монет")
 
         # Логировать завершение игры с полной статистикой
-        game_end_log = f"🏆 Игра завершена! Победитель: {winner.username}\n\n"
-        game_end_log += f"💰 Финансовая статистика:\n"
-        game_end_log += f"   📦 Убито юнитов {loser.username}: {format_coins(killed_enemy_value)}\n"
+        game_end_log = f"Игра завершена! Победитель: {winner.username}\n\n"
+        game_end_log += f"Финансовая статистика:\n"
+        game_end_log += f"   Убито юнитов {loser.username}: {format_coins(killed_enemy_value)}\n"
         if lost_own_value > 0:
-            game_end_log += f"   ⚰️ Потеряно своих юнитов: {format_coins(lost_own_value)}\n"
-        game_end_log += f"   💵 Награда (70% + потери): +{format_coins(reward)}"
+            game_end_log += f"   Потеряно своих юнитов: {format_coins(lost_own_value)}\n"
+        game_end_log += f"   Награда (70% + потери): +{format_coins(reward)}"
         self._log_event(game.id, "game_ended", game_end_log)
 
         self.db.commit()
-        logger.info(f"✅ Игра #{game.id} успешно завершена")
+        logger.info(f"Игра #{game.id} успешно завершена")
 
         # Вернуть награду и статистику
         stats = {
@@ -1955,3 +2018,519 @@ class GameEngine:
         }
 
         return reward, stats
+
+    def create_challenge_game(self, player_id: int, army_id: int, challenge_id: int) -> int:
+        """
+        Создаёт игру челленджа (PvE против AI).
+
+        Args:
+            player_id: ID игрока
+            army_id: ID армии игрока
+            challenge_id: ID челленджа
+
+        Returns:
+            int: ID созданной игры
+
+        Raises:
+            ValueError: Если что-то не найдено или невалидно
+        """
+        # Используем self.db как session напрямую (как другие методы GameEngine)
+        session = self.db
+
+        # Проверяем челлендж
+        challenge = session.query(Challenge).filter_by(id=challenge_id, is_active=True).first()
+        if not challenge:
+            raise ValueError("Challenge not found or inactive")
+
+        if not challenge.units:
+            raise ValueError("Challenge has no army configured")
+
+        # Проверяем игрока
+        player = session.query(GameUser).filter_by(id=player_id).first()
+        if not player:
+            raise ValueError("Player not found")
+
+        # Проверяем армию игрока
+        army = session.query(Army).filter_by(id=army_id).first()
+        if not army:
+            raise ValueError("Army not found")
+
+        # Проверяем что армия принадлежит игроку
+        user_race = session.query(UserRace).filter_by(id=army.user_race_id, user_id=player_id).first()
+        if not user_race:
+            raise ValueError("This army does not belong to you")
+
+        player_army_units = session.query(ArmyUnit).filter_by(army_id=army_id).all()
+        if not player_army_units:
+            raise ValueError("Your army is empty")
+
+        # Создаём или получаем AI игрока
+        ai_player = session.query(GameUser).filter_by(username='__AI__').first()
+        if not ai_player:
+            ai_player = GameUser(
+                username='__AI__',
+                telegram_id=0,
+                balance=0,
+                crystals=0,
+                glory=0
+            )
+            session.add(ai_player)
+            session.flush()
+
+        # Определяем размер поля
+        player_rows_needed = sum(2 if (au.race_unit and au.race_unit.is_big) else 1 for au in player_army_units)
+        ai_rows_needed = sum(2 if (cu.race_unit and cu.race_unit.is_big) else 1 for cu in challenge.units)
+        max_rows = max(player_rows_needed, ai_rows_needed)
+
+        if max_rows <= 5:
+            field_size = 5
+        elif max_rows <= 7:
+            field_size = 7
+        else:
+            field_size = 10
+
+        field = session.query(Field).filter_by(width=field_size, height=field_size).first()
+        if not field:
+            field = session.query(Field).order_by(Field.width.desc()).first()
+
+        # Создаём игру
+        game = Game(
+            player1_id=player_id,
+            player2_id=ai_player.id,
+            player1_army_id=army_id,
+            field_id=field.id,
+            status=GameStatus.IN_PROGRESS,
+            current_player_id=player_id,  # Игрок ходит первым
+            is_challenge=True,
+            challenge_id=challenge_id,
+            ai_player_id=ai_player.id,
+            started_at=datetime.utcnow()
+        )
+        session.add(game)
+        session.flush()
+
+        # Размещаем юнитов игрока (сторона 1 - слева, x=0)
+        player_y = 0
+        for au in player_army_units:
+            ru = au.race_unit
+            if not ru:
+                continue
+
+            is_big = ru.is_big
+            height_needed = 2 if is_big else 1
+
+            if player_y + height_needed > field.height:
+                break
+
+            battle_unit = BattleUnit(
+                game_id=game.id,
+                army_unit_id=au.id,
+                race_unit_id=ru.id,
+                player_id=player_id,
+                position_x=0,
+                position_y=player_y,
+                total_count=au.count,
+                remaining_hp=ru.health,
+                morale=100,  # Изначально 100 = коэффициент 1.0 (нейтральный)
+                fatigue=0,
+                has_moved=0,
+                deferred=0
+            )
+            session.add(battle_unit)
+            player_y += height_needed
+
+        # Размещаем юнитов AI (сторона 2 - справа, x=field.width-1)
+        ai_y = 0
+        for cu in challenge.units:
+            ru = cu.race_unit
+            if not ru:
+                continue
+
+            is_big = ru.is_big
+            height_needed = 2 if is_big else 1
+
+            if ai_y + height_needed > field.height:
+                break
+
+            # Для AI юнитов army_unit_id = None, используем race_unit_id
+            battle_unit = BattleUnit(
+                game_id=game.id,
+                army_unit_id=None,  # AI не использует армии
+                race_unit_id=ru.id,
+                player_id=ai_player.id,
+                position_x=field.width - 1 if not is_big else field.width - 2,
+                position_y=ai_y,
+                total_count=cu.count,
+                remaining_hp=ru.health,
+                morale=100,  # Изначально 100 = коэффициент 1.0 (нейтральный)
+                fatigue=0,
+                has_moved=0,
+                deferred=0
+            )
+            session.add(battle_unit)
+            ai_y += height_needed
+
+        # Генерируем препятствия (используем тот же метод что и для обычных игр)
+        self._generate_obstacles(game)
+
+        # Логируем начало игры
+        self._log_event(
+            game.id,
+            "challenge_start",
+            f"Челлендж '{challenge.name}' начат! Сложность: {challenge.ai_difficulty.value}"
+        )
+
+        session.commit()
+        logger.info(f"Challenge game #{game.id} created: player={player_id}, challenge={challenge_id}")
+
+        return game.id
+
+    def get_ai_action(self, game_id: int) -> Optional[Dict]:
+        """
+        Определяет ход AI для текущего состояния игры.
+
+        Args:
+            game_id: ID игры
+
+        Returns:
+            Dict с действием AI или None если ход невозможен
+            Формат: {'action': 'move'|'attack'|'skip', 'unit_id': int, 'target_x': int, 'target_y': int, 'target_id': int}
+        """
+        game = self.db.query(Game).filter_by(id=game_id).first()
+        if not game or not game.is_challenge:
+            return None
+
+        if game.status != GameStatus.IN_PROGRESS:
+            return None
+
+        # Проверяем что сейчас ход AI
+        if game.current_player_id != game.ai_player_id:
+            return None
+
+        # Получаем сложность AI
+        challenge = self.db.query(Challenge).filter_by(id=game.challenge_id).first()
+        difficulty = challenge.ai_difficulty if challenge else AIDifficulty.NORMAL
+
+        # Получаем юнитов AI которые ещё не ходили
+        ai_units = self.db.query(BattleUnit).filter_by(
+            game_id=game_id,
+            player_id=game.ai_player_id,
+            has_moved=0
+        ).filter(BattleUnit.total_count > 0).all()
+
+        if not ai_units:
+            # Все юниты AI походили - пропускаем ход
+            return {'action': 'skip'}
+
+        # Получаем всех юнитов противника (игрока)
+        enemy_units = self.db.query(BattleUnit).filter_by(
+            game_id=game_id,
+            player_id=game.player1_id
+        ).filter(BattleUnit.total_count > 0).all()
+
+        if not enemy_units:
+            # Нет врагов - игра должна быть завершена
+            return {'action': 'skip'}
+
+        # Получаем препятствия для учёта проходимости
+        obstacles = self.db.query(Obstacle).filter_by(game_id=game_id).all()
+        obstacle_positions = set()
+        for obs in obstacles:
+            for ox in range(obs.width or 1):
+                for oy in range(obs.height or 1):
+                    obstacle_positions.add((obs.position_x + ox, obs.position_y + oy))
+
+        # Позиции всех юнитов
+        all_units = ai_units + enemy_units
+        unit_positions = {}
+        for u in all_units:
+            unit_positions[(u.position_x, u.position_y)] = u
+            # Большие юниты занимают 4 клетки
+            ru = u.race_unit or (u.army_unit.race_unit if u.army_unit else None)
+            if ru and ru.is_big:
+                unit_positions[(u.position_x + 1, u.position_y)] = u
+                unit_positions[(u.position_x, u.position_y + 1)] = u
+                unit_positions[(u.position_x + 1, u.position_y + 1)] = u
+
+        # Выбираем юнита для хода (сортируем по инициативе)
+        def get_unit_initiative(unit):
+            ru = unit.race_unit or (unit.army_unit.race_unit if unit.army_unit else None)
+            return ru.initiative if ru else 10
+
+        ai_units_sorted = sorted(ai_units, key=get_unit_initiative, reverse=True)
+        current_unit = ai_units_sorted[0]
+
+        # Получаем характеристики юнита
+        ru = current_unit.race_unit or (current_unit.army_unit.race_unit if current_unit.army_unit else None)
+        if not ru:
+            return {'action': 'skip', 'unit_id': current_unit.id}
+
+        unit_range = ru.range if ru else 1
+        unit_speed = ru.speed if ru else 4
+        is_flying = ru.is_flying if ru else False
+
+        # Находим ближайшего врага
+        def distance(u1, u2):
+            return abs(u1.position_x - u2.position_x) + abs(u1.position_y - u2.position_y)
+
+        enemies_by_distance = sorted(enemy_units, key=lambda e: distance(current_unit, e))
+        target_enemy = enemies_by_distance[0] if enemies_by_distance else None
+
+        if not target_enemy:
+            return {'action': 'skip', 'unit_id': current_unit.id}
+
+        dist_to_target = distance(current_unit, target_enemy)
+
+        # Логика AI в зависимости от сложности
+        if difficulty == AIDifficulty.EASY:
+            # Легкий: 50% шанс случайного действия
+            if random.random() < 0.5:
+                # Случайное перемещение
+                possible_moves = self._get_possible_moves(
+                    current_unit, unit_speed, is_flying,
+                    game.field.width, game.field.height,
+                    obstacle_positions, unit_positions
+                )
+                if possible_moves:
+                    move = random.choice(possible_moves)
+                    return {
+                        'action': 'move',
+                        'unit_id': current_unit.id,
+                        'target_x': move[0],
+                        'target_y': move[1]
+                    }
+                return {'action': 'skip', 'unit_id': current_unit.id}
+
+        # Проверяем можно ли атаковать
+        if dist_to_target <= unit_range:
+            return {
+                'action': 'attack',
+                'unit_id': current_unit.id,
+                'target_id': target_enemy.id
+            }
+
+        # Нужно подойти ближе
+        possible_moves = self._get_possible_moves(
+            current_unit, unit_speed, is_flying,
+            game.field.width, game.field.height,
+            obstacle_positions, unit_positions
+        )
+
+        if not possible_moves:
+            return {'action': 'skip', 'unit_id': current_unit.id}
+
+        # Выбираем лучший ход - приближение к врагу
+        best_move = None
+        best_dist = float('inf')
+
+        for move in possible_moves:
+            new_dist = abs(move[0] - target_enemy.position_x) + abs(move[1] - target_enemy.position_y)
+
+            # Для сложного AI: предпочитаем позиции из которых можно атаковать
+            if difficulty in [AIDifficulty.HARD, AIDifficulty.NIGHTMARE]:
+                if new_dist <= unit_range:
+                    # Можем атаковать после перемещения - отличный ход!
+                    best_move = move
+                    best_dist = new_dist
+                    break
+
+            if new_dist < best_dist:
+                best_dist = new_dist
+                best_move = move
+
+        if best_move:
+            return {
+                'action': 'move',
+                'unit_id': current_unit.id,
+                'target_x': best_move[0],
+                'target_y': best_move[1]
+            }
+
+        return {'action': 'skip', 'unit_id': current_unit.id}
+
+    def _get_possible_moves(self, unit: BattleUnit, speed: int, is_flying: bool,
+                            field_width: int, field_height: int,
+                            obstacles: Set[Tuple[int, int]],
+                            unit_positions: Dict[Tuple[int, int], BattleUnit]) -> List[Tuple[int, int]]:
+        """Возвращает список возможных позиций для перемещения юнита."""
+        possible = []
+        start_x, start_y = unit.position_x, unit.position_y
+
+        # Проверяем является ли юнит большим
+        ru = unit.race_unit or (unit.army_unit.race_unit if unit.army_unit else None)
+        is_big = ru.is_big if ru else False
+
+        for dx in range(-speed, speed + 1):
+            for dy in range(-speed, speed + 1):
+                if abs(dx) + abs(dy) > speed:
+                    continue
+                if dx == 0 and dy == 0:
+                    continue
+
+                new_x = start_x + dx
+                new_y = start_y + dy
+
+                # Проверяем границы поля
+                if new_x < 0 or new_y < 0:
+                    continue
+                if is_big:
+                    if new_x + 1 >= field_width or new_y + 1 >= field_height:
+                        continue
+                else:
+                    if new_x >= field_width or new_y >= field_height:
+                        continue
+
+                # Проверяем препятствия
+                if (new_x, new_y) in obstacles:
+                    continue
+                if is_big:
+                    if ((new_x + 1, new_y) in obstacles or
+                        (new_x, new_y + 1) in obstacles or
+                        (new_x + 1, new_y + 1) in obstacles):
+                        continue
+
+                # Проверяем других юнитов
+                if (new_x, new_y) in unit_positions and unit_positions[(new_x, new_y)] != unit:
+                    continue
+                if is_big:
+                    conflict = False
+                    for ox, oy in [(1, 0), (0, 1), (1, 1)]:
+                        pos = (new_x + ox, new_y + oy)
+                        if pos in unit_positions and unit_positions[pos] != unit:
+                            conflict = True
+                            break
+                    if conflict:
+                        continue
+
+                possible.append((new_x, new_y))
+
+        return possible
+
+    def execute_ai_turn(self, game_id: int) -> Dict:
+        """
+        Выполняет ход AI в игре.
+
+        Args:
+            game_id: ID игры
+
+        Returns:
+            Dict с результатом хода
+        """
+        action = self.get_ai_action(game_id)
+        if not action:
+            return {'success': False, 'error': 'No action available'}
+
+        game = self.db.query(Game).filter_by(id=game_id).first()
+        if not game:
+            return {'success': False, 'error': 'Game not found'}
+
+        ai_player_id = game.ai_player_id
+
+        if action['action'] == 'skip':
+            # Если есть unit_id - пропускаем ход конкретного юнита
+            unit_id = action.get('unit_id')
+            if unit_id:
+                result = self.skip_unit_turn(game_id, ai_player_id, unit_id)
+            else:
+                # Пропускаем ход всех непоходивших юнитов
+                ai_units = self.db.query(BattleUnit).filter_by(
+                    game_id=game_id,
+                    player_id=ai_player_id,
+                    has_moved=0
+                ).filter(BattleUnit.total_count > 0).all()
+                result = (True, "All units skipped", False)
+                for unit in ai_units:
+                    result = self.skip_unit_turn(game_id, ai_player_id, unit.id)
+            return {'success': True, 'action': 'skip', 'result': result}
+
+        elif action['action'] == 'move':
+            result = self.move_unit(
+                game_id, ai_player_id,
+                action['unit_id'],
+                action['target_x'],
+                action['target_y']
+            )
+            return {'success': True, 'action': 'move', 'result': result}
+
+        elif action['action'] == 'attack':
+            result = self.attack(
+                game_id, ai_player_id,
+                action['unit_id'],
+                action['target_id']
+            )
+            return {'success': True, 'action': 'attack', 'result': result}
+
+        return {'success': False, 'error': 'Unknown action'}
+
+    def complete_challenge(self, game_id: int, winner_id: int) -> Dict:
+        """
+        Завершает игру челленджа и начисляет награды.
+
+        Args:
+            game_id: ID игры
+            winner_id: ID победителя
+
+        Returns:
+            Dict с информацией о наградах
+        """
+        game = self.db.query(Game).filter_by(id=game_id).first()
+        if not game or not game.is_challenge:
+            return {'error': 'Not a challenge game'}
+
+        challenge = self.db.query(Challenge).filter_by(id=game.challenge_id).first()
+        if not challenge:
+            return {'error': 'Challenge not found'}
+
+        is_player_winner = winner_id == game.player1_id
+        player = self.db.query(GameUser).filter_by(id=game.player1_id).first()
+
+        reward_gold = 0
+        reward_gems = 0
+
+        if is_player_winner:
+            # Игрок победил - начисляем награды
+            reward_gold = challenge.reward_gold
+            reward_gems = challenge.reward_gems
+
+            # Дополнительно - награда за убитых юнитов (как в обычном бою)
+            # Подсчитываем стоимость убитых юнитов AI
+            ai_units = self.db.query(BattleUnit).filter_by(
+                game_id=game_id,
+                player_id=game.ai_player_id
+            ).all()
+
+            killed_value = 0
+            for u in ai_units:
+                if u.total_count <= 0:
+                    ru = u.race_unit or (u.army_unit.race_unit if u.army_unit else None)
+                    if ru:
+                        unit_power = (ru.attack + ru.defense + (ru.min_damage + ru.max_damage) / 2 +
+                                      ru.health / 10 + ru.speed + ru.initiative)
+                        # Считаем начальное количество из ChallengeUnit
+                        # Находим соответствующий ChallengeUnit
+                        # Сложно, но можно оценить как remaining=0 значит все убиты
+                        pass
+
+            # Начисляем награды игроку
+            if player:
+                player.balance = (player.balance or 0) + reward_gold
+                player.crystals = (player.crystals or 0) + reward_gems
+
+        # Записываем прохождение
+        completion = ChallengeCompletion(
+            challenge_id=challenge.id,
+            user_id=game.player1_id,
+            game_id=game.id,
+            is_victory=is_player_winner,
+            reward_gold_earned=reward_gold,
+            reward_gems_earned=reward_gems
+        )
+        self.db.add(completion)
+        self.db.commit()
+
+        return {
+            'is_victory': is_player_winner,
+            'reward_gold': reward_gold,
+            'reward_gems': reward_gems,
+            'challenge_name': challenge.name
+        }

@@ -7,7 +7,8 @@ from flask import Blueprint, render_template_string, request, redirect, url_for,
 from sqlalchemy.orm import Session
 import os
 from db.models import (
-    Field, BattleFieldTemplate, BattleFieldObstacle, BattleFieldDecoration, DecorationType
+    Field, BattleFieldTemplate, BattleFieldObstacle, BattleFieldDecoration, DecorationType,
+    ObstacleTemplate, DecorationTemplate
 )
 from db.repository import Database
 
@@ -195,25 +196,47 @@ FIELD_EDITOR_TEMPLATE = """
             border-radius: 8px;
             box-shadow: 0 2px 4px rgba(0,0,0,0.1);
             min-height: 500px;
+            overflow: hidden;
+            position: relative;
+        }
+        .field-viewport {
+            width: 100%;
+            height: 600px;
+            overflow: hidden;
+            position: relative;
+            cursor: grab;
+        }
+        .field-viewport:active {
+            cursor: grabbing;
+        }
+        .field-viewport.panning {
+            cursor: grabbing;
         }
         .grid-container {
+            position: absolute;
+            background: #4a8c4a;
+            border-radius: 8px;
+            transform-origin: top left;
+        }
+        .grid-wrapper {
             position: relative;
             display: inline-block;
-            background: #4a8c4a;
-            padding: 60px;
-            border-radius: 8px;
         }
         .grid {
             display: grid;
+            overflow: hidden;
             gap: 2px;
             background: rgba(0,0,0,0.2);
             padding: 2px;
+            position: relative;
+            z-index: 10;
         }
         .cell {
             width: 50px;
             height: 50px;
             background: #5a9c5a;
             border: 1px solid rgba(0,0,0,0.1);
+            box-sizing: border-box;
             cursor: pointer;
             position: relative;
             display: flex;
@@ -227,17 +250,33 @@ FIELD_EDITOR_TEMPLATE = """
         .cell.obstacle {
             background: #808078;
         }
+        .cell.obstacle.has-sprite {
+            background: transparent;
+            overflow: visible;
+        }
+        .cell.obstacle.has-sprite.sprite-origin {
+            /* Спрайт выходит за пределы ячейки на соседние */
+            overflow: visible;
+            z-index: 10;
+        }
         .cell img {
             max-width: 100%;
             max-height: 100%;
             object-fit: contain;
+        }
+        .cell img.multi-cell-sprite {
+            max-width: none;
+            max-height: none;
+            object-fit: cover;
+            pointer-events: none;
         }
         .decoration-zone {
             position: absolute;
             width: 50px;
             height: 50px;
             background: rgba(139, 69, 19, 0.3);
-            border: 1px dashed rgba(139, 69, 19, 0.5);
+            border: 1px solid rgba(139, 69, 19, 0.3);
+            box-sizing: border-box;
             cursor: pointer;
             display: flex;
             align-items: center;
@@ -250,6 +289,11 @@ FIELD_EDITOR_TEMPLATE = """
         .decoration-zone.has-decoration {
             background: rgba(34, 139, 34, 0.3);
             border-color: rgba(34, 139, 34, 0.5);
+        }
+        .cell.selected, .decoration-zone.selected {
+            outline: 3px solid #3498db;
+            outline-offset: -3px;
+            box-shadow: 0 0 10px rgba(52, 152, 219, 0.5);
         }
         .tool-panel {
             margin-bottom: 20px;
@@ -295,6 +339,62 @@ FIELD_EDITOR_TEMPLATE = """
         .decoration-type.active {
             border-color: #27ae60;
             background: #e8f6ef;
+        }
+        .element-templates {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin: 10px 0;
+        }
+        .element-template {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 8px;
+            border: 2px solid #ddd;
+            border-radius: 8px;
+            cursor: pointer;
+            min-width: 60px;
+            transition: all 0.2s;
+        }
+        .element-template:hover {
+            border-color: #3498db;
+            background: #f0f7fc;
+        }
+        .element-template.active {
+            border-color: #27ae60;
+            background: #e8f6ef;
+        }
+        .element-template .template-icon {
+            font-size: 24px;
+        }
+        .element-template .template-icon-img {
+            width: 40px;
+            height: 40px;
+            object-fit: contain;
+        }
+        .element-template .template-name {
+            font-size: 10px;
+            margin-top: 4px;
+            text-align: center;
+            max-width: 60px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .element-template .template-size {
+            font-size: 9px;
+            color: #999;
+        }
+        .decoration-type-group {
+            display: flex;
+            gap: 5px;
+            margin-bottom: 8px;
+            width: 100%;
+        }
+        .decoration-type-group .decoration-type {
+            padding: 8px;
+            font-size: 18px;
         }
         .sprite-upload {
             margin-top: 15px;
@@ -368,24 +468,72 @@ FIELD_EDITOR_TEMPLATE = """
                         </button>
                     </div>
 
-                    <div id="decoration-panel" style="display: none;">
-                        <h4>Тип декорации</h4>
-                        <div class="decoration-types">
-                            <div class="decoration-type active" data-type="tree">🌲 Дерево</div>
-                            <div class="decoration-type" data-type="river">🌊 Река</div>
-                            <div class="decoration-type" data-type="rock">🪨 Камень</div>
-                            <div class="decoration-type" data-type="bush">🌿 Куст</div>
-                            <div class="decoration-type" data-type="flower">🌸 Цветы</div>
-                            <div class="decoration-type" data-type="custom">⭐ Своё</div>
+                    <!-- Панель выбора шаблона препятствия -->
+                    <div id="obstacle-panel" style="display: none;">
+                        <h4>Выберите препятствие</h4>
+                        <div class="element-templates" id="obstacle-templates">
+                            <div class="element-template active" data-template="default" data-width="1" data-height="1">
+                                <span class="template-icon">🪨</span>
+                                <span class="template-name">1x1</span>
+                            </div>
+                            {% for tmpl in obstacle_templates %}
+                            <div class="element-template" data-template="{{ tmpl.id }}" data-width="{{ tmpl.width }}" data-height="{{ tmpl.height }}">
+                                {% if tmpl.sprite_data %}
+                                <img src="{{ url_for('elements.get_obstacle_template_sprite', template_id=tmpl.id) }}" class="template-icon-img">
+                                {% else %}
+                                <span class="template-icon">🪨</span>
+                                {% endif %}
+                                <span class="template-name">{{ tmpl.name }}</span>
+                                <span class="template-size">{{ tmpl.width }}x{{ tmpl.height }}</span>
+                            </div>
+                            {% endfor %}
                         </div>
+                        <a href="{{ url_for('elements.elements_list') }}" style="font-size: 12px; color: #3498db;">+ Создать новый шаблон</a>
                     </div>
 
-                    <div class="sprite-upload" id="sprite-upload" style="display: none;">
-                        <h4>Загрузить спрайт</h4>
-                        <input type="file" id="sprite-file" accept="image/*">
-                        <p style="font-size: 12px; color: #666; margin-top: 5px;">
-                            Выберите ячейку и загрузите спрайт
+                    <!-- Панель выбора типа декорации -->
+                    <div id="decoration-panel" style="display: none;">
+                        <h4>Выберите декорацию</h4>
+                        <div class="element-templates" id="decoration-templates">
+                            <!-- Базовые типы декораций -->
+                            <div class="decoration-type-group">
+                                <div class="decoration-type active" data-type="tree" data-width="1" data-height="1">🌲</div>
+                                <div class="decoration-type" data-type="river" data-width="1" data-height="1">🌊</div>
+                                <div class="decoration-type" data-type="rock" data-width="1" data-height="1">🪨</div>
+                                <div class="decoration-type" data-type="bush" data-width="1" data-height="1">🌿</div>
+                                <div class="decoration-type" data-type="flower" data-width="1" data-height="1">🌸</div>
+                                <div class="decoration-type" data-type="custom" data-width="1" data-height="1">⭐</div>
+                            </div>
+                            <!-- Шаблоны декораций -->
+                            {% for tmpl in decoration_templates %}
+                            <div class="element-template" data-template="{{ tmpl.id }}" data-type="{{ tmpl.decoration_type.value }}" data-width="{{ tmpl.width }}" data-height="{{ tmpl.height }}">
+                                {% if tmpl.sprite_data %}
+                                <img src="{{ url_for('elements.get_decoration_template_sprite', template_id=tmpl.id) }}" class="template-icon-img">
+                                {% else %}
+                                <span class="template-icon">{{ decoration_emojis.get(tmpl.decoration_type.value, '⭐') }}</span>
+                                {% endif %}
+                                <span class="template-name">{{ tmpl.name }}</span>
+                                <span class="template-size">{{ tmpl.width }}x{{ tmpl.height }}</span>
+                            </div>
+                            {% endfor %}
+                        </div>
+                        <a href="{{ url_for('elements.elements_list') }}" style="font-size: 12px; color: #3498db;">+ Создать новый шаблон</a>
+                    </div>
+
+                    <div class="sprite-upload" id="sprite-upload">
+                        <h4>📷 Загрузить спрайт</h4>
+                        <p id="sprite-hint" style="font-size: 12px; color: #666; margin-bottom: 10px;">
+                            Нажмите на препятствие или декорацию инструментом "Выделение", чтобы загрузить картинку
                         </p>
+                        <div id="sprite-upload-controls" style="display: none;">
+                            <p style="font-size: 14px; color: #333; margin-bottom: 10px;">
+                                <strong>Выбрано:</strong> <span id="selected-cell-info"></span>
+                            </p>
+                            <input type="file" id="sprite-file" accept="image/*" style="margin-bottom: 10px;">
+                            <button type="button" id="clear-sprite-btn" class="btn btn-danger" style="padding: 5px 10px; font-size: 12px;">
+                                🗑️ Удалить спрайт
+                            </button>
+                        </div>
                     </div>
 
                     <div class="legend">
@@ -406,11 +554,18 @@ FIELD_EDITOR_TEMPLATE = """
                 </div>
 
                 <div class="field-preview">
-                    <div class="grid-container" id="grid-container">
-                        <div class="grid" id="field-grid" style="grid-template-columns: repeat({{ template.field_size.width if template else 5 }}, 50px);">
-                            <!-- Ячейки генерируются JavaScript -->
+                    <p style="font-size: 12px; color: #666; margin: 0 0 10px 0;">
+                        💡 Зажмите правую кнопку мыши для перемещения поля
+                    </p>
+                    <div class="field-viewport" id="field-viewport">
+                        <div class="grid-container" id="grid-container">
+                            <div class="grid-wrapper" id="grid-wrapper">
+                                <div class="grid" id="field-grid" style="grid-template-columns: repeat({{ template.field_size.width if template else 5 }}, 50px);">
+                                    <!-- Ячейки генерируются JavaScript -->
+                                </div>
+                                <!-- Зоны декораций генерируются JavaScript -->
+                            </div>
                         </div>
-                        <!-- Зоны декораций генерируются JavaScript -->
                     </div>
                 </div>
             </div>
@@ -441,13 +596,30 @@ FIELD_EDITOR_TEMPLATE = """
         let decorations = [...initialDecorations];
         let selectedCell = null;
 
+        // Переменные для размеров элементов
+        let currentObstacleWidth = 1;
+        let currentObstacleHeight = 1;
+        let currentObstacleTemplateId = null;
+        let currentDecorationWidth = 1;
+        let currentDecorationHeight = 1;
+        let currentDecorationTemplateId = null;
+
+        // Переменные для панорамирования
+        let isPanning = false;
+        let panStartX = 0;
+        let panStartY = 0;
+        let panOffsetX = 0;
+        let panOffsetY = 0;
+
         // Инициализация
         document.addEventListener('DOMContentLoaded', function() {
             initGrid();
             initTools();
             initDecorationTypes();
+            initObstacleTemplates();
             initSpriteUpload();
             initFieldSizeChange();
+            initPanning();
         });
 
         function initGrid() {
@@ -461,13 +633,14 @@ FIELD_EDITOR_TEMPLATE = """
 
         function renderGrid(width, height) {
             const grid = document.getElementById('field-grid');
+            const wrapper = document.getElementById('grid-wrapper');
             const container = document.getElementById('grid-container');
 
             grid.style.gridTemplateColumns = `repeat(${width}, 50px)`;
             grid.innerHTML = '';
 
             // Удаляем старые зоны декораций
-            container.querySelectorAll('.decoration-zone').forEach(el => el.remove());
+            wrapper.querySelectorAll('.decoration-zone').forEach(el => el.remove());
 
             // Создаём ячейки поля
             for (let y = 0; y < height; y++) {
@@ -476,56 +649,55 @@ FIELD_EDITOR_TEMPLATE = """
                     cell.className = 'cell';
                     cell.dataset.x = x;
                     cell.dataset.y = y;
-
-                    // Проверяем, есть ли препятствие
-                    const obstacle = obstacles.find(o => o.x === x && o.y === y);
-                    if (obstacle) {
-                        cell.classList.add('obstacle');
-                        if (obstacle.sprite) {
-                            const img = document.createElement('img');
-                            img.src = obstacle.sprite;
-                            cell.appendChild(img);
-                        } else {
-                            cell.textContent = '🪨';
-                        }
-                    }
-
                     cell.addEventListener('click', () => handleCellClick(x, y, cell));
                     grid.appendChild(cell);
                 }
             }
 
-            // Создаём зоны декораций вокруг поля
-            const cellSize = 52; // 50px + 2px gap
-            const padding = 60;
+            // Рендерим существующие препятствия
+            obstacles.forEach(obstacle => renderObstacleCells(obstacle));
 
-            // Верхний ряд декораций (y = -1)
-            for (let x = -1; x <= width; x++) {
-                createDecorationZone(container, x, -1, width, height, cellSize, padding);
-            }
-            // Нижний ряд декораций (y = height)
-            for (let x = -1; x <= width; x++) {
-                createDecorationZone(container, x, height, width, height, cellSize, padding);
-            }
-            // Левый столбец (x = -1, без углов)
-            for (let y = 0; y < height; y++) {
-                createDecorationZone(container, -1, y, width, height, cellSize, padding);
-            }
-            // Правый столбец (x = width, без углов)
-            for (let y = 0; y < height; y++) {
-                createDecorationZone(container, width, y, width, height, cellSize, padding);
+            // Создаём зоны декораций вокруг поля (5 клеток с каждого края)
+            const cellSize = 52; // 50px + 2px gap
+            const decorationRange = 5; // 5 клеток с каждого края поля
+
+            // Рассчитываем размеры
+            const fieldWidthPx = width * cellSize;
+            const fieldHeightPx = height * cellSize;
+            const totalWidth = fieldWidthPx + 2 * decorationRange * cellSize;
+            const totalHeight = fieldHeightPx + 2 * decorationRange * cellSize;
+
+            // Устанавливаем размер wrapper и padding для grid
+            wrapper.style.width = totalWidth + 'px';
+            wrapper.style.height = totalHeight + 'px';
+
+            // Позиционируем grid в центре wrapper
+            grid.style.position = 'absolute';
+            grid.style.left = (decorationRange * cellSize) + 'px';
+            grid.style.top = (decorationRange * cellSize) + 'px';
+
+            // Создаём зоны декораций только вокруг поля (5 клеток с каждого края)
+            for (let dy = -decorationRange; dy < height + decorationRange; dy++) {
+                for (let dx = -decorationRange; dx < width + decorationRange; dx++) {
+                    // Пропускаем ячейки внутри игрового поля
+                    if (dx >= 0 && dx < width && dy >= 0 && dy < height) {
+                        continue;
+                    }
+                    createDecorationZone(wrapper, dx, dy, width, height, cellSize, decorationRange);
+                }
             }
         }
 
-        function createDecorationZone(container, x, y, fieldWidth, fieldHeight, cellSize, padding) {
+        function createDecorationZone(wrapper, x, y, fieldWidth, fieldHeight, cellSize, decorationRange) {
             const zone = document.createElement('div');
             zone.className = 'decoration-zone';
             zone.dataset.x = x;
             zone.dataset.y = y;
 
-            // Позиционирование
-            const offsetX = padding + (x + 1) * cellSize - cellSize;
-            const offsetY = padding + (y + 1) * cellSize - cellSize;
+            // Позиционирование: (x + decorationRange) даёт позицию от 0
+            const offsetX = (x + decorationRange) * cellSize;
+            const offsetY = (y + decorationRange) * cellSize;
+            zone.style.position = 'absolute';
             zone.style.left = offsetX + 'px';
             zone.style.top = offsetY + 'px';
 
@@ -541,7 +713,7 @@ FIELD_EDITOR_TEMPLATE = """
             }
 
             zone.addEventListener('click', () => handleDecorationClick(x, y, zone));
-            container.appendChild(zone);
+            wrapper.appendChild(zone);
         }
 
         function getDecorationEmoji(type) {
@@ -560,30 +732,99 @@ FIELD_EDITOR_TEMPLATE = """
             if (currentTool === 'obstacle') {
                 const existingIndex = obstacles.findIndex(o => o.x === x && o.y === y);
                 if (existingIndex >= 0) {
-                    // Удаляем препятствие
+                    // Удаляем препятствие и очищаем все занятые клетки
+                    const obs = obstacles[existingIndex];
+                    clearObstacleCells(obs);
                     obstacles.splice(existingIndex, 1);
-                    cell.classList.remove('obstacle');
-                    cell.textContent = '';
-                    cell.querySelectorAll('img').forEach(img => img.remove());
                 } else {
-                    // Добавляем препятствие
-                    obstacles.push({ x, y, sprite: null });
-                    cell.classList.add('obstacle');
-                    cell.textContent = '🪨';
+                    // Добавляем препятствие с размерами
+                    const newObstacle = {
+                        x, y,
+                        width: currentObstacleWidth,
+                        height: currentObstacleHeight,
+                        templateId: currentObstacleTemplateId,
+                        sprite: null
+                    };
+                    obstacles.push(newObstacle);
+                    renderObstacleCells(newObstacle);
                 }
                 updateObstaclesData();
             } else if (currentTool === 'erase') {
-                const existingIndex = obstacles.findIndex(o => o.x === x && o.y === y);
-                if (existingIndex >= 0) {
-                    obstacles.splice(existingIndex, 1);
-                    cell.classList.remove('obstacle');
-                    cell.textContent = '';
-                    cell.querySelectorAll('img').forEach(img => img.remove());
+                // Ищем препятствие которое занимает эту клетку
+                const obstacleIndex = obstacles.findIndex(o => {
+                    const w = o.width || 1;
+                    const h = o.height || 1;
+                    return x >= o.x && x < o.x + w && y >= o.y && y < o.y + h;
+                });
+                if (obstacleIndex >= 0) {
+                    const obs = obstacles[obstacleIndex];
+                    clearObstacleCells(obs);
+                    obstacles.splice(obstacleIndex, 1);
                     updateObstaclesData();
                 }
             } else if (currentTool === 'select') {
-                selectedCell = { type: 'obstacle', x, y, element: cell };
-                document.getElementById('sprite-upload').style.display = 'block';
+                // Ищем препятствие которое занимает эту клетку
+                const obstacleIndex = obstacles.findIndex(o => {
+                    const w = o.width || 1;
+                    const h = o.height || 1;
+                    return x >= o.x && x < o.x + w && y >= o.y && y < o.y + h;
+                });
+                if (obstacleIndex >= 0) {
+                    selectCellForSprite('obstacle', obstacles[obstacleIndex].x, obstacles[obstacleIndex].y, cell, obstacles[obstacleIndex]);
+                }
+            }
+        }
+
+        function renderObstacleCells(obstacle) {
+            const w = obstacle.width || 1;
+            const h = obstacle.height || 1;
+            const cellSize = 50;
+            const gap = 2;
+            // Размер спрайта с учётом gap между ячейками
+            const spriteWidth = w * cellSize + (w - 1) * gap;
+            const spriteHeight = h * cellSize + (h - 1) * gap;
+
+            for (let dy = 0; dy < h; dy++) {
+                for (let dx = 0; dx < w; dx++) {
+                    const cell = document.querySelector(`.cell[data-x="${obstacle.x + dx}"][data-y="${obstacle.y + dy}"]`);
+                    if (cell) {
+                        cell.classList.add('obstacle');
+                        // Только первая клетка показывает спрайт
+                        if (dx === 0 && dy === 0) {
+                            const hasSprite = obstacle.sprite || obstacle.templateId;
+                            if (hasSprite) {
+                                cell.classList.add('has-sprite', 'sprite-origin');
+                                let spriteUrl = obstacle.sprite;
+                                if (!spriteUrl && obstacle.templateId) {
+                                    spriteUrl = `/elements/api/obstacles/${obstacle.templateId}/sprite`;
+                                }
+                                cell.innerHTML = `<img src="${spriteUrl}" class="multi-cell-sprite" style="width: ${spriteWidth}px; height: ${spriteHeight}px; position: absolute; left: 0; top: 0; z-index: 5; clip-path: inset(0 0 0 0);" onerror="this.parentElement.textContent='🪨'; this.parentElement.classList.remove('has-sprite', 'sprite-origin');">`;
+                            } else {
+                                cell.textContent = '🪨';
+                            }
+                        } else {
+                            // Остальные ячейки делаем прозрачными если есть спрайт
+                            if (obstacle.sprite || obstacle.templateId) {
+                                cell.classList.add('has-sprite');
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        function clearObstacleCells(obstacle) {
+            const w = obstacle.width || 1;
+            const h = obstacle.height || 1;
+            for (let dy = 0; dy < h; dy++) {
+                for (let dx = 0; dx < w; dx++) {
+                    const cell = document.querySelector(`.cell[data-x="${obstacle.x + dx}"][data-y="${obstacle.y + dy}"]`);
+                    if (cell) {
+                        cell.classList.remove('obstacle', 'has-sprite', 'sprite-origin');
+                        cell.textContent = '';
+                        cell.innerHTML = '';
+                    }
+                }
             }
         }
 
@@ -597,8 +838,16 @@ FIELD_EDITOR_TEMPLATE = """
                     zone.textContent = '';
                     zone.querySelectorAll('img').forEach(img => img.remove());
                 } else {
-                    // Добавляем декорацию
-                    decorations.push({ x, y, type: currentDecorationType, sprite: null });
+                    // Добавляем декорацию с размерами
+                    const newDecoration = {
+                        x, y,
+                        type: currentDecorationType,
+                        width: currentDecorationWidth,
+                        height: currentDecorationHeight,
+                        templateId: currentDecorationTemplateId,
+                        sprite: null
+                    };
+                    decorations.push(newDecoration);
                     zone.classList.add('has-decoration');
                     zone.textContent = getDecorationEmoji(currentDecorationType);
                 }
@@ -613,9 +862,32 @@ FIELD_EDITOR_TEMPLATE = """
                     updateDecorationsData();
                 }
             } else if (currentTool === 'select') {
-                selectedCell = { type: 'decoration', x, y, element: zone };
-                document.getElementById('sprite-upload').style.display = 'block';
+                // Проверяем, есть ли декорация на этой клетке
+                const decorationIndex = decorations.findIndex(d => d.x === x && d.y === y);
+                if (decorationIndex >= 0) {
+                    selectCellForSprite('decoration', x, y, zone, decorations[decorationIndex]);
+                }
             }
+        }
+
+        function selectCellForSprite(type, x, y, element, data) {
+            selectedCell = { type, x, y, element, data };
+
+            // Показываем контролы загрузки
+            document.getElementById('sprite-upload-controls').style.display = 'block';
+            document.getElementById('sprite-hint').style.display = 'none';
+
+            // Обновляем информацию о выбранной ячейке
+            const info = type === 'obstacle'
+                ? `Препятствие (${x}, ${y})`
+                : `Декорация "${getDecorationEmoji(data.type)}" (${x}, ${y})`;
+            document.getElementById('selected-cell-info').textContent = info;
+
+            // Подсвечиваем выбранную ячейку
+            document.querySelectorAll('.cell.selected, .decoration-zone.selected').forEach(el => {
+                el.classList.remove('selected');
+            });
+            element.classList.add('selected');
         }
 
         function initTools() {
@@ -625,13 +897,19 @@ FIELD_EDITOR_TEMPLATE = """
                     this.classList.add('active');
                     currentTool = this.dataset.tool;
 
-                    // Показываем панель декораций если выбран инструмент декорации
+                    // Показываем соответствующие панели
+                    const obstaclePanel = document.getElementById('obstacle-panel');
                     const decorationPanel = document.getElementById('decoration-panel');
+                    obstaclePanel.style.display = currentTool === 'obstacle' ? 'block' : 'none';
                     decorationPanel.style.display = currentTool === 'decoration' ? 'block' : 'none';
 
-                    // Скрываем загрузку спрайта если не выбор
+                    // Сбрасываем выбранную ячейку при смене инструмента
                     if (currentTool !== 'select') {
-                        document.getElementById('sprite-upload').style.display = 'none';
+                        document.getElementById('sprite-upload-controls').style.display = 'none';
+                        document.getElementById('sprite-hint').style.display = 'block';
+                        document.querySelectorAll('.cell.selected, .decoration-zone.selected').forEach(el => {
+                            el.classList.remove('selected');
+                        });
                         selectedCell = null;
                     }
                 });
@@ -639,11 +917,41 @@ FIELD_EDITOR_TEMPLATE = """
         }
 
         function initDecorationTypes() {
+            // Базовые типы декораций
             document.querySelectorAll('.decoration-type').forEach(btn => {
                 btn.addEventListener('click', function() {
                     document.querySelectorAll('.decoration-type').forEach(b => b.classList.remove('active'));
+                    document.querySelectorAll('#decoration-templates .element-template').forEach(b => b.classList.remove('active'));
                     this.classList.add('active');
                     currentDecorationType = this.dataset.type;
+                    currentDecorationWidth = parseInt(this.dataset.width) || 1;
+                    currentDecorationHeight = parseInt(this.dataset.height) || 1;
+                    currentDecorationTemplateId = null;
+                });
+            });
+
+            // Шаблоны декораций
+            document.querySelectorAll('#decoration-templates .element-template').forEach(btn => {
+                btn.addEventListener('click', function() {
+                    document.querySelectorAll('.decoration-type').forEach(b => b.classList.remove('active'));
+                    document.querySelectorAll('#decoration-templates .element-template').forEach(b => b.classList.remove('active'));
+                    this.classList.add('active');
+                    currentDecorationType = this.dataset.type;
+                    currentDecorationWidth = parseInt(this.dataset.width) || 1;
+                    currentDecorationHeight = parseInt(this.dataset.height) || 1;
+                    currentDecorationTemplateId = this.dataset.template;
+                });
+            });
+        }
+
+        function initObstacleTemplates() {
+            document.querySelectorAll('#obstacle-templates .element-template').forEach(btn => {
+                btn.addEventListener('click', function() {
+                    document.querySelectorAll('#obstacle-templates .element-template').forEach(b => b.classList.remove('active'));
+                    this.classList.add('active');
+                    currentObstacleWidth = parseInt(this.dataset.width) || 1;
+                    currentObstacleHeight = parseInt(this.dataset.height) || 1;
+                    currentObstacleTemplateId = this.dataset.template === 'default' ? null : this.dataset.template;
                 });
             });
         }
@@ -679,6 +987,33 @@ FIELD_EDITOR_TEMPLATE = """
 
                 reader.readAsDataURL(file);
             });
+
+            // Обработчик кнопки удаления спрайта
+            const clearBtn = document.getElementById('clear-sprite-btn');
+            clearBtn.addEventListener('click', function() {
+                if (!selectedCell) return;
+
+                if (selectedCell.type === 'obstacle') {
+                    const obstacleIndex = obstacles.findIndex(o => o.x === selectedCell.x && o.y === selectedCell.y);
+                    if (obstacleIndex >= 0) {
+                        obstacles[obstacleIndex].sprite = null;
+                        selectedCell.element.innerHTML = '';
+                        selectedCell.element.textContent = '🪨';
+                        updateObstaclesData();
+                    }
+                } else if (selectedCell.type === 'decoration') {
+                    const decorationIndex = decorations.findIndex(d => d.x === selectedCell.x && d.y === selectedCell.y);
+                    if (decorationIndex >= 0) {
+                        decorations[decorationIndex].sprite = null;
+                        selectedCell.element.innerHTML = '';
+                        selectedCell.element.textContent = getDecorationEmoji(decorations[decorationIndex].type);
+                        updateDecorationsData();
+                    }
+                }
+
+                // Очищаем поле выбора файла
+                document.getElementById('sprite-file').value = '';
+            });
         }
 
         function initFieldSizeChange() {
@@ -686,10 +1021,86 @@ FIELD_EDITOR_TEMPLATE = """
             sizeSelect.addEventListener('change', function() {
                 obstacles = [];
                 decorations = [];
+                // Сбрасываем панорамирование при смене размера
+                panOffsetX = 0;
+                panOffsetY = 0;
                 initGrid();
                 updateObstaclesData();
                 updateDecorationsData();
             });
+        }
+
+        function initPanning() {
+            const viewport = document.getElementById('field-viewport');
+            const container = document.getElementById('grid-container');
+
+            // Предотвращаем контекстное меню при правом клике
+            viewport.addEventListener('contextmenu', function(e) {
+                e.preventDefault();
+            });
+
+            // Начало панорамирования при зажатии правой кнопки
+            viewport.addEventListener('mousedown', function(e) {
+                if (e.button === 2) { // Правая кнопка мыши
+                    e.preventDefault();
+                    isPanning = true;
+                    panStartX = e.clientX - panOffsetX;
+                    panStartY = e.clientY - panOffsetY;
+                    viewport.classList.add('panning');
+                }
+            });
+
+            // Перемещение при панорамировании
+            document.addEventListener('mousemove', function(e) {
+                if (!isPanning) return;
+
+                panOffsetX = e.clientX - panStartX;
+                panOffsetY = e.clientY - panStartY;
+
+                container.style.left = panOffsetX + 'px';
+                container.style.top = panOffsetY + 'px';
+            });
+
+            // Конец панорамирования
+            document.addEventListener('mouseup', function(e) {
+                if (e.button === 2 && isPanning) {
+                    isPanning = false;
+                    viewport.classList.remove('panning');
+                }
+            });
+
+            // Также останавливаем панорамирование если мышь покинула окно
+            document.addEventListener('mouseleave', function() {
+                if (isPanning) {
+                    isPanning = false;
+                    viewport.classList.remove('panning');
+                }
+            });
+
+            // Центрируем поле при инициализации
+            centerField();
+        }
+
+        function centerField() {
+            const viewport = document.getElementById('field-viewport');
+            const container = document.getElementById('grid-container');
+
+            // Даём время на рендеринг
+            setTimeout(function() {
+                const viewportRect = viewport.getBoundingClientRect();
+                const containerRect = container.getBoundingClientRect();
+
+                // Центрируем по горизонтали и вертикали
+                panOffsetX = (viewportRect.width - containerRect.width) / 2;
+                panOffsetY = (viewportRect.height - containerRect.height) / 2;
+
+                // Ограничиваем, чтобы не уходило слишком далеко
+                panOffsetX = Math.min(50, panOffsetX);
+                panOffsetY = Math.min(50, panOffsetY);
+
+                container.style.left = panOffsetX + 'px';
+                container.style.top = panOffsetY + 'px';
+            }, 100);
         }
 
         function updateObstaclesData() {
@@ -771,6 +1182,9 @@ def create_field():
                             template_id=template.id,
                             position_x=obs['x'],
                             position_y=obs['y'],
+                            width=obs.get('width', 1),
+                            height=obs.get('height', 1),
+                            obstacle_template_id=int(obs['templateId']) if obs.get('templateId') else None,
                             sprite_data=sprite_data,
                             sprite_mime_type=sprite_mime
                         )
@@ -794,6 +1208,9 @@ def create_field():
                             decoration_type=DecorationType(dec.get('type', 'tree')),
                             position_x=dec['x'],
                             position_y=dec['y'],
+                            width=dec.get('width', 1),
+                            height=dec.get('height', 1),
+                            decoration_template_id=int(dec['templateId']) if dec.get('templateId') else None,
                             sprite_data=sprite_data,
                             sprite_mime_type=sprite_mime
                         )
@@ -807,6 +1224,15 @@ def create_field():
 
         user_balance = get_user_balance(db_session, session.get('user_id'))
 
+        # Загружаем шаблоны элементов
+        obstacle_templates = db_session.query(ObstacleTemplate).filter_by(is_active=True).all()
+        decoration_templates = db_session.query(DecorationTemplate).filter_by(is_active=True).all()
+
+        decoration_emojis = {
+            'tree': '🌲', 'river': '🌊', 'rock': '🪨',
+            'bush': '🌿', 'flower': '🌸', 'custom': '⭐'
+        }
+
         return render_template_string(
             FIELD_EDITOR_TEMPLATE,
             template=None,
@@ -814,6 +1240,9 @@ def create_field():
             field_sizes_json=field_sizes_json,
             obstacles_json='[]',
             decorations_json='[]',
+            obstacle_templates=obstacle_templates,
+            decoration_templates=decoration_templates,
+            decoration_emojis=decoration_emojis,
             active_page='fields',
             user_balance=user_balance,
             web_version=get_web_version(),
@@ -868,6 +1297,9 @@ def edit_field(template_id):
                             template_id=template.id,
                             position_x=obs['x'],
                             position_y=obs['y'],
+                            width=obs.get('width', 1),
+                            height=obs.get('height', 1),
+                            obstacle_template_id=int(obs['templateId']) if obs.get('templateId') else None,
                             sprite_data=sprite_data,
                             sprite_mime_type=sprite_mime
                         )
@@ -891,6 +1323,9 @@ def edit_field(template_id):
                             decoration_type=DecorationType(dec.get('type', 'tree')),
                             position_x=dec['x'],
                             position_y=dec['y'],
+                            width=dec.get('width', 1),
+                            height=dec.get('height', 1),
+                            decoration_template_id=int(dec['templateId']) if dec.get('templateId') else None,
                             sprite_data=sprite_data,
                             sprite_mime_type=sprite_mime
                         )
@@ -907,6 +1342,9 @@ def edit_field(template_id):
             {
                 'x': o.position_x,
                 'y': o.position_y,
+                'width': o.width or 1,
+                'height': o.height or 1,
+                'templateId': o.obstacle_template_id,
                 'sprite': f"data:{o.sprite_mime_type};base64,{base64.b64encode(o.sprite_data).decode()}" if o.sprite_data else None
             }
             for o in template.obstacles
@@ -917,12 +1355,24 @@ def edit_field(template_id):
                 'x': d.position_x,
                 'y': d.position_y,
                 'type': d.decoration_type.value,
+                'width': d.width or 1,
+                'height': d.height or 1,
+                'templateId': d.decoration_template_id,
                 'sprite': f"data:{d.sprite_mime_type};base64,{base64.b64encode(d.sprite_data).decode()}" if d.sprite_data else None
             }
             for d in template.decorations
         ])
 
         user_balance = get_user_balance(db_session, session.get('user_id'))
+
+        # Загружаем шаблоны элементов
+        obstacle_templates = db_session.query(ObstacleTemplate).filter_by(is_active=True).all()
+        decoration_templates = db_session.query(DecorationTemplate).filter_by(is_active=True).all()
+
+        decoration_emojis = {
+            'tree': '🌲', 'river': '🌊', 'rock': '🪨',
+            'bush': '🌿', 'flower': '🌸', 'custom': '⭐'
+        }
 
         return render_template_string(
             FIELD_EDITOR_TEMPLATE,
@@ -931,6 +1381,9 @@ def edit_field(template_id):
             field_sizes_json=field_sizes_json,
             obstacles_json=obstacles_json,
             decorations_json=decorations_json,
+            obstacle_templates=obstacle_templates,
+            decoration_templates=decoration_templates,
+            decoration_emojis=decoration_emojis,
             active_page='fields',
             user_balance=user_balance,
             web_version=get_web_version(),

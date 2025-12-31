@@ -22,6 +22,7 @@ var http_request: HTTPRequest  # Для polling (get_game_state)
 var action_request: HTTPRequest  # Для действий (move, attack, и т.д.)
 var ui_request: HTTPRequest  # Для UI запросов (players, pending_games)
 var army_request: HTTPRequest  # Для запросов армий (отдельный чтобы не конфликтовать с players)
+var general_request: HTTPRequest  # Для общих запросов
 
 func _ready() -> void:
 	# Основной запрос для polling
@@ -47,6 +48,12 @@ func _ready() -> void:
 	army_request.use_threads = false
 	add_child(army_request)
 	army_request.request_completed.connect(_on_request_completed)
+
+	# Общий запрос для разных целей
+	general_request = HTTPRequest.new()
+	general_request.use_threads = false
+	add_child(general_request)
+	general_request.request_completed.connect(_on_request_completed)
 
 	# В браузере получаем базовый URL из JavaScript
 	if OS.has_feature("web"):
@@ -167,6 +174,19 @@ func logout() -> void:
 	auth_token = ""
 	player_id = 0
 	player_name = ""
+
+## Отменить все текущие запросы (вызывается при смене сцены)
+func cancel_all_requests() -> void:
+	if http_request:
+		http_request.cancel_request()
+	if action_request:
+		action_request.cancel_request()
+	if ui_request:
+		ui_request.cancel_request()
+	if army_request:
+		army_request.cancel_request()
+	if general_request:
+		general_request.cancel_request()
 
 ## Логин с паролем
 func login(username: String, password: String) -> void:
@@ -400,8 +420,15 @@ func _make_request(url: String, method: int, body: String = "", requires_auth: b
 			req = ui_request
 		RequestType.ARMY:
 			req = army_request
+		RequestType.GENERAL:
+			req = general_request
 		_:
 			req = http_request
+
+	# Проверяем что запрос не занят (Godot HTTPRequest не поддерживает параллельные запросы)
+	if req.get_http_client_status() != HTTPClient.STATUS_DISCONNECTED:
+		_js_log("WARNING: HTTPRequest busy, skipping request: " + url)
+		return
 
 	if method == HTTPClient.METHOD_GET:
 		req.request(url, headers, method)
@@ -474,4 +501,52 @@ func unlock_race_level(user_race_id: int, unit_level_id: int) -> void:
 func upgrade_race_speed(user_race_id: int, unit_level_id: int, use_gems: bool = false) -> void:
 	var url = api_base + "/races/" + str(user_race_id) + "/upgrade-speed"
 	var body = JSON.stringify({"unit_level_id": unit_level_id, "use_gems": use_gems})
+	_make_request(url, HTTPClient.METHOD_POST, body, true, RequestType.GENERAL)
+
+
+# =============================================================================
+# API для челленджей (PvE)
+# =============================================================================
+
+## Получить список доступных челленджей
+func get_challenges() -> void:
+	var url = api_base + "/challenges"
+	_make_request(url, HTTPClient.METHOD_GET, "", true, RequestType.GENERAL)
+
+## Получить детали челленджа
+func get_challenge(challenge_id: int) -> void:
+	var url = api_base + "/challenges/" + str(challenge_id)
+	_make_request(url, HTTPClient.METHOD_GET, "", true, RequestType.GENERAL)
+
+## Начать челлендж (создать игру с AI)
+func start_challenge(challenge_id: int, army_id: int) -> void:
+	var url = api_base + "/challenges/" + str(challenge_id) + "/start"
+	var body = JSON.stringify({"army_id": army_id})
+	_make_request(url, HTTPClient.METHOD_POST, body, true, RequestType.ACTION)
+
+## Выполнить ход AI в челлендже
+func execute_ai_turn(game_id: int) -> void:
+	var url = api_base + "/games/" + str(game_id) + "/ai-turn"
+	_make_request(url, HTTPClient.METHOD_POST, "{}", true, RequestType.ACTION)
+
+## Получить историю прохождений челленджа
+func get_challenge_completions(challenge_id: int) -> void:
+	var url = api_base + "/challenges/" + str(challenge_id) + "/completions"
+	_make_request(url, HTTPClient.METHOD_GET, "", true, RequestType.GENERAL)
+
+
+# =============================================================================
+# API для управления расами
+# =============================================================================
+
+## Получить список всех доступных рас (включая не добавленные пользователем)
+func get_available_races() -> void:
+	var url = api_base + "/available-races"
+	_make_request(url, HTTPClient.METHOD_GET, "", true, RequestType.GENERAL)
+
+
+## Добавить расу пользователю
+func add_user_race(race_id: int) -> void:
+	var url = api_base + "/races/add"
+	var body = JSON.stringify({"race_id": race_id})
 	_make_request(url, HTTPClient.METHOD_POST, body, true, RequestType.GENERAL)

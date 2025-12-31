@@ -19,6 +19,7 @@ anchor_bottom = 1.0
 color = Color(0.101961, 0.101961, 0.180392, 1)
 
 [node name="HBoxContainer" type="HBoxContainer" parent="."]
+z_index = 0
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
@@ -26,7 +27,7 @@ anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
 
-[node name="BoardContainer" type="CenterContainer" parent="HBoxContainer"]
+[node name="BoardContainer" type="Control" parent="HBoxContainer"]
 layout_mode = 2
 size_flags_horizontal = 3
 clip_contents = true
@@ -35,10 +36,13 @@ clip_contents = true
 unique_name_in_owner = true
 custom_minimum_size = Vector2(560, 560)
 layout_mode = 2
+size_flags_horizontal = 0
+size_flags_vertical = 0
 
 [node name="SidePanel" type="PanelContainer" parent="HBoxContainer"]
 custom_minimum_size = Vector2(300, 0)
 layout_mode = 2
+size_flags_horizontal = 0
 
 [node name="VBox" type="VBoxContainer" parent="HBoxContainer/SidePanel"]
 layout_mode = 2
@@ -167,9 +171,11 @@ custom_minimum_size = Vector2(40, 0)
 theme_override_font_sizes/font_size = 14
 text = "100%"
 
-[node name="LogToggleButton" type="Button" parent="."]
+[node name="UIOverlay" type="CanvasLayer" parent="."]
+layer = 10
+
+[node name="LogToggleButton" type="Button" parent="UIOverlay"]
 unique_name_in_owner = true
-layout_mode = 1
 anchors_preset = 7
 anchor_left = 0.5
 anchor_top = 1.0
@@ -182,10 +188,9 @@ grow_horizontal = 2
 grow_vertical = 0
 text = "Лог боя"
 
-[node name="LogPanel" type="PanelContainer" parent="."]
+[node name="LogPanel" type="PanelContainer" parent="UIOverlay"]
 unique_name_in_owner = true
 visible = false
-layout_mode = 1
 anchors_preset = 12
 anchor_top = 1.0
 anchor_right = 1.0
@@ -194,41 +199,40 @@ offset_top = -200.0
 grow_horizontal = 2
 grow_vertical = 0
 
-[node name="VBox" type="VBoxContainer" parent="LogPanel"]
+[node name="VBox" type="VBoxContainer" parent="UIOverlay/LogPanel"]
 layout_mode = 2
 theme_override_constants/separation = 5
 
-[node name="Header" type="HBoxContainer" parent="LogPanel/VBox"]
+[node name="Header" type="HBoxContainer" parent="UIOverlay/LogPanel/VBox"]
 layout_mode = 2
 
-[node name="Title" type="Label" parent="LogPanel/VBox/Header"]
+[node name="Title" type="Label" parent="UIOverlay/LogPanel/VBox/Header"]
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_font_sizes/font_size = 16
 text = "Лог боя"
 
-[node name="CloseLogButton" type="Button" parent="LogPanel/VBox/Header"]
+[node name="CloseLogButton" type="Button" parent="UIOverlay/LogPanel/VBox/Header"]
 unique_name_in_owner = true
 layout_mode = 2
 custom_minimum_size = Vector2(30, 30)
 text = "X"
 
-[node name="HSeparator" type="HSeparator" parent="LogPanel/VBox"]
+[node name="HSeparator" type="HSeparator" parent="UIOverlay/LogPanel/VBox"]
 layout_mode = 2
 
-[node name="LogScroll" type="ScrollContainer" parent="LogPanel/VBox"]
+[node name="LogScroll" type="ScrollContainer" parent="UIOverlay/LogPanel/VBox"]
 layout_mode = 2
 size_flags_vertical = 3
 
-[node name="LogList" type="VBoxContainer" parent="LogPanel/VBox/LogScroll"]
+[node name="LogList" type="VBoxContainer" parent="UIOverlay/LogPanel/VBox/LogScroll"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 
-[node name="GameOverOverlay" type="ColorRect" parent="."]
+[node name="GameOverOverlay" type="ColorRect" parent="UIOverlay"]
 unique_name_in_owner = true
 visible = false
-layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
@@ -236,8 +240,7 @@ grow_horizontal = 2
 grow_vertical = 2
 color = Color(0, 0, 0, 0.9)
 
-[node name="VBox" type="VBoxContainer" parent="GameOverOverlay"]
-layout_mode = 1
+[node name="VBox" type="VBoxContainer" parent="UIOverlay/GameOverOverlay"]
 anchors_preset = 8
 anchor_left = 0.5
 anchor_top = 0.5
@@ -251,21 +254,21 @@ grow_horizontal = 2
 grow_vertical = 2
 theme_override_constants/separation = 20
 
-[node name="Title" type="Label" parent="GameOverOverlay/VBox"]
+[node name="Title" type="Label" parent="UIOverlay/GameOverOverlay/VBox"]
 unique_name_in_owner = true
 layout_mode = 2
 theme_override_font_sizes/font_size = 48
 text = "ПОБЕДА!"
 horizontal_alignment = 1
 
-[node name="Message" type="Label" parent="GameOverOverlay/VBox"]
+[node name="Message" type="Label" parent="UIOverlay/GameOverOverlay/VBox"]
 unique_name_in_owner = true
 layout_mode = 2
 theme_override_font_sizes/font_size = 18
 text = "Вы победили!"
 horizontal_alignment = 1
 
-[node name="BackButton" type="Button" parent="GameOverOverlay/VBox"]
+[node name="BackButton" type="Button" parent="UIOverlay/GameOverOverlay/VBox"]
 layout_mode = 2
 custom_minimum_size = Vector2(0, 50)
 text = "Вернуться в меню"

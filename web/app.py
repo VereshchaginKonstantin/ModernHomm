@@ -21,6 +21,8 @@ from web.arena import arena_bp
 from web.races import races_bp
 from web.army import army_bp
 from web.fields import fields_bp
+from web.elements import elements_bp
+from web.challenges import challenges_bp
 from web.templates import get_web_version, get_bot_version, HEADER_TEMPLATE, BASE_STYLE, FOOTER_TEMPLATE
 from web.app_templates import (
     LEADERBOARD_TEMPLATE, HELP_TEMPLATE, LOGIN_TEMPLATE, JOBS_TEMPLATE
@@ -43,6 +45,10 @@ app.register_blueprint(races_bp)
 app.register_blueprint(army_bp)
 # Регистрация Blueprint для редактора полей
 app.register_blueprint(fields_bp)
+# Регистрация Blueprint для редактора элементов
+app.register_blueprint(elements_bp)
+# Регистрация Blueprint для челленджей
+app.register_blueprint(challenges_bp)
 
 
 @app.context_processor
@@ -116,6 +122,7 @@ def calculate_unit_price(damage: int, defense: int, health: int, unit_range: int
      2*Летающий*(Урон + Защита) + 2*Удача*Урон + 2*Крит*Урон + 10*Уклонение*(Урон + Защита) + 10*Контратака*Урон +
      10*Регенерация + 10*ЯдУрон*ЯдХодов)
     Для камикадзе: Урон/5 и Уклонение/50
+    Для башен (speed=0): Защита/3
 
     Args:
         damage: Урон юнита
@@ -140,8 +147,11 @@ def calculate_unit_price(damage: int, defense: int, health: int, unit_range: int
     damage_value = damage / 5 if is_kamikaze else damage
     dodge_value = dodge_chance / 50 if is_kamikaze else dodge_chance
 
+    # Для башен (speed=0): защита делится на 3
+    defense_value = defense / 3 if speed == 0 else defense
+
     # Бонус для летающих юнитов (могут двигаться через препятствия)
-    flying_bonus = 2 * (damage_value + defense) if is_flying else 0
+    flying_bonus = 2 * (damage_value + defense_value) if is_flying else 0
 
     # Бонус за регенерацию и отравление
     regeneration_bonus = 10 * regeneration_health
@@ -149,14 +159,14 @@ def calculate_unit_price(damage: int, defense: int, health: int, unit_range: int
 
     price = (
         damage_value +
-        defense +
+        defense_value +
         health +
-        2 * unit_range * (damage_value + defense) +
-        speed * (damage_value + defense) +
+        2 * unit_range * (damage_value + defense_value) +
+        speed * (damage_value + defense_value) +
         flying_bonus +
         2 * luck * damage_value +
         2 * crit_chance * damage_value +
-        10 * dodge_value * (damage_value + defense) +
+        10 * dodge_value * (damage_value + defense_value) +
         10 * counterattack_chance * damage_value +
         regeneration_bonus +
         poison_bonus

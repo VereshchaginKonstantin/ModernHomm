@@ -722,5 +722,339 @@ class TestGodotArenaMovement:
         assert moves_made > 0, "Не удалось выполнить ни одного хода"
 
 
+class TestUnitEffectsAndSwitching:
+    """Тесты для эффектов юнитов (яд, регенерация) и переключения между юнитами."""
+
+    @pytest.fixture
+    def prod_db_session(self):
+        """Сессия к production базе данных."""
+        engine = create_engine(PROD_DATABASE_URL)
+        Session = sessionmaker(bind=engine)
+        session = Session()
+        yield session
+        session.close()
+
+    def _get_headers(self, token):
+        return {
+            'Authorization': f'Bearer {token}',
+            'Content-Type': 'application/json'
+        }
+
+    def _login(self, username, password):
+        response = requests.post(
+            f"{API_BASE_URL}/arena/api/public/login",
+            json={'username': username, 'password': password},
+            verify=False
+        )
+        assert response.status_code == 200, f"Login failed: {response.text}"
+        return response.json()
+
+    @pytest.fixture
+    def test_users_and_armies(self, prod_db_session):
+        """Создаёт тестовых пользователей с армиями."""
+        session = prod_db_session
+
+        suffix = random.randint(100000, 999999)
+        user1_name = f"effects_test_p1_{suffix}"
+        user2_name = f"effects_test_p2_{suffix}"
+        password = "testpass123"
+        password_hash = generate_password_hash(password)
+
+        race = session.query(GameRace).filter_by(name="Люди").first()
+        if not race:
+            pytest.skip("Раса 'Люди' не найдена")
+
+        race_units = session.query(RaceUnit).filter_by(race_id=race.id).all()
+        if len(race_units) < 2:
+            pytest.skip("Недостаточно юнитов расы")
+
+        # Создаём пользователей
+        user1 = GameUser(
+            telegram_id=random.randint(100000000, 999999999),
+            username=user1_name,
+            balance=Decimal("10000.00"),
+            glory=1000,
+            password_hash=password_hash
+        )
+        user2 = GameUser(
+            telegram_id=random.randint(100000000, 999999999),
+            username=user2_name,
+            balance=Decimal("10000.00"),
+            glory=1000,
+            password_hash=password_hash
+        )
+        session.add_all([user1, user2])
+        session.flush()
+
+        # Создаём user_race для обоих
+        user_race1 = UserRace(user_id=user1.id, race_id=race.id)
+        user_race2 = UserRace(user_id=user2.id, race_id=race.id)
+        session.add_all([user_race1, user_race2])
+        session.flush()
+
+        # Получаем скины для юнитов
+        from db.models import RaceUnitSkin
+        race_unit_skins = {}
+        for ru in race_units[:2]:
+            skin = session.query(RaceUnitSkin).filter_by(race_unit_id=ru.id).first()
+            if skin:
+                race_unit_skins[ru.id] = skin.id
+            else:
+                # Создаём скин если нет
+                new_skin = RaceUnitSkin(race_unit_id=ru.id, name=f"Default Skin {ru.id}")
+                session.add(new_skin)
+                session.flush()
+                race_unit_skins[ru.id] = new_skin.id
+
+        # Создаём user_race_units
+        user_race_units1 = []
+        user_race_units2 = []
+        for ru in race_units[:2]:
+            skin_id = race_unit_skins.get(ru.id)
+            uru1 = UserRaceUnit(user_race_id=user_race1.id, race_unit_id=ru.id, skin_id=skin_id)
+            uru2 = UserRaceUnit(user_race_id=user_race2.id, race_unit_id=ru.id, skin_id=skin_id)
+            user_race_units1.append(uru1)
+            user_race_units2.append(uru2)
+        session.add_all(user_race_units1 + user_race_units2)
+        session.flush()
+
+        # Создаём армии
+        army1 = Army(user_race_id=user_race1.id, name=f"TestArmy1_{suffix}")
+        army2 = Army(user_race_id=user_race2.id, name=f"TestArmy2_{suffix}")
+        session.add_all([army1, army2])
+        session.flush()
+
+        # Добавляем юнитов в армии
+        for ru in race_units[:2]:
+            au = ArmyUnit(army_id=army1.id, race_unit_id=ru.id, count=3)
+            session.add(au)
+        for ru in race_units[:2]:
+            au = ArmyUnit(army_id=army2.id, race_unit_id=ru.id, count=3)
+            session.add(au)
+
+        session.commit()
+
+        yield {
+            'user1': user1,
+            'user2': user2,
+            'user1_name': user1_name,
+            'user2_name': user2_name,
+            'password': password,
+            'army1': army1,
+            'army2': army2
+        }
+
+        # Cleanup
+        try:
+            session.query(ArmyUnit).filter(ArmyUnit.army_id.in_([army1.id, army2.id])).delete(synchronize_session=False)
+            session.delete(army1)
+            session.delete(army2)
+            for uru in user_race_units1 + user_race_units2:
+                session.delete(uru)
+            session.delete(user_race1)
+            session.delete(user_race2)
+            session.delete(user1)
+            session.delete(user2)
+            session.commit()
+        except Exception:
+            session.rollback()
+
+    def test_unit_state_includes_effect_fields(self, test_users_and_armies):
+        """
+        Тест что состояние юнита включает поля для эффектов (яд, регенерация).
+        Эти поля используются клиентом для отображения отложенных действий.
+        """
+        data = test_users_and_armies
+
+        # Логин и создание игры
+        login1 = self._login(data['user1_name'], data['password'])
+        token1 = login1['token']
+
+        login2 = self._login(data['user2_name'], data['password'])
+        token2 = login2['token']
+
+        # Создаём игру
+        create_response = requests.post(
+            f"{API_BASE_URL}/arena/api/public/games/create",
+            json={
+                "player2_name": data['user2_name'],
+                "field_size": "5x5",
+                "army_id": data['army1'].id
+            },
+            headers=self._get_headers(token1),
+            verify=False
+        )
+        game_id = create_response.json()['game_id']
+
+        # Принимаем игру
+        requests.post(
+            f"{API_BASE_URL}/arena/api/public/games/{game_id}/accept",
+            json={"army_id": data['army2'].id},
+            headers=self._get_headers(token2),
+            verify=False
+        )
+
+        # Получаем состояние
+        state_response = requests.get(
+            f"{API_BASE_URL}/arena/api/public/games/{game_id}/state",
+            headers=self._get_headers(token1),
+            verify=False
+        )
+        assert state_response.status_code == 200
+        game_state = state_response.json()
+
+        # Проверяем что юниты содержат поля для эффектов
+        units = game_state.get('units', [])
+        assert len(units) > 0, "Нет юнитов в игре"
+
+        for unit in units:
+            # Поля эффектов на самом юните
+            assert 'poison_remaining_turns' in unit, \
+                "Юнит должен содержать poison_remaining_turns для отображения яда"
+            assert 'poison_damage_per_turn' in unit, \
+                "Юнит должен содержать poison_damage_per_turn для отображения яда"
+            assert 'remaining_hp' in unit, \
+                "Юнит должен содержать remaining_hp для расчёта общего HP"
+
+            # Поля эффектов в unit_type (способности юнита)
+            unit_type = unit.get('unit_type', {})
+            assert 'regeneration_health' in unit_type, \
+                "unit_type должен содержать regeneration_health для отображения регенерации"
+            assert 'poison_damage' in unit_type, \
+                "unit_type должен содержать poison_damage (способность отравлять)"
+            assert 'poison_turns' in unit_type, \
+                "unit_type должен содержать poison_turns (способность отравлять)"
+            assert 'poison_immunity' in unit_type, \
+                "unit_type должен содержать poison_immunity"
+
+    def test_unit_actions_allow_selection_of_different_units(self, test_users_and_armies):
+        """
+        Тест что игрок может получать actions для разных своих юнитов.
+        Это подтверждает что переключение между юнитами работает на серверной стороне.
+        """
+        data = test_users_and_armies
+
+        # Логин и создание игры
+        login1 = self._login(data['user1_name'], data['password'])
+        token1 = login1['token']
+        player1_id = login1['player']['id']
+
+        login2 = self._login(data['user2_name'], data['password'])
+        token2 = login2['token']
+
+        # Создаём игру
+        create_response = requests.post(
+            f"{API_BASE_URL}/arena/api/public/games/create",
+            json={
+                "player2_name": data['user2_name'],
+                "field_size": "5x5",
+                "army_id": data['army1'].id
+            },
+            headers=self._get_headers(token1),
+            verify=False
+        )
+        game_id = create_response.json()['game_id']
+
+        # Принимаем игру
+        requests.post(
+            f"{API_BASE_URL}/arena/api/public/games/{game_id}/accept",
+            json={"army_id": data['army2'].id},
+            headers=self._get_headers(token2),
+            verify=False
+        )
+
+        # Получаем состояние
+        state_response = requests.get(
+            f"{API_BASE_URL}/arena/api/public/games/{game_id}/state",
+            headers=self._get_headers(token1),
+            verify=False
+        )
+        game_state = state_response.json()
+
+        current_player_id = game_state.get('current_player_id')
+        current_token = token1 if current_player_id == player1_id else token2
+
+        # Находим юнитов текущего игрока
+        current_player_units = [u for u in game_state['units'] if u['player_id'] == current_player_id]
+
+        # Должно быть минимум 2 юнита для проверки переключения
+        if len(current_player_units) < 2:
+            pytest.skip("Недостаточно юнитов для теста переключения")
+
+        # Получаем actions для первого юнита
+        unit1 = current_player_units[0]
+        actions1_response = requests.get(
+            f"{API_BASE_URL}/arena/api/public/games/{game_id}/units/{unit1['id']}/actions",
+            headers=self._get_headers(current_token),
+            verify=False
+        )
+        assert actions1_response.status_code == 200, "Не удалось получить actions для юнита 1"
+        actions1 = actions1_response.json()
+        assert 'moves' in actions1, "actions юнита 1 не содержат moves"
+
+        # Получаем actions для второго юнита (переключение)
+        unit2 = current_player_units[1]
+        actions2_response = requests.get(
+            f"{API_BASE_URL}/arena/api/public/games/{game_id}/units/{unit2['id']}/actions",
+            headers=self._get_headers(current_token),
+            verify=False
+        )
+        assert actions2_response.status_code == 200, "Не удалось получить actions для юнита 2"
+        actions2 = actions2_response.json()
+        assert 'moves' in actions2, "actions юнита 2 не содержат moves"
+
+        # Убеждаемся что это разные юниты
+        assert unit1['id'] != unit2['id'], "Юниты должны быть разными"
+
+    def test_game_logs_contain_effect_events(self, test_users_and_armies):
+        """
+        Тест что логи игры могут содержать события эффектов.
+        Проверяем структуру логов.
+        """
+        data = test_users_and_armies
+
+        login1 = self._login(data['user1_name'], data['password'])
+        token1 = login1['token']
+
+        login2 = self._login(data['user2_name'], data['password'])
+        token2 = login2['token']
+
+        create_response = requests.post(
+            f"{API_BASE_URL}/arena/api/public/games/create",
+            json={
+                "player2_name": data['user2_name'],
+                "field_size": "5x5",
+                "army_id": data['army1'].id
+            },
+            headers=self._get_headers(token1),
+            verify=False
+        )
+        game_id = create_response.json()['game_id']
+
+        requests.post(
+            f"{API_BASE_URL}/arena/api/public/games/{game_id}/accept",
+            json={"army_id": data['army2'].id},
+            headers=self._get_headers(token2),
+            verify=False
+        )
+
+        state_response = requests.get(
+            f"{API_BASE_URL}/arena/api/public/games/{game_id}/state",
+            headers=self._get_headers(token1),
+            verify=False
+        )
+        game_state = state_response.json()
+
+        # Проверяем что logs существуют и имеют правильную структуру
+        logs = game_state.get('logs', [])
+        assert isinstance(logs, list), "logs должен быть списком"
+
+        # Проверяем структуру каждого лога
+        for log_entry in logs:
+            assert 'event_type' in log_entry, "log entry должен содержать event_type"
+            assert 'message' in log_entry, "log entry должен содержать message"
+            # event_type может быть: attack, move, poison, regeneration, turn_switch, game_start, etc.
+
+
 if __name__ == '__main__':
     pytest.main([__file__, '-v', '-s'])

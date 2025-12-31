@@ -458,110 +458,144 @@ HELP_TEMPLATE = """
         <h1>Справка по параметрам юнитов</h1>
 
         <div style="background: white; padding: 30px; border-radius: 8px;">
-            <h2>Базовые параметры</h2>
-            <table class="unit-params-table">
-                <tr>
-                    <th style="width: 200px;">Параметр</th>
-                    <th>Описание</th>
-                    <th style="width: 300px;">Как используется в формулах</th>
-                </tr>
-                <tr>
-                    <td><strong>Цена</strong></td>
-                    <td>Стоимость покупки одного юнита</td>
-                    <td>Используется при покупке юнитов и расчете награды за убитых врагов</td>
-                </tr>
-                <tr>
-                    <td><strong>Урон (Damage)</strong></td>
-                    <td>Базовый урон юнита при атаке</td>
-                    <td><code>Урон = damage × (0.9-1.1) × (1 - усталость×0.3) × (1 + мораль×0.2)</code></td>
-                </tr>
-                <tr>
-                    <td><strong>Защита (Defense)</strong></td>
-                    <td>Уменьшает входящий урон</td>
-                    <td><code>Финальный_урон = max(1, Урон - defense)</code></td>
-                </tr>
-                <tr>
-                    <td><strong>Здоровье (Health)</strong></td>
-                    <td>Количество очков жизни каждого юнита</td>
-                    <td>При получении урона >= health юнит погибает</td>
-                </tr>
-                <tr>
-                    <td><strong>Дальность (Range)</strong></td>
-                    <td>Максимальная дистанция атаки (манхэттенское расстояние)</td>
-                    <td><code>Можно_атаковать = |x1-x2| + |y1-y2| ≤ range</code></td>
-                </tr>
-                <tr>
-                    <td><strong>Скорость (Speed)</strong></td>
-                    <td>Количество клеток, на которое может переместиться юнит за ход</td>
-                    <td>Используется в алгоритме BFS для поиска доступных клеток</td>
-                </tr>
-                <tr>
-                    <td><strong>Удача (Luck)</strong></td>
-                    <td>Вероятность нанести максимальный урон (0-1, где 0.1 = 10%)</td>
-                    <td><code>if random() < luck: Урон = Урон × 1.5</code></td>
-                </tr>
-                <tr>
-                    <td><strong>Шанс крита (Crit Chance)</strong></td>
-                    <td>Вероятность критического удара (0-1, где 0.15 = 15%)</td>
-                    <td><code>Шанс = crit_chance + мораль×0.2 - усталость×0.2<br>if random() < Шанс: Урон = Урон × 2</code></td>
-                </tr>
-            </table>
+            <h2>Характеристики юнита</h2>
+            <div style="background-color: #f8f9fa; padding: 20px; border-radius: 8px; margin-bottom: 30px;">
+                <h3>Боевые характеристики:</h3>
+                <p><strong>attack</strong> - Атака (по умолчанию: 10)</p>
+                <p><strong>defense</strong> - Защита (по умолчанию: 5)</p>
+                <p><strong>min_damage</strong> - Минимальный урон (по умолчанию: 1)</p>
+                <p><strong>max_damage</strong> - Максимальный урон (по умолчанию: 3)</p>
+                <p><strong>health</strong> - Здоровье (по умолчанию: 10)</p>
+                <p><strong>speed</strong> - Скорость перемещения (по умолчанию: 4)</p>
+                <p><strong>initiative</strong> - Инициатива, порядок хода (по умолчанию: 10)</p>
+                <p><strong>range</strong> - Дальность атаки (по умолчанию: 1)</p>
 
-            <h2 style="margin-top: 40px;">Динамические параметры (во время боя)</h2>
-            <table class="unit-params-table">
-                <tr>
-                    <th style="width: 200px;">Параметр</th>
-                    <th>Описание</th>
-                    <th style="width: 300px;">Влияние на бой</th>
-                </tr>
-                <tr>
-                    <td><strong>Мораль</strong></td>
-                    <td>Повышается при успешных атаках (0-100%)</td>
-                    <td>
-                        • Увеличивает урон до +20%<br>
-                        • Увеличивает шанс крита до +20%<br>
-                        • +10 при успешной атаке
-                    </td>
-                </tr>
-                <tr>
-                    <td><strong>Усталость</strong></td>
-                    <td>Повышается при неудачах (0-100%)</td>
-                    <td>
-                        • Снижает урон до -30%<br>
-                        • Снижает шанс крита до -20%<br>
-                        • +10 при неудачной атаке<br>
-                        • -5 при успешной атаке
-                    </td>
-                </tr>
-            </table>
+                <h3 style="margin-top: 20px;">Вероятностные характеристики (0-1):</h3>
+                <p><strong>luck</strong> - Удача, шанс x1.5 урона (по умолчанию: 0)</p>
+                <p><strong>crit_chance</strong> - Шанс критического удара x2 (по умолчанию: 0)</p>
+                <p><strong>dodge_chance</strong> - Шанс уклонения от атаки (по умолчанию: 0)</p>
+                <p><strong>counterattack_chance</strong> - Шанс контратаки (по умолчанию: 0)</p>
 
-            <h2 style="margin-top: 40px;">Формула расчета стоимости юнита</h2>
-            <div style="background-color: #f8f9fa; padding: 20px; border-radius: 8px;">
-                <p><strong>Для обычных юнитов:</strong></p>
-                <div style="background-color: white; padding: 15px; border-radius: 4px; margin: 10px 0; font-family: monospace;">
-                    <code>Цена = Урон + Защита + Здоровье + 100×Дальность + 100×Скорость + 1000×Удача + 1000×Крит + 5000×Уклонение + 1000×Контратака</code>
-                </div>
-                <p><strong>Для камикадзе:</strong></p>
-                <div style="background-color: white; padding: 15px; border-radius: 4px; margin: 10px 0; font-family: monospace;">
-                    <code>Цена = (Урон/5) + Защита + Здоровье + 100×Дальность + 100×Скорость + 1000×Удача + 1000×Крит + 100×Уклонение + 1000×Контратака</code>
-                </div>
-                <p style="color: #666; margin-top: 15px;"><em>Примечание: Для камикадзе урон учитывается с коэффициентом 1/5, а уклонение с коэффициентом 1/50 (5000/50=100), так как эти юниты жертвуют собой после атаки.</em></p>
+                <h3 style="margin-top: 20px;">Регенерация и отравление:</h3>
+                <p><strong>regeneration_health</strong> - HP восстанавливаемое в начале хода (по умолчанию: 0)</p>
+                <p><strong>poison_damage</strong> - Урон яда за ход (по умолчанию: 0)</p>
+                <p><strong>poison_turns</strong> - Длительность яда в ходах (по умолчанию: 0)</p>
+                <p><strong>poison_immunity</strong> - Иммунитет к отравлению (по умолчанию: false)</p>
+
+                <h3 style="margin-top: 20px;">Особые свойства:</h3>
+                <p><strong>is_flying</strong> - Летающий юнит, игнорирует препятствия (по умолчанию: false)</p>
+                <p><strong>is_kamikaze</strong> - Камикадзе, погибает после атаки (по умолчанию: false)</p>
+                <p><strong>is_big</strong> - Большой юнит, занимает 2x2 клетки (по умолчанию: false)</p>
             </div>
 
-            <h2 style="margin-top: 40px;">Полная формула расчета урона</h2>
-            <div style="background-color: #f8f9fa; padding: 20px; border-radius: 8px; font-family: monospace;">
-                <p><strong>1.</strong> Базовый урон со случайностью: <code>base = damage × random(0.9, 1.1)</code></p>
-                <p><strong>2.</strong> Модификатор усталости: <code>fatigue_mod = 1 - (усталость / 100) × 0.3</code></p>
-                <p><strong>3.</strong> Модификатор морали: <code>morale_mod = мораль / 100</code></p>
-                <p><strong>4.</strong> Урон с модификаторами: <code>dmg = base × fatigue_mod × morale_mod</code></p>
-                <p><strong>5.</strong> Проверка эффективности: <code>if эффективен: dmg = dmg × 1.5</code></p>
-                <p><strong>6.</strong> Проверка критического удара: <code>crit_chance_final = crit_chance + (мораль/100)×0.2 - (усталость/100)×0.2</code></p>
-                <p><strong>7.</strong> Если крит: <code>dmg = dmg × 2</code></p>
-                <p><strong>8.</strong> Проверка удачи: <code>if random() < luck: dmg = dmg × 1.5</code></p>
-                <p><strong>9.</strong> Умножение на количество атакующих: <code>dmg_multiplied = dmg × кол-во_атакующих</code></p>
-                <p><strong>10.</strong> Расчет задетых юнитов: <code>задетые_юниты = 1 + floor(0.5 × (dmg_multiplied - здоровье) / здоровье)</code></p>
-                <p><strong>11.</strong> Применение защиты: <code>defense_reduction = defense × |задетые_юниты|</code></p>
-                <p><strong>12.</strong> Итоговый урон: <code>total_dmg = dmg_multiplied - defense_reduction</code></p>
+            <h2>Динамические параметры (во время боя)</h2>
+            <div style="background-color: #f8f9fa; padding: 20px; border-radius: 8px; margin-bottom: 30px;">
+                <p><strong>morale (Мораль)</strong> - Начинается с 100%. Повышается при успешных атаках (+10), понижается при неудачах.</p>
+                <p style="margin-left: 20px;">- Увеличивает урон: morale/100 (110% = x1.1)</p>
+                <p style="margin-left: 20px;">- Увеличивает шанс крита: до +20%</p>
+
+                <p style="margin-top: 15px;"><strong>fatigue (Усталость)</strong> - Начинается с 0%. Повышается при неудачах (+10), снижается при успехах (-5).</p>
+                <p style="margin-left: 20px;">- Снижает урон: до -30%</p>
+                <p style="margin-left: 20px;">- Снижает шанс крита: до -20%</p>
+            </div>
+
+            <h2>Формула расчета стоимости юнита</h2>
+            <div style="background-color: #f8f9fa; padding: 20px; border-radius: 8px; margin-bottom: 30px;">
+                <p><strong>Для обычных юнитов:</strong></p>
+                <pre style="background-color: white; padding: 15px; border-radius: 4px; margin: 10px 0; overflow-x: auto;">
+Цена = damage + defense + health
+     + 2 × range × (damage + defense)
+     + speed × (damage + defense)
+     + 2 × is_flying × (damage + defense)
+     + 2 × luck × damage
+     + 2 × crit_chance × damage
+     + 10 × dodge_chance × (damage + defense)
+     + 10 × counterattack_chance × damage
+     + 10 × regeneration_health
+     + 10 × poison_damage × poison_turns</pre>
+
+                <p style="margin-top: 20px;"><strong>Для башен (speed = 0):</strong></p>
+                <pre style="background-color: white; padding: 15px; border-radius: 4px; margin: 10px 0; overflow-x: auto;">
+defense_value = defense / 3
+
+Цена = damage + defense_value + health
+     + 2 × range × (damage + defense_value)
+     + 2 × is_flying × (damage + defense_value)
+     + 2 × luck × damage
+     + 2 × crit_chance × damage
+     + 10 × dodge_chance × (damage + defense_value)
+     + 10 × counterattack_chance × damage
+     + 10 × regeneration_health
+     + 10 × poison_damage × poison_turns</pre>
+                <p style="color: #666; margin-top: 15px;"><em>Примечание: Для башен (юниты с speed=0) защита делится на 3, так как они не могут двигаться и легче уничтожаются.</em></p>
+
+                <p style="margin-top: 20px;"><strong>Для камикадзе:</strong></p>
+                <pre style="background-color: white; padding: 15px; border-radius: 4px; margin: 10px 0; overflow-x: auto;">
+damage_value = damage / 5
+dodge_value = dodge_chance / 50
+
+Цена = damage_value + defense + health
+     + 2 × range × (damage_value + defense)
+     + speed × (damage_value + defense)
+     + 2 × is_flying × (damage_value + defense)
+     + 2 × luck × damage_value
+     + 2 × crit_chance × damage_value
+     + 10 × dodge_value × (damage_value + defense)
+     + 10 × counterattack_chance × damage_value
+     + 10 × regeneration_health
+     + 10 × poison_damage × poison_turns</pre>
+                <p style="color: #666; margin-top: 15px;"><em>Примечание: Для камикадзе урон делится на 5, уклонение делится на 50, так как эти юниты погибают после атаки.</em></p>
+            </div>
+
+            <h2>Полная формула расчета урона</h2>
+            <div style="background-color: #f8f9fa; padding: 20px; border-radius: 8px; margin-bottom: 30px;">
+                <pre style="background-color: white; padding: 15px; border-radius: 4px; margin: 10px 0; overflow-x: auto;">
+1. Проверка уклонения:
+   if random() < dodge_chance:
+       УРОН = 0 (атака промахнулась)
+       return
+
+2. Базовый урон:
+   base_damage = random(min_damage, max_damage)
+
+3. Модификатор усталости:
+   fatigue_mod = 1.0 - (fatigue / 100) × 0.3
+   (усталость снижает урон до -30%)
+
+4. Модификатор морали:
+   morale_mod = morale / 100
+   (100 = норма, 110 = +10%, 90 = -10%)
+
+5. Урон с модификаторами:
+   damage = base_damage × fatigue_mod × morale_mod
+
+6. Шанс крита с модификаторами:
+   crit_chance_final = crit_chance + (morale/100) × 0.2 - (fatigue/100) × 0.2
+   (мораль увеличивает, усталость уменьшает)
+
+7. Проверка критического удара:
+   if random() < crit_chance_final:
+       damage = damage × 2
+
+8. Проверка удачи:
+   if random() < luck:
+       damage = damage × 1.5
+
+9. Умножение на количество атакующих:
+   damage_multiplied = damage × количество_живых_юнитов
+   (для камикадзе всегда × 1)
+
+10. Расчет задетых юнитов:
+    if damage_multiplied > target_health:
+        affected_units = 1 + floor(0.5 × (damage_multiplied - health) / health)
+    else:
+        affected_units = 1
+
+11. Применение защиты:
+    defense_reduction = target_defense × affected_units
+
+12. ИТОГОВЫЙ УРОН:
+    total_damage = damage_multiplied - defense_reduction</pre>
             </div>
 
             <h2 style="margin-top: 40px;">Награда за победу</h2>

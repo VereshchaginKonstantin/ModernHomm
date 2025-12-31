@@ -55,7 +55,7 @@ const COLORS = {
 	"player2_dark": Color(0.1, 0.6, 0.3),
 
 	# Подсветка действий
-	"move_highlight": Color(0.153, 0.682, 0.376, 0.6),
+	"move_highlight": Color(0.6, 0.3, 0.9, 0.6),  # Фиолетовый для возможных ходов
 	"attack_highlight": Color(0.906, 0.298, 0.235, 0.6),
 	"selected": Color(0.945, 0.769, 0.059, 0.8),
 	"hover": Color(0.6, 0.2, 0.8, 0.7)  # Фиолетовый для hover
@@ -70,19 +70,32 @@ var sprite_sheets: Dictionary = {}
 var pending_sprite_loads: Dictionary = {}  # sprite_url -> true
 # Отслеживание юнитов которым уже применили спрайт (для предотвращения повторных применений)
 var units_with_sprites: Dictionary = {}  # unit_id -> sprite_url
+# Кэш текстур для декораций и препятствий (загруженные спрайты)
+var decoration_textures: Dictionary = {}  # sprite_url -> Texture2D
+# Контейнеры для декораций и препятствий со спрайтами
+var decoration_sprites: Array[Control] = []
+var obstacle_sprite_containers: Array[Control] = []
 
 # Состояние
 var field_size: int = 5
 var cells: Array[Control] = []
+var cells_by_coords: Dictionary = {}  # "x_y" -> Control - для быстрого доступа по координатам
 var unit_sprites: Dictionary = {}  # unit_id -> Control
 var unit_positions: Dictionary = {}  # unit_id -> {x, y} - последние известные позиции
 var active_tweens: Dictionary = {}  # unit_id -> Tween - активные анимации перемещения
 var action_mode: String = ""  # "move" или "attack"
 var board_initialized: bool = false  # Флаг что доска уже создана
+var obstacle_sprites: Dictionary = {}  # "x_y" -> Control - спрайты препятствий
+var obstacle_textures: Dictionary = {}  # sprite_url -> Texture2D - кэш текстур препятствий
 var last_selected_unit_id: int = -1  # ID предыдущего выбранного юнита для управления анимацией
 var last_log_count: int = 0  # Для отслеживания изменений в логах
 var base_url: String = ""  # Кэшированный base URL для запросов
 var is_game_over_displayed: bool = false  # Флаг что игра окончена и показан overlay
+# Координаты границ с учётом декораций (вычисляются в _calculate_tile_size)
+var board_min_x: int = 0
+var board_max_x: int = 4
+var board_min_y: int = 0
+var board_max_y: int = 4
 
 # Hover-подсветка для отладки
 var hover_highlight: Polygon2D = null
@@ -381,13 +394,25 @@ func _handle_board_click(mouse_pos: Vector2) -> void:
 
 	_js_log("CLICK: Cell [%d,%d], action_mode=%s" % [grid_pos.x, grid_pos.y, action_mode])
 
+	# Проверяем есть ли юнит на этой клетке
+	var clicked_unit = GameManager.get_unit_at_position(grid_pos.x, grid_pos.y)
+
 	# Если не в режиме действия - проверяем выбор юнита
 	if action_mode == "":
-		var unit = GameManager.get_unit_at_position(grid_pos.x, grid_pos.y)
-		if not unit.is_empty() and unit.get("player_id") == GameManager.current_player_id:
+		if not clicked_unit.is_empty() and clicked_unit.get("player_id") == GameManager.current_player_id:
 			_js_log("Selecting unit at [%d,%d]" % [grid_pos.x, grid_pos.y])
-			GameManager.select_unit(unit)
+			GameManager.select_unit(clicked_unit)
 		return
+
+	# Если кликнули на своего юнита (не выбранного) - переключаемся на него
+	if not clicked_unit.is_empty() and clicked_unit.get("player_id") == GameManager.current_player_id:
+		var selected_id = GameManager.selected_unit.get("id", -1)
+		if clicked_unit.get("id", -1) != selected_id:
+			_js_log("Switching to unit at [%d,%d]" % [grid_pos.x, grid_pos.y])
+			_clear_highlights()
+			action_mode = ""
+			GameManager.select_unit(clicked_unit)
+			return
 
 	# В режиме движения
 	if action_mode == "move":
@@ -427,6 +452,10 @@ func _on_game_state_updated(state: Dictionary) -> void:
 		RemoteLogger.error("Empty game state received")
 		hint_label.text = "Ошибка: пустое состояние игры"
 		return
+
+	# Проверяем это челлендж или PvP (на основе данных от сервера)
+	if state.has("is_challenge"):
+		GameManager.is_challenge_game = state.get("is_challenge", false)
 
 	# Обновляем размер поля
 	var field_data = state.get("field", {})
@@ -470,6 +499,9 @@ func _on_game_state_updated(state: Dictionary) -> void:
 			hint_label.text = "Ваш ход! Выберите юнита для действия."
 		else:
 			hint_label.text = "Ход противника. Ожидайте..."
+			# Если это челлендж и не наш ход - запрашиваем ход AI
+			if GameManager.is_challenge_game and not state.get("is_game_over", false):
+				_request_ai_turn()
 	else:
 		# Если юнит выбран, перерисовываем подсветку
 		if action_mode == "move":
@@ -484,7 +516,7 @@ func grid_to_iso(grid_x: int, grid_y: int) -> Vector2:
 	return Vector2(iso_x, iso_y)
 
 ## Создание изометрического тайла (ромб с боковыми гранями)
-func _create_iso_tile(grid_x: int, grid_y: int, is_obstacle: bool = false) -> Control:
+func _create_iso_tile(grid_x: int, grid_y: int, is_obstacle: bool = false, is_game_cell: bool = true) -> Control:
 	var container = Control.new()
 	var iso_pos = grid_to_iso(grid_x, grid_y)
 	container.position = iso_pos
@@ -496,6 +528,11 @@ func _create_iso_tile(grid_x: int, grid_y: int, is_obstacle: bool = false) -> Co
 	rng.seed = hash(str(grid_x) + "_" + str(grid_y))  # Детерминированный seed
 	var shade_variation = rng.randf_range(-0.05, 0.05)
 	var grass_color = COLORS.grass_base
+
+	# Для декоративных ячеек (за пределами игрового поля) делаем цвет темнее
+	if not is_game_cell:
+		grass_color = grass_color.darkened(0.15)
+
 	grass_color = grass_color.lightened(shade_variation) if shade_variation > 0 else grass_color.darkened(-shade_variation)
 
 	# Рисуем травяную ячейку (плоский ромб)
@@ -509,30 +546,32 @@ func _create_iso_tile(grid_x: int, grid_y: int, is_obstacle: bool = false) -> Co
 	top_face.color = grass_color
 	container.add_child(top_face)
 
-	# Тонкие линии-контуры для разделения ячеек
-	var line_width = 1.0
-	var grid_line = Line2D.new()
-	grid_line.points = PackedVector2Array([
-		Vector2(TILE_WIDTH / 2, 0),
-		Vector2(TILE_WIDTH, TILE_HEIGHT / 2),
-		Vector2(TILE_WIDTH / 2, TILE_HEIGHT),
-		Vector2(0, TILE_HEIGHT / 2),
-		Vector2(TILE_WIDTH / 2, 0)  # Замыкаем контур
-	])
-	grid_line.width = line_width
-	grid_line.default_color = COLORS.grid_line
-	container.add_child(grid_line)
+	# Тонкие линии-контуры для разделения ячеек (только для игровых клеток)
+	if is_game_cell:
+		var line_width = 1.0
+		var grid_line = Line2D.new()
+		grid_line.points = PackedVector2Array([
+			Vector2(TILE_WIDTH / 2, 0),
+			Vector2(TILE_WIDTH, TILE_HEIGHT / 2),
+			Vector2(TILE_WIDTH / 2, TILE_HEIGHT),
+			Vector2(0, TILE_HEIGHT / 2),
+			Vector2(TILE_WIDTH / 2, 0)  # Замыкаем контур
+		])
+		grid_line.width = line_width
+		grid_line.default_color = COLORS.grid_line
+		container.add_child(grid_line)
 
 	# Если это препятствие - рисуем камень поверх травы
 	if is_obstacle:
 		_add_rock_to_tile(container)
 
-	# Невидимая область для кликов (поверх всего тайла)
-	var click_area = Control.new()
-	click_area.size = Vector2(TILE_WIDTH, TILE_HEIGHT + TILE_DEPTH)
-	click_area.mouse_filter = Control.MOUSE_FILTER_STOP
-	click_area.gui_input.connect(_on_cell_clicked.bind(grid_x, grid_y))
-	container.add_child(click_area)
+	# Невидимая область для кликов (только для игровых клеток)
+	if is_game_cell:
+		var click_area = Control.new()
+		click_area.size = Vector2(TILE_WIDTH, TILE_HEIGHT + TILE_DEPTH)
+		click_area.mouse_filter = Control.MOUSE_FILTER_STOP
+		click_area.gui_input.connect(_on_cell_clicked.bind(grid_x, grid_y))
+		container.add_child(click_area)
 
 	return container
 
@@ -598,22 +637,81 @@ func _calculate_tile_size() -> void:
 	TILE_HEIGHT = int(BASE_TILE_HEIGHT * scale_factor)
 	TILE_DEPTH = int(BASE_TILE_DEPTH * scale_factor)
 
-	# Пересчитываем смещения для центрирования
-	# Ширина изометрического поля: field_size * TILE_WIDTH
-	# Высота изометрического поля: field_size * TILE_HEIGHT + TILE_DEPTH
-	var iso_width = field_size * TILE_WIDTH
-	var iso_height = field_size * TILE_HEIGHT + TILE_DEPTH
+	# Находим минимальные и максимальные координаты декораций
+	board_min_x = 0
+	board_max_x = field_size - 1
+	board_min_y = 0
+	board_max_y = field_size - 1
+	var decorations = GameManager.game_state.get("decorations", [])
+	var has_template_decorations = not decorations.is_empty()
+
+	_js_log("_calculate_tile_size: decorations count=" + str(decorations.size()))
+	for dec in decorations:
+		# Явное приведение к int (JSON может вернуть float)
+		var dec_x: int = int(dec.get("x", 0))
+		var dec_y: int = int(dec.get("y", 0))
+		var dec_width: int = int(dec.get("width", 1))
+		var dec_height: int = int(dec.get("height", 1))
+		_js_log("  Decoration at (%d, %d) size %dx%d" % [dec_x, dec_y, dec_width, dec_height])
+		# Учитываем все клетки которые занимает декорация
+		board_min_x = mini(board_min_x, dec_x)
+		board_max_x = maxi(board_max_x, dec_x + dec_width - 1)
+		board_min_y = mini(board_min_y, dec_y)
+		board_max_y = maxi(board_max_y, dec_y + dec_height - 1)
+
+	# Деревья по границам только если нет декораций из шаблона
+	if not has_template_decorations:
+		board_min_x = mini(board_min_x, -2)
+		board_max_x = maxi(board_max_x, field_size + 1)
+		board_min_y = mini(board_min_y, -2)
+		board_max_y = maxi(board_max_y, field_size + 1)
+
+	# Всегда расширяем границы до decoration_margin для правильного расчёта смещений
+	# (это гарантирует что все декоративные клетки будут видны)
+	var decoration_margin = 5
+	board_min_x = mini(board_min_x, -decoration_margin)
+	board_max_x = maxi(board_max_x, field_size - 1 + decoration_margin)
+	board_min_y = mini(board_min_y, -decoration_margin)
+	board_max_y = maxi(board_max_y, field_size - 1 + decoration_margin)
+
+	# Вычисляем необходимое смещение чтобы все декорации помещались
+	# Для изометрии: iso_x = (x - y) * TILE_WIDTH/2 + OFFSET_X
+	# Минимальный iso_x при min_x, max_y: (min_x - max_y) * TILE_WIDTH/2 + OFFSET_X >= 0
+	# Значит OFFSET_X >= -(min_x - max_y) * TILE_WIDTH/2 = (max_y - min_x) * TILE_WIDTH/2
+	var min_offset_x = (board_max_y - board_min_x) * (TILE_WIDTH / 2) + 50  # +50 для запаса
 
 	# Центрируем по горизонтали (оставляем место для боковой панели 300px)
 	var available_width = 800  # Примерная ширина области для доски
-	BOARD_OFFSET_X = maxi(60, (available_width - iso_width) / 2 + iso_width / 2)
-	BOARD_OFFSET_Y = 40
+	var iso_width = field_size * TILE_WIDTH
+	var calculated_offset = (available_width - iso_width) / 2 + iso_width / 2
+
+	BOARD_OFFSET_X = maxi(min_offset_x, calculated_offset)
+
+	# Для изометрии: iso_y = (x + y) * TILE_HEIGHT/2 + OFFSET_Y
+	# Минимальный iso_y при min_x, min_y: (min_x + min_y) * TILE_HEIGHT/2 + OFFSET_Y >= 0
+	# Значит OFFSET_Y >= -(min_x + min_y) * TILE_HEIGHT/2
+	var min_offset_y = -(board_min_x + board_min_y) * (TILE_HEIGHT / 2) + 50  # +50 для запаса
+	BOARD_OFFSET_Y = maxi(min_offset_y, 40)  # Минимум 40px сверху
+
+	var expected_cells = (board_max_x - board_min_x + 1) * (board_max_y - board_min_y + 1)
+	_js_log("_calculate_tile_size: field=%d, board bounds x=[%d,%d] y=[%d,%d], expected_cells=%d, TILE_WIDTH=%d, OFFSET_X=%d, OFFSET_Y=%d" % [field_size, board_min_x, board_max_x, board_min_y, board_max_y, expected_cells, TILE_WIDTH, BOARD_OFFSET_X, BOARD_OFFSET_Y])
 
 func _draw_board() -> void:
 	# Очищаем старые клетки
 	for cell in cells:
 		cell.queue_free()
 	cells.clear()
+	cells_by_coords.clear()
+
+	# Очищаем старые декорации и препятствия со спрайтами
+	for dec in decoration_sprites:
+		if is_instance_valid(dec):
+			dec.queue_free()
+	decoration_sprites.clear()
+	for obs in obstacle_sprite_containers:
+		if is_instance_valid(obs):
+			obs.queue_free()
+	obstacle_sprite_containers.clear()
 
 	# Пересчитываем размеры тайлов для текущего поля
 	_calculate_tile_size()
@@ -621,31 +719,109 @@ func _draw_board() -> void:
 	# Обновляем форму hover подсветки
 	_update_hover_highlight_shape()
 
-	# Вычисляем размер доски для изометрии (увеличиваем для деревьев)
-	var board_width = (field_size * 2 + 4) * (TILE_WIDTH / 2) + BOARD_OFFSET_X
-	var board_height = (field_size * 2 + 4) * (TILE_HEIGHT / 2) + TILE_DEPTH + BOARD_OFFSET_Y + 100
+	# Вычисляем размер доски для изометрии с учётом всех декораций
+	# Ширина: от минимального iso_x до максимального iso_x
+	var total_x_span = board_max_x - board_min_x + 1
+	var total_y_span = board_max_y - board_min_y + 1
+	# Изометрическая ширина: (total_x + total_y) * TILE_WIDTH / 2 + запас
+	var board_width = (total_x_span + total_y_span) * (TILE_WIDTH / 2) + BOARD_OFFSET_X + TILE_WIDTH
+	# Изометрическая высота: (total_x + total_y) * TILE_HEIGHT / 2 + глубина + запас
+	var board_height = (total_x_span + total_y_span) * (TILE_HEIGHT / 2) + TILE_DEPTH + BOARD_OFFSET_Y + 200
 	board.custom_minimum_size = Vector2(board_width, board_height)
+	# Принудительно устанавливаем размер доски
+	board.size = Vector2(board_width, board_height)
+	_js_log("_draw_board: board_size=%dx%d, custom_min=%s" % [int(board_width), int(board_height), str(board.custom_minimum_size)])
 
 	# Обновляем pivot для центрирования при масштабировании
 	_update_board_pivot()
 
-	# Рисуем деревья по границам (под ячейками, чтобы z-order был правильный)
-	_draw_border_trees()
+	# Проверяем есть ли декорации из шаблона
+	var decorations = GameManager.game_state.get("decorations", [])
+	var has_template_decorations = not decorations.is_empty()
 
 	# Собираем препятствия в словарь для быстрого доступа
-	var obstacles_set = {}
-	for obstacle in GameManager.game_state.get("obstacles", []):
-		var key = "%d_%d" % [obstacle.get("x", 0), obstacle.get("y", 0)]
-		obstacles_set[key] = true
+	# Учитываем многоклеточные препятствия: помечаем все занятые клетки
+	var obstacles_set = {}  # key -> obstacle data (для origin) или true (для занятых клеток)
+	var obstacles_list = GameManager.game_state.get("obstacles", [])
+	_js_log("_draw_board: obstacles count=" + str(obstacles_list.size()))
+	for obstacle in obstacles_list:
+		# Явное приведение к int (JSON может вернуть float)
+		var ox: int = int(obstacle.get("x", 0))
+		var oy: int = int(obstacle.get("y", 0))
+		var ow: int = int(obstacle.get("width", 1))
+		var oh: int = int(obstacle.get("height", 1))
+		var sprite_url = obstacle.get("sprite_url", "")
+		_js_log("  Obstacle: pos=(%d,%d), size=%dx%d, sprite=%s" % [ox, oy, ow, oh, sprite_url])
+		var origin_key = "%d_%d" % [ox, oy]
+		obstacles_set[origin_key] = obstacle  # Сохраняем данные препятствия для origin
+		# Помечаем остальные занятые клетки
+		for dx in range(ow):
+			for dy in range(oh):
+				if dx == 0 and dy == 0:
+					continue  # origin уже добавлен
+				var key = "%d_%d" % [ox + dx, oy + dy]
+				obstacles_set[key] = true  # Просто пометка что клетка занята
 
+	# Границы отрисовки уже вычислены в _calculate_tile_size() и включают decoration_margin
+	var draw_min_x = board_min_x
+	var draw_max_x = board_max_x
+	var draw_min_y = board_min_y
+	var draw_max_y = board_max_y
+
+	var total_cells_to_draw = (draw_max_x - draw_min_x + 1) * (draw_max_y - draw_min_y + 1)
+	_js_log("Drawing cells from (%d,%d) to (%d,%d), game field 0-%d, total cells: %d" % [draw_min_x, draw_min_y, draw_max_x, draw_max_y, field_size - 1, total_cells_to_draw])
+
+	var cells_created = 0
 	# Рисуем клетки в правильном порядке (от дальних к ближним для z-order)
-	for y in range(field_size):
-		for x in range(field_size):
+	for y in range(draw_min_y, draw_max_y + 1):
+		for x in range(draw_min_x, draw_max_x + 1):
+			cells_created += 1
 			var key = "%d_%d" % [x, y]
-			var is_obstacle = obstacles_set.has(key)
-			var cell = _create_iso_tile(x, y, is_obstacle)
+			var obstacle_data = obstacles_set.get(key, null)
+
+			# Проверяем находится ли клетка в игровом поле
+			var is_game_cell = x >= 0 and x < field_size and y >= 0 and y < field_size
+
+			# Если это origin препятствия (Dictionary) или занятая клетка (true)
+			var is_obstacle = obstacle_data != null
+			# Рисуем простой камень только если нет спрайта или это не origin
+			var draw_simple_rock = false
+			if is_obstacle:
+				if obstacle_data is Dictionary:
+					# Это origin - проверяем есть ли спрайт
+					if not obstacle_data.has("sprite_url") or obstacle_data.get("sprite_url", "") == "":
+						draw_simple_rock = true
+					# else: спрайт будет отрисован отдельно
+				else:
+					# Это не origin а часть большого препятствия - не рисуем камень
+					draw_simple_rock = false
+
+			var cell = _create_iso_tile(x, y, draw_simple_rock, is_game_cell)
 			board.add_child(cell)
 			cells.append(cell)
+			# Логируем позиции угловых клеток
+			if (x == draw_min_x and y == draw_min_y) or (x == draw_min_x and y == draw_max_y) or (x == draw_max_x and y == draw_min_y) or (x == draw_max_x and y == draw_max_y):
+				var iso_pos = grid_to_iso(x, y)
+				_js_log("Corner cell (%d,%d) at iso pos (%d,%d)" % [x, y, int(iso_pos.x), int(iso_pos.y)])
+			# Сохраняем в словарь для быстрого доступа (только игровые клетки)
+			if is_game_cell:
+				var cell_key = "%d_%d" % [x, y]
+				cells_by_coords[cell_key] = cell
+
+	_js_log("Created %d cells, cells array size: %d" % [cells_created, cells.size()])
+	var scroll_container = board.get_parent()
+	_js_log("Board actual size: %s, ScrollContainer size: %s, type: %s" % [str(board.size), str(scroll_container.size), scroll_container.get_class()])
+
+	# Рисуем деревья по границам только если нет декораций из шаблона
+	# (шаблоны сами определяют оформление границ)
+	if not has_template_decorations:
+		_draw_border_trees()
+
+	# Рисуем декорации ПОСЛЕ ячеек чтобы они гарантированно были поверх
+	_draw_decorations()
+
+	# Рисуем препятствия со спрайтами поверх клеток
+	_draw_obstacle_sprites()
 
 ## Рисует деревья по границам поляны
 func _draw_border_trees() -> void:
@@ -715,6 +891,395 @@ func _create_tree(grid_x: int, grid_y: int, size: float) -> void:
 
 	board.add_child(container)
 
+## Рисует декорации вокруг и на поле
+func _draw_decorations() -> void:
+	var decorations = GameManager.game_state.get("decorations", [])
+	_js_log("_draw_decorations: count=" + str(decorations.size()))
+	if decorations.is_empty():
+		return
+
+	for dec in decorations:
+		# Явное приведение к int (JSON может вернуть float)
+		var dec_x: int = int(dec.get("x", 0))
+		var dec_y: int = int(dec.get("y", 0))
+		var dec_width: int = int(dec.get("width", 1))
+		var dec_height: int = int(dec.get("height", 1))
+		var dec_type = dec.get("type", "tree")
+		var z_index_val: int = int(dec.get("z_index", 0))
+		var sprite_url = dec.get("sprite_url", "")
+
+		_js_log("  Decoration: type=" + str(dec_type) + ", pos=(" + str(dec_x) + "," + str(dec_y) + "), sprite=" + str(sprite_url))
+
+		# Позиция декорации в изометрических координатах
+		var iso_pos = grid_to_iso(dec_x, dec_y)
+
+		var container = Control.new()
+		container.position = iso_pos
+		# Размер контейнера зависит от размера декорации
+		var dec_pixel_width = dec_width * TILE_WIDTH
+		var dec_pixel_height = dec_height * TILE_HEIGHT + TILE_DEPTH
+		container.size = Vector2(dec_pixel_width, dec_pixel_height)
+		# Z-index для декораций: поверх травы но под юнитами
+		# Декорации всегда рисуются над клетками (клетки имеют z_index = x + y)
+		# Добавляем 10 чтобы декорации были выше всех клеток
+		container.z_index = 10 + dec_x + dec_y + z_index_val
+
+		# Если есть спрайт - загружаем и отображаем
+		if sprite_url != "" and sprite_url != null:
+			_create_decoration_with_sprite(container, sprite_url, dec_width, dec_height)
+		else:
+			# Рисуем дефолтную декорацию по типу
+			_draw_default_decoration(container, dec_type, dec_width, dec_height)
+
+		board.add_child(container)
+		decoration_sprites.append(container)
+
+## Создаёт декорацию со спрайтом
+func _create_decoration_with_sprite(container: Control, sprite_url: String, width: int, height: int) -> void:
+	# Если текстура уже в кэше - применяем сразу
+	if decoration_textures.has(sprite_url):
+		var texture_rect = TextureRect.new()
+		texture_rect.texture = decoration_textures[sprite_url]
+		texture_rect.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		texture_rect.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		texture_rect.size = Vector2(width * TILE_WIDTH, height * TILE_HEIGHT + TILE_DEPTH)
+		texture_rect.position = Vector2(0, -TILE_DEPTH)
+		container.add_child(texture_rect)
+	else:
+		# Загружаем текстуру
+		_load_decoration_texture(sprite_url, container, width, height)
+
+## Рисует дефолтную декорацию (заглушка если нет спрайта)
+func _draw_default_decoration(container: Control, dec_type: String, width: int, height: int) -> void:
+	# Простые заглушки для разных типов декораций
+	match dec_type:
+		"tree":
+			_draw_simple_tree(container, width * TILE_WIDTH * 0.6)
+		"rock":
+			_draw_simple_rock_decoration(container, width * TILE_WIDTH * 0.4)
+		"bush":
+			_draw_simple_bush(container, width * TILE_WIDTH * 0.5)
+		"flower":
+			_draw_simple_flower(container, width * TILE_WIDTH * 0.7)
+		_:
+			# Для неизвестных типов рисуем цветок
+			_draw_simple_flower(container, width * TILE_WIDTH * 0.5)
+
+## Рисует простое дерево для декорации
+func _draw_simple_tree(container: Control, size: float) -> void:
+	var trunk_width = size * 0.15
+	var trunk_height = size * 0.4
+	var crown_radius = size * 0.35
+
+	# Ствол
+	var trunk = Polygon2D.new()
+	var trunk_x = TILE_WIDTH / 2 - trunk_width / 2
+	var trunk_y = TILE_HEIGHT / 2 - trunk_height
+	trunk.polygon = PackedVector2Array([
+		Vector2(trunk_x, trunk_y + trunk_height),
+		Vector2(trunk_x + trunk_width, trunk_y + trunk_height),
+		Vector2(trunk_x + trunk_width, trunk_y),
+		Vector2(trunk_x, trunk_y)
+	])
+	trunk.color = COLORS.tree_trunk
+	container.add_child(trunk)
+
+	# Крона
+	var crown = Polygon2D.new()
+	var crown_points: PackedVector2Array = []
+	var crown_y = trunk_y - crown_radius * 0.3
+	for i in range(10):
+		var angle = i * PI * 2 / 10
+		crown_points.append(Vector2(
+			TILE_WIDTH / 2 + cos(angle) * crown_radius,
+			crown_y + sin(angle) * crown_radius * 0.6
+		))
+	crown.polygon = crown_points
+	crown.color = COLORS.tree_leaves
+	container.add_child(crown)
+
+## Рисует простой камень для декорации
+func _draw_simple_rock_decoration(container: Control, size: float) -> void:
+	var rock = Polygon2D.new()
+	var rock_points: PackedVector2Array = []
+	for i in range(8):
+		var angle = i * PI * 2 / 8
+		rock_points.append(Vector2(
+			TILE_WIDTH / 2 + cos(angle) * size,
+			TILE_HEIGHT / 2 + sin(angle) * size * 0.5
+		))
+	rock.polygon = rock_points
+	rock.color = COLORS.rock_top
+	container.add_child(rock)
+
+## Рисует простой куст для декорации
+func _draw_simple_bush(container: Control, size: float) -> void:
+	var bush = Polygon2D.new()
+	var bush_points: PackedVector2Array = []
+	for i in range(12):
+		var angle = i * PI * 2 / 12
+		var radius_mod = 1.0 + 0.2 * sin(angle * 3)  # Волнистый край
+		bush_points.append(Vector2(
+			TILE_WIDTH / 2 + cos(angle) * size * radius_mod,
+			TILE_HEIGHT / 2 + sin(angle) * size * 0.5 * radius_mod
+		))
+	bush.polygon = bush_points
+	bush.color = COLORS.tree_leaves_dark
+	container.add_child(bush)
+
+## Рисует простой цветок для декорации
+func _draw_simple_flower(container: Control, size: float) -> void:
+	var center_x = TILE_WIDTH / 2
+	var center_y = TILE_HEIGHT / 2
+
+	# Стебель
+	var stem = Polygon2D.new()
+	var stem_width = size * 0.08
+	var stem_height = size * 0.5
+	stem.polygon = PackedVector2Array([
+		Vector2(center_x - stem_width / 2, center_y),
+		Vector2(center_x + stem_width / 2, center_y),
+		Vector2(center_x + stem_width / 2, center_y - stem_height),
+		Vector2(center_x - stem_width / 2, center_y - stem_height)
+	])
+	stem.color = Color(0.2, 0.6, 0.2)  # Зелёный стебель
+	container.add_child(stem)
+
+	# Лепестки (5 штук)
+	var petal_size = size * 0.2
+	var flower_center_y = center_y - stem_height
+	for i in range(5):
+		var petal = Polygon2D.new()
+		var angle = i * PI * 2 / 5 - PI / 2  # Начинаем сверху
+		var petal_points: PackedVector2Array = []
+		# Овальный лепесток
+		for j in range(8):
+			var petal_angle = j * PI * 2 / 8
+			var px = cos(petal_angle) * petal_size * 0.5
+			var py = sin(petal_angle) * petal_size
+			# Смещаем лепесток от центра
+			var offset_x = cos(angle) * petal_size * 0.7
+			var offset_y = sin(angle) * petal_size * 0.5
+			petal_points.append(Vector2(
+				center_x + offset_x + px * cos(angle) - py * sin(angle),
+				flower_center_y + offset_y + px * sin(angle) + py * cos(angle)
+			))
+		petal.polygon = petal_points
+		petal.color = Color(1.0, 0.4, 0.6)  # Розовый лепесток
+		container.add_child(petal)
+
+	# Центр цветка
+	var center = Polygon2D.new()
+	var center_points: PackedVector2Array = []
+	for i in range(8):
+		var angle = i * PI * 2 / 8
+		center_points.append(Vector2(
+			center_x + cos(angle) * petal_size * 0.3,
+			flower_center_y + sin(angle) * petal_size * 0.2
+		))
+	center.polygon = center_points
+	center.color = Color(1.0, 0.9, 0.2)  # Жёлтый центр
+	container.add_child(center)
+
+## Рисует препятствия со спрайтами
+func _draw_obstacle_sprites() -> void:
+	var obstacles = GameManager.game_state.get("obstacles", [])
+
+	for obstacle in obstacles:
+		var sprite_url = obstacle.get("sprite_url", "")
+		if sprite_url == "" or sprite_url == null:
+			continue  # Нет спрайта - уже отрисован простой камень
+
+		var ox = obstacle.get("x", 0)
+		var oy = obstacle.get("y", 0)
+		var ow = obstacle.get("width", 1)
+		var oh = obstacle.get("height", 1)
+
+		# Для изометрии препятствие начинается в (ox, oy) и растёт вправо-вниз
+		# Позиция контейнера в верхней точке ромба (ox, oy)
+		var iso_pos = grid_to_iso(ox, oy)
+
+		_js_log("Obstacle sprite: grid(%d,%d) size=%dx%d, iso_pos=(%d,%d)" % [ox, oy, ow, oh, int(iso_pos.x), int(iso_pos.y)])
+
+		var container = Control.new()
+		container.position = iso_pos
+
+		# Z-index: препятствия над клетками но под юнитами
+		# Используем правый нижний угол для z-order
+		container.z_index = ox + oy + ow + oh + 50
+
+		# Загружаем спрайт
+		if decoration_textures.has(sprite_url):
+			_apply_obstacle_sprite(container, sprite_url, ow, oh)
+		else:
+			_load_obstacle_sprite(sprite_url, container, ow, oh)
+
+		board.add_child(container)
+		obstacle_sprite_containers.append(container)
+
+## Применяет текстуру препятствия к контейнеру
+## width, height - размер препятствия в grid клетках
+## container.position - изометрическая позиция верхнего левого угла (grid origin)
+func _apply_obstacle_sprite(container: Control, sprite_url: String, width: int, height: int) -> void:
+	if not decoration_textures.has(sprite_url):
+		return
+
+	var texture = decoration_textures[sprite_url]
+	var texture_rect = TextureRect.new()
+	texture_rect.texture = texture
+	texture_rect.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	# Используем STRETCH_KEEP_ASPECT чтобы спрайт вписывался в область
+	# сохраняя пропорции и не вылезая за границы
+	texture_rect.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+
+	# Для препятствия WxH клеток изометрический ромб имеет:
+	# Ширина: (W + H) * TILE_WIDTH / 2  (от левой до правой вершины)
+	# Высота: (W + H) * TILE_HEIGHT / 2 (от верхней до нижней вершины)
+	#
+	# Относительно container (grid_to_iso(ox, oy)):
+	# - Верхняя вершина: (TILE_WIDTH/2, 0)
+	# - Левая вершина: (-(H-1) * TILE_WIDTH/2, (H-1) * TILE_HEIGHT/2)
+	# - Правая вершина: (TILE_WIDTH + (W-1) * TILE_WIDTH/2, (W-1) * TILE_HEIGHT/2)
+	# - Нижняя вершина: (TILE_WIDTH/2 + (W-H) * TILE_WIDTH/4, (W+H-1) * TILE_HEIGHT/2)
+
+	var rhombus_width = (width + height) * TILE_WIDTH / 2.0
+	var rhombus_height = (width + height) * TILE_HEIGHT / 2.0
+
+	# Получаем размеры оригинальной текстуры
+	var tex_width = float(texture.get_width())
+	var tex_height = float(texture.get_height())
+
+	# Вычисляем масштаб чтобы спрайт вписался в ромб не выходя за границы
+	var scale_x = rhombus_width / tex_width
+	var scale_y = rhombus_height / tex_height
+	# Берём меньший масштаб чтобы спрайт не вылезал за границы ромба
+	var scale_factor = minf(scale_x, scale_y)
+
+	var sprite_width = tex_width * scale_factor
+	var sprite_height = tex_height * scale_factor
+
+	texture_rect.size = Vector2(sprite_width, sprite_height)
+
+	# Центрируем спрайт относительно центра изометрического ромба
+	# Центр ромба относительно container:
+	# center_x = TILE_WIDTH/2 + (W-1-H+1) * TILE_WIDTH/4 = TILE_WIDTH/2 + (W-H) * TILE_WIDTH/4
+	# center_y = (W + H - 1) * TILE_HEIGHT / 4
+	# Но для квадратного препятствия (W=H): center_x = TILE_WIDTH/2, center_y = (2W-1) * TILE_HEIGHT/4
+
+	var rhombus_center_x = TILE_WIDTH / 2.0 + (width - height) * TILE_WIDTH / 4.0
+	var rhombus_center_y = (width + height - 1) * TILE_HEIGHT / 4.0
+
+	var offset_x = rhombus_center_x - sprite_width / 2.0
+	var offset_y = rhombus_center_y - sprite_height / 2.0
+
+	texture_rect.position = Vector2(offset_x, offset_y)
+
+	_js_log("Obstacle sprite applied: tex=(%d,%d), rhombus=(%d,%d), sprite=(%d,%d), offset=(%d,%d)" % [
+		int(tex_width), int(tex_height),
+		int(rhombus_width), int(rhombus_height),
+		int(sprite_width), int(sprite_height),
+		int(offset_x), int(offset_y)
+	])
+	container.add_child(texture_rect)
+
+## Загружает текстуру для декорации
+func _load_decoration_texture(sprite_url: String, container: Control, width: int, height: int) -> void:
+	if pending_sprite_loads.has(sprite_url):
+		return
+	pending_sprite_loads[sprite_url] = true
+
+	var url = base_url + sprite_url
+	_js_log("Loading decoration sprite: " + url)
+
+	var http = HTTPRequest.new()
+	http.use_threads = false
+	add_child(http)
+	http.request_completed.connect(_on_decoration_texture_loaded.bind(sprite_url, container, width, height, http, false))
+
+	var headers: PackedStringArray = []
+	if ApiClient.auth_token != "":
+		headers.append("Authorization: Bearer " + ApiClient.auth_token)
+
+	var err = http.request(url, headers)
+	if err != OK:
+		pending_sprite_loads.erase(sprite_url)
+		http.queue_free()
+
+## Загружает текстуру для препятствия
+func _load_obstacle_sprite(sprite_url: String, container: Control, width: int, height: int) -> void:
+	if pending_sprite_loads.has(sprite_url):
+		return
+	pending_sprite_loads[sprite_url] = true
+
+	var url = base_url + sprite_url
+	_js_log("Loading obstacle sprite: " + url)
+
+	var http = HTTPRequest.new()
+	http.use_threads = false
+	add_child(http)
+	http.request_completed.connect(_on_decoration_texture_loaded.bind(sprite_url, container, width, height, http, true))
+
+	var headers: PackedStringArray = []
+	if ApiClient.auth_token != "":
+		headers.append("Authorization: Bearer " + ApiClient.auth_token)
+
+	var err = http.request(url, headers)
+	if err != OK:
+		pending_sprite_loads.erase(sprite_url)
+		http.queue_free()
+
+## Обработчик загрузки текстуры декорации/препятствия
+func _on_decoration_texture_loaded(result: int, response_code: int, _headers: PackedStringArray, body: PackedByteArray, sprite_url: String, container: Control, width: int, height: int, http_node: HTTPRequest, is_obstacle: bool) -> void:
+	http_node.queue_free()
+	pending_sprite_loads.erase(sprite_url)
+
+	if result != HTTPRequest.RESULT_SUCCESS or response_code != 200 or body.size() == 0:
+		_js_log("Decoration/obstacle sprite load failed: " + sprite_url + " code=" + str(response_code))
+		return
+
+	var image = Image.new()
+	var error = ERR_FILE_UNRECOGNIZED
+
+	# Определяем формат по сигнатуре
+	if body.size() >= 4:
+		var header = body.slice(0, 4)
+		if header[0] == 0x89 and header[1] == 0x50 and header[2] == 0x4E and header[3] == 0x47:
+			error = image.load_png_from_buffer(body)
+		elif header[0] == 0xFF and header[1] == 0xD8:
+			error = image.load_jpg_from_buffer(body)
+		elif header[0] == 0x52 and header[1] == 0x49 and header[2] == 0x46 and header[3] == 0x46:
+			error = image.load_webp_from_buffer(body)
+
+	# Fallback
+	if error != OK:
+		error = image.load_png_from_buffer(body)
+	if error != OK:
+		error = image.load_jpg_from_buffer(body)
+	if error != OK:
+		error = image.load_webp_from_buffer(body)
+
+	if error != OK:
+		_js_log("Failed to decode decoration/obstacle image: " + sprite_url)
+		return
+
+	var texture = ImageTexture.create_from_image(image)
+	decoration_textures[sprite_url] = texture
+
+	# Применяем текстуру к контейнеру если он ещё валиден
+	if is_instance_valid(container):
+		if is_obstacle:
+			_apply_obstacle_sprite(container, sprite_url, width, height)
+		else:
+			var texture_rect = TextureRect.new()
+			texture_rect.texture = texture
+			texture_rect.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+			texture_rect.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+			texture_rect.size = Vector2(width * TILE_WIDTH, height * TILE_HEIGHT + TILE_DEPTH)
+			texture_rect.position = Vector2(0, -TILE_DEPTH)
+			container.add_child(texture_rect)
+
+	_js_log("Decoration/obstacle sprite loaded: " + sprite_url)
+
 func _update_units(units: Array) -> void:
 	# Собираем ID юнитов из нового состояния
 	# ВАЖНО: приводим ID к int для консистентности (JSON может вернуть float)
@@ -774,8 +1339,8 @@ func _update_units(units: Array) -> void:
 					# Позиция изменилась - плавно перемещаем
 					_animate_unit_move(unit_id, old_pos["x"], old_pos["y"], new_x, new_y, new_x, new_y)
 
-			# Обновляем счётчик юнитов
-			_update_unit_count(unit_id, unit.get("count", 0))
+			# Обновляем счётчик юнитов и HP
+			_update_unit_count(unit_id, unit.get("count", 0), unit)
 
 			# Обновляем has_moved (полупрозрачность)
 			_update_unit_moved_state(unit_id, unit.get("has_moved", 0) == 1)
@@ -866,8 +1431,8 @@ func _animate_unit_move(unit_id: int, from_x: int, from_y: int, to_x: int, to_y:
 		active_tweens.erase(unit_id)
 	)
 
-## Обновляет счётчик юнитов в существующем спрайте
-func _update_unit_count(unit_id: int, count: int) -> void:
+## Обновляет счётчик юнитов и HP в существующем спрайте
+func _update_unit_count(unit_id: int, count: int, unit: Dictionary = {}) -> void:
 	if not unit_sprites.has(unit_id):
 		return
 
@@ -875,6 +1440,15 @@ func _update_unit_count(unit_id: int, count: int) -> void:
 	var count_label = unit_control.get_node_or_null("CountLabel")
 	if count_label and count_label is Label:
 		count_label.text = str(count)
+
+	# Обновляем HP метку
+	var hp_label = unit_control.get_node_or_null("HPLabel")
+	if hp_label and hp_label is Label and not unit.is_empty():
+		var unit_type = unit.get("unit_type", {})
+		var hp_per_unit = unit_type.get("hp", 0)
+		var remaining_hp = unit.get("remaining_hp", hp_per_unit)
+		var total_hp = (count - 1) * hp_per_unit + remaining_hp if count > 0 else 0
+		hp_label.text = str(total_hp)
 
 ## Обновляет состояние "уже походил" (полупрозрачность)
 func _update_unit_moved_state(unit_id: int, has_moved: bool) -> void:
@@ -1375,11 +1949,12 @@ func _create_unit_sprite(unit: Dictionary) -> Control:
 		texture_rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		container.add_child(texture_rect)
 
-	# Количество юнитов - бейдж в углу (масштабируем размер)
+	# Количество юнитов и HP - бейдж в углу (масштабируем размер)
 	var badge_scale = float(TILE_WIDTH) / float(BASE_TILE_WIDTH)
 	var badge_width = int(28 * badge_scale)
 	var badge_height = int(20 * badge_scale)
 
+	# Количество юнитов
 	var count_label = Label.new()
 	count_label.name = "CountLabel"
 	count_label.text = str(unit.get("count", 0))
@@ -1395,6 +1970,26 @@ func _create_unit_sprite(unit: Dictionary) -> Control:
 	count_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	container.add_child(count_label)
 
+	# Суммарный HP над количеством
+	var count = unit.get("count", 0)
+	var hp_per_unit = unit_type.get("hp", 0)
+	var remaining_hp = unit.get("remaining_hp", hp_per_unit)
+	var total_hp = (count - 1) * hp_per_unit + remaining_hp if count > 0 else 0
+
+	var hp_label = Label.new()
+	hp_label.name = "HPLabel"
+	hp_label.text = str(total_hp)
+	hp_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	hp_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	hp_label.size = Vector2(badge_width + 10, badge_height)
+	hp_label.position = Vector2(TILE_WIDTH - badge_width - 7, TILE_HEIGHT - 4 - badge_height - 2)
+	hp_label.add_theme_font_size_override("font_size", int(12 * badge_scale))
+	hp_label.add_theme_color_override("font_color", Color(0.5, 1.0, 0.5))  # Зеленоватый цвет для HP
+	hp_label.add_theme_constant_override("outline_size", 2)
+	hp_label.add_theme_color_override("font_outline_color", Color.BLACK)
+	hp_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	container.add_child(hp_label)
+
 	# Кликабельная область
 	var click_area = Control.new()
 	click_area.name = "ClickArea"
@@ -1408,11 +2003,14 @@ func _create_unit_sprite(unit: Dictionary) -> Control:
 		var selection = Polygon2D.new()
 		var sel_points: PackedVector2Array = []
 		var sel_radius = base_radius + int(8 * badge_scale)
+		# Учитываем что контейнер смещён вверх на vertical_offset, поэтому центр выделения
+		# должен быть на уровне TILE_HEIGHT + vertical_offset (возвращаем выделение на уровень тайла)
+		var sel_center_y = TILE_HEIGHT + vertical_offset + int(12 * badge_scale)
 		for i in range(16):
 			var angle = i * PI * 2 / 16
 			sel_points.append(Vector2(
 				TILE_WIDTH / 2 + cos(angle) * sel_radius,
-				TILE_HEIGHT + sin(angle) * sel_radius * 0.5 + int(12 * badge_scale)
+				sel_center_y + sin(angle) * sel_radius * 0.5
 			))
 		selection.polygon = sel_points
 		selection.color = COLORS.selected
@@ -1464,7 +2062,6 @@ func _on_unit_clicked(event: InputEvent, unit: Dictionary) -> void:
 				GameManager.select_unit(unit)
 			return
 
-		# Юнит уже выбран - все клики обрабатываем как действия на клетку
 		# Игнорируем клик на самого себя
 		if selected_id == unit_id:
 			RemoteLogger.debug("Clicked on selected unit, ignoring")
@@ -1492,8 +2089,58 @@ func _on_unit_clicked(event: InputEvent, unit: Dictionary) -> void:
 			action_mode = ""
 			return
 
-		# Клик не привёл к действию - игнорируем (не переключаем юнита)
+		# Если клик на своего юнита, который не атакуется и не является целью перемещения - переключаемся на него
+		if unit.get("player_id") == GameManager.current_player_id:
+			RemoteLogger.info("Switching to another unit", {"unit_id": unit_id})
+			_clear_highlights()
+			action_mode = ""
+			GameManager.select_unit(unit)
+			return
+
+		# Клик не привёл к действию - игнорируем
 		RemoteLogger.debug("Click on unit didn't result in action, ignoring")
+
+## Формирует строку с информацией о юните (HP и эффекты)
+func _get_unit_info_string(unit: Dictionary) -> String:
+	var unit_type = unit.get("unit_type", {})
+	var name = unit_type.get("name", "Юнит")
+	var count = unit.get("count", 0)
+	var hp_per_unit = unit_type.get("hp", 0)
+	var remaining_hp = unit.get("remaining_hp", hp_per_unit)
+
+	# Общий HP = (count - 1) * hp_per_unit + remaining_hp
+	var total_hp = (count - 1) * hp_per_unit + remaining_hp if count > 0 else 0
+
+	var info = "%s x%d | HP: %d" % [name, count, total_hp]
+
+	# Эффекты
+	var effects: Array = []
+
+	# Регенерация (из unit_type)
+	var regen = unit_type.get("regeneration_health", 0)
+	if regen > 0:
+		effects.append("Регенерация: +%d HP/ход" % regen)
+
+	# Отравление (на самом юните)
+	var poison_turns = unit.get("poison_remaining_turns", 0)
+	var poison_damage = unit.get("poison_damage_per_turn", 0)
+	if poison_turns > 0 and poison_damage > 0:
+		effects.append("Яд: %d урона, %d ход(а/ов)" % [poison_damage, poison_turns])
+
+	# Способности юнита
+	var poison_ability_dmg = unit_type.get("poison_damage", 0)
+	var poison_ability_turns = unit_type.get("poison_turns", 0)
+	if poison_ability_dmg > 0 and poison_ability_turns > 0:
+		effects.append("Отравляет: %d урона, %d ход(а/ов)" % [poison_ability_dmg, poison_ability_turns])
+
+	var poison_immunity = unit_type.get("poison_immunity", false)
+	if poison_immunity:
+		effects.append("Иммунитет к яду")
+
+	if not effects.is_empty():
+		info += " | " + " | ".join(effects)
+
+	return info
 
 func _on_unit_actions_received(actions: Dictionary) -> void:
 	_update_action_buttons()
@@ -1509,6 +2156,9 @@ func _on_unit_actions_received(actions: Dictionary) -> void:
 			_set_unit_animation(current_unit_id, true)
 		last_selected_unit_id = current_unit_id
 
+	# Формируем информацию о выбранном юните
+	var unit_info = _get_unit_info_string(GameManager.selected_unit)
+
 	# Автоматически показываем доступные ходы при выборе юнита
 	var can_move = actions.get("can_move", []).size() > 0
 	var can_attack = actions.get("can_attack", []).size() > 0
@@ -1520,14 +2170,14 @@ func _on_unit_actions_received(actions: Dictionary) -> void:
 		# Также подсвечиваем атаку если доступна
 		if can_attack:
 			_highlight_attacks_additional()
-		hint_label.text = "Нажмите на зелёную клетку для перемещения или красную для атаки"
+		hint_label.text = unit_info + "\nВыберите клетку для перемещения или атаки"
 	elif can_attack:
 		action_mode = "attack"
 		_set_selected_unit_clickable(false)  # Отключаем клики на выбранном юните
 		_highlight_attacks()
-		hint_label.text = "Нажмите на красную клетку для атаки"
+		hint_label.text = unit_info + "\nВыберите цель для атаки"
 	else:
-		hint_label.text = "Нет доступных действий. Пропустите ход."
+		hint_label.text = unit_info + "\nНет доступных действий. Пропустите ход."
 
 	# Перерисовываем юнитов чтобы показать выделение
 	_update_units(GameManager.game_state.get("units", []))
@@ -1606,30 +2256,30 @@ func _highlight_moves() -> void:
 	for move in GameManager.current_actions.get("can_move", []):
 		var x = move.get("x", 0)
 		var y = move.get("y", 0)
-		var idx = y * field_size + x
-		if idx < cells.size():
+		var cell_key = "%d_%d" % [x, y]
+		if cells_by_coords.has(cell_key):
 			var highlight = _create_iso_highlight(COLORS.move_highlight, x, y, "move")
-			cells[idx].add_child(highlight)
+			cells_by_coords[cell_key].add_child(highlight)
 
 func _highlight_attacks() -> void:
 	_clear_highlights()
 	for target in GameManager.current_actions.get("can_attack", []):
 		var x = target.get("x", 0)
 		var y = target.get("y", 0)
-		var idx = y * field_size + x
-		if idx < cells.size():
+		var cell_key = "%d_%d" % [x, y]
+		if cells_by_coords.has(cell_key):
 			var highlight = _create_iso_highlight(COLORS.attack_highlight, x, y, "attack")
-			cells[idx].add_child(highlight)
+			cells_by_coords[cell_key].add_child(highlight)
 
 ## Подсветка атаки без очистки существующей подсветки (для комбинированного отображения)
 func _highlight_attacks_additional() -> void:
 	for target in GameManager.current_actions.get("can_attack", []):
 		var x = target.get("x", 0)
 		var y = target.get("y", 0)
-		var idx = y * field_size + x
-		if idx < cells.size():
+		var cell_key = "%d_%d" % [x, y]
+		if cells_by_coords.has(cell_key):
 			var highlight = _create_iso_highlight(COLORS.attack_highlight, x, y, "attack")
-			cells[idx].add_child(highlight)
+			cells_by_coords[cell_key].add_child(highlight)
 
 func _clear_highlights() -> void:
 	# Включаем обратно клики на выбранном юните
@@ -1722,6 +2372,10 @@ func _update_log(logs: Array) -> void:
 				label.add_theme_color_override("font_color", Color.RED)
 			"move":
 				label.add_theme_color_override("font_color", Color.CYAN)
+			"poison":
+				label.add_theme_color_override("font_color", Color(0.6, 0.2, 0.8))  # Фиолетовый
+			"regeneration":
+				label.add_theme_color_override("font_color", Color(0.2, 0.8, 0.4))  # Зелёный
 			_:
 				label.add_theme_color_override("font_color", Color.GRAY)
 
@@ -1800,3 +2454,33 @@ func _on_back_to_menu() -> void:
 	# Сбрасываем флаг перед переходом в меню
 	is_game_over_displayed = false
 	GameManager.return_to_menu()
+
+# ============= Challenge (PvE) AI =============
+var ai_turn_requested: bool = false  # Флаг чтобы не запрашивать AI ход повторно
+var ai_turn_timer: Timer = null  # Таймер для задержки хода AI
+
+## Запрашивает ход AI для челленджа
+func _request_ai_turn() -> void:
+	# Не запрашиваем если уже запрошен или это не челлендж
+	if ai_turn_requested or not GameManager.is_challenge_game:
+		return
+
+	ai_turn_requested = true
+	hint_label.text = "AI думает..."
+
+	# Небольшая задержка перед ходом AI для наглядности
+	if ai_turn_timer == null:
+		ai_turn_timer = Timer.new()
+		ai_turn_timer.one_shot = true
+		ai_turn_timer.timeout.connect(_execute_ai_turn)
+		add_child(ai_turn_timer)
+
+	ai_turn_timer.start(0.8)  # 0.8 секунды задержка
+
+## Выполняет ход AI
+func _execute_ai_turn() -> void:
+	_js_log("Executing AI turn for game " + str(GameManager.current_game_id))
+	ApiClient.execute_ai_turn(GameManager.current_game_id)
+	# Сбрасываем флаг после небольшой задержки чтобы дать время на обновление состояния
+	await get_tree().create_timer(1.0).timeout
+	ai_turn_requested = false

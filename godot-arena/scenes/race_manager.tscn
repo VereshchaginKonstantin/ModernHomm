@@ -80,6 +80,14 @@ layout_mode = 2
 size_flags_horizontal = 3
 theme_override_constants/separation = 5
 
+[node name="AddRaceButton" type="Button" parent="VBoxContainer/ContentContainer/RacesList"]
+unique_name_in_owner = true
+layout_mode = 2
+custom_minimum_size = Vector2(0, 45)
+theme_override_colors/font_color = Color(0.4, 0.9, 0.4, 1)
+theme_override_font_sizes/font_size = 16
+text = "+ Добавить расу"
+
 [node name="LevelsPanel" type="PanelContainer" parent="VBoxContainer/ContentContainer"]
 layout_mode = 2
 size_flags_horizontal = 3

@@ -16,7 +16,7 @@ from flask import Blueprint, request, jsonify, make_response, redirect
 from functools import wraps
 from werkzeug.security import generate_password_hash, check_password_hash
 
-from db.models import GameUser, Game, GameStatus, BattleUnit, Field, GameLog, Obstacle, Army, ArmyUnit, UserRace, RaceUnit, RaceUnitSkin, ClientLog, Config, UnitLevel, UserUnitLimit, UserRaceUnitLimit
+from db.models import GameUser, Game, GameStatus, BattleUnit, Field, GameLog, Obstacle, GameDecoration, Army, ArmyUnit, UserRace, RaceUnit, RaceUnitSkin, ClientLog, Config, UnitLevel, UserUnitLimit, UserRaceUnitLimit, Challenge, ChallengeUnit, ChallengeCompletion, AIDifficulty, GameRace, UserRaceUnit
 from db.repository import Database
 from core.game_engine import GameEngine
 
@@ -156,10 +156,11 @@ def token_required(f):
 class GameState:
     """Класс для представления состояния игры для Godot API"""
 
-    def __init__(self, game, units, obstacles, logs, session):
+    def __init__(self, game, units, obstacles, decorations, logs, session):
         self.game = game
         self.units = units
         self.obstacles = obstacles
+        self.decorations = decorations
         self.logs = logs
         self.session = session
 
@@ -184,10 +185,14 @@ class GameState:
     @classmethod
     def from_game(cls, game: Game, session) -> 'GameState':
         """Создать GameState из объекта Game"""
+        logger = logging.getLogger(__name__)
+        logger.info(f"GameState.from_game called for game_id={game.id}")
+
         units = []
         for bu in game.battle_units:
             if bu.total_count > 0:
-                race_unit = bu.army_unit.race_unit if bu.army_unit else None
+                # Для PvP юнитов race_unit через army_unit, для AI юнитов - напрямую через race_unit_id
+                race_unit = bu.army_unit.race_unit if bu.army_unit else bu.race_unit
                 if race_unit:
                     # Получаем скин юнита если есть
                     skin = race_unit.skins[0] if race_unit.skins else None
@@ -222,7 +227,10 @@ class GameState:
                         'x': bu.position_x,
                         'y': bu.position_y,
                         'count': bu.total_count,
+                        'remaining_hp': bu.remaining_hp,
                         'has_moved': 1 if bu.has_moved else 0,
+                        'poison_remaining_turns': bu.poison_remaining_turns,
+                        'poison_damage_per_turn': bu.poison_damage_per_turn,
                         'unit_type': {
                             'id': race_unit.id,
                             'name': race_unit.name,
@@ -232,6 +240,10 @@ class GameState:
                             'hp': race_unit.health,
                             'speed': race_unit.speed,
                             'attack_range': race_unit.range,
+                            'regeneration_health': race_unit.regeneration_health or 0,
+                            'poison_damage': race_unit.poison_damage or 0,
+                            'poison_turns': race_unit.poison_turns or 0,
+                            'poison_immunity': race_unit.poison_immunity or False,
                             'skin_id': skin_id,
                             'has_image': has_image or (image_url is not None),
                             'has_sprite': has_sprite,
@@ -242,11 +254,39 @@ class GameState:
                     })
 
         obstacles = []
-        for obs in session.query(Obstacle).filter_by(game_id=game.id).all():
-            obstacles.append({
+        obstacle_query = session.query(Obstacle).filter_by(game_id=game.id).all()
+        logger.info(f"Found {len(obstacle_query)} obstacles for game_id={game.id}")
+        for obs in obstacle_query:
+            obstacle_data = {
                 'x': obs.position_x,
-                'y': obs.position_y
-            })
+                'y': obs.position_y,
+                'width': obs.width or 1,
+                'height': obs.height or 1
+            }
+            # Добавляем URL спрайта если есть шаблон
+            if obs.obstacle_template_id:
+                obstacle_data['sprite_url'] = f'/elements/api/obstacles/{obs.obstacle_template_id}/sprite'
+            obstacles.append(obstacle_data)
+            logger.info(f"  Obstacle: x={obs.position_x}, y={obs.position_y}, template_id={obs.obstacle_template_id}")
+
+        # Декорации
+        decorations = []
+        decoration_query = session.query(GameDecoration).filter_by(game_id=game.id).all()
+        logger.info(f"Found {len(decoration_query)} decorations for game_id={game.id}")
+        for dec in decoration_query:
+            decoration_data = {
+                'x': dec.position_x,
+                'y': dec.position_y,
+                'width': dec.width or 1,
+                'height': dec.height or 1,
+                'type': dec.decoration_type.value if dec.decoration_type else 'custom',
+                'z_index': dec.z_index or 0
+            }
+            # Добавляем URL спрайта если есть шаблон
+            if dec.decoration_template_id:
+                decoration_data['sprite_url'] = f'/elements/api/decorations/{dec.decoration_template_id}/sprite'
+            decorations.append(decoration_data)
+            logger.info(f"  Decoration: x={dec.position_x}, y={dec.position_y}, type={dec.decoration_type}")
 
         logs = []
         for log in session.query(GameLog).filter_by(game_id=game.id).order_by(GameLog.created_at).all():
@@ -256,7 +296,7 @@ class GameState:
                 'timestamp': log.created_at.isoformat() if log.created_at else None
             })
 
-        return cls(game, units, obstacles, logs, session)
+        return cls(game, units, obstacles, decorations, logs, session)
 
     def to_dict(self) -> dict:
         """Преобразовать в словарь для JSON"""
@@ -276,8 +316,11 @@ class GameState:
             'current_player_id': game.current_player_id,
             'is_game_over': game.status == GameStatus.COMPLETED,
             'winner_id': game.winner_id,
+            'is_challenge': game.is_challenge,  # Флаг PvE челленджа
+            'challenge_id': game.challenge_id,  # ID челленджа если есть
             'units': self.units,
             'obstacles': self.obstacles,
+            'decorations': self.decorations,
             'logs': self.logs
         }
 
@@ -747,16 +790,28 @@ def api_public_pending_games():
             p1 = session_db.query(GameUser).filter_by(id=game.player1_id).first()
             p2 = session_db.query(GameUser).filter_by(id=game.player2_id).first() if game.player2_id else None
 
+            # Для челленджей показываем имя челленджа вместо __AI__
+            player2_name = p2.username if p2 else 'Unknown'
+            challenge_name = None
+            if game.is_challenge and game.challenge_id:
+                challenge = session_db.query(Challenge).filter_by(id=game.challenge_id).first()
+                if challenge:
+                    challenge_name = challenge.name
+                    player2_name = f"[AI] {challenge.name}"
+
             result = {
                 'game_id': game.id,
                 'status': game.status.value if hasattr(game.status, 'value') else str(game.status),
                 'player1_id': game.player1_id,
                 'player1_name': p1.username if p1 else 'Unknown',
                 'player2_id': game.player2_id,
-                'player2_name': p2.username if p2 else 'Unknown',
+                'player2_name': player2_name,
                 'field_size': f"{game.field.width}x{game.field.height}" if game.field else "5x5",
                 'created_at': game.created_at.isoformat() if game.created_at else None,
-                'is_my_turn': game.current_player_id == player_id
+                'is_my_turn': game.current_player_id == player_id,
+                'is_challenge': game.is_challenge,
+                'challenge_id': game.challenge_id,
+                'challenge_name': challenge_name
             }
 
             # Для ожидающих игр - добавляем информацию об армиях
@@ -1564,6 +1619,9 @@ def api_public_available_units(army_id):
             else:
                 # Для наёмной армии - проверяем лимиты
                 limit_info = unit_limits.get(unit_level, {'unlocked': False, 'available': 0, 'unlock_cost': 0})
+                # Пропускаем заблокированные уровни - не показываем их в списке найма
+                if not limit_info['unlocked']:
+                    continue
                 unit_data['level_unlocked'] = limit_info['unlocked']
                 unit_data['available_to_hire'] = limit_info['available']
                 unit_data['daily_speed'] = limit_info.get('daily_speed', 0)
@@ -1938,6 +1996,18 @@ def api_debug_auth_status():
         return jsonify({'debug_auth': debug_auth_enabled})
 
 
+@arena_bp.route('/api/public/debug/game/<int:game_id>')
+def api_debug_game(game_id):
+    """Дебаг-эндпоинт - проверить данные игры (без авторизации)"""
+    with db.get_session() as session_db:
+        game = session_db.query(Game).filter_by(id=game_id).first()
+        if not game:
+            return jsonify({'error': 'Game not found'}), 404
+
+        game_state = GameState.from_game(game, session_db)
+        return jsonify(game_state.to_dict())
+
+
 @arena_bp.route('/api/public/logs', methods=['POST'])
 def api_receive_logs():
     """Публичный эндпоинт - принять логи от клиента Godot"""
@@ -2176,13 +2246,21 @@ def api_get_user_races_with_limits():
                     user_race_id=ur.id
                 ).join(UnitLevel).order_by(UnitLevel.level).all()
 
+            # Получаем юнитов расы для определения имени по уровню
+            race_units_by_level = {}
+            race_units = session_db.query(RaceUnit).filter_by(race_id=ur.race_id).all()
+            for ru in race_units:
+                race_units_by_level[ru.unit_level_id] = ru.name
+
             limits_data = []
             for limit in limits:
+                unit_name = race_units_by_level.get(limit.unit_level_id, f"Уровень {limit.unit_level.level}")
                 limits_data.append({
                     'id': limit.id,
                     'unit_level_id': limit.unit_level_id,
                     'level': limit.unit_level.level,
                     'level_icon': limit.unit_level.icon,
+                    'unit_name': unit_name,
                     'available_count': limit.available_count,
                     'daily_speed': limit.daily_speed,
                     'level_unlocked': limit.level_unlocked,
@@ -2208,3 +2286,291 @@ def api_get_user_races_with_limits():
         }
 
         return jsonify({'races': result, 'user_balance': user_balance})
+
+
+@arena_bp.route('/api/public/available-races', methods=['GET'])
+@token_required
+def api_get_available_races():
+    """Получить список всех доступных рас для добавления"""
+    player_id = request.player_id
+
+    with db.get_session() as session_db:
+        # Получаем все расы
+        all_races = session_db.query(GameRace).order_by(GameRace.name).all()
+
+        # Получаем расы, которые уже есть у пользователя
+        user_race_ids = set(
+            ur.race_id for ur in session_db.query(UserRace).filter_by(user_id=player_id).all()
+        )
+
+        result = []
+        for race in all_races:
+            # Получаем юнитов расы для отображения
+            race_units = session_db.query(RaceUnit).filter_by(race_id=race.id).order_by(RaceUnit.unit_level_id).all()
+            units_preview = []
+            for ru in race_units[:3]:  # Показываем первые 3 юнита
+                units_preview.append({
+                    'name': ru.name,
+                    'level': ru.unit_level.level if ru.unit_level else 1
+                })
+
+            result.append({
+                'id': race.id,
+                'name': race.name,
+                'description': race.description or '',
+                'is_free': race.is_free,
+                'is_owned': race.id in user_race_ids,
+                'units_count': len(race_units),
+                'units_preview': units_preview
+            })
+
+        return jsonify({'races': result})
+
+
+@arena_bp.route('/api/public/races/add', methods=['POST'])
+@token_required
+def api_add_user_race():
+    """Добавить расу пользователю"""
+    player_id = request.player_id
+    data = request.get_json() or {}
+    race_id = data.get('race_id')
+
+    if not race_id:
+        return jsonify({'error': 'race_id обязателен'}), 400
+
+    with db.get_session() as session_db:
+        # Проверяем существование расы
+        race = session_db.query(GameRace).filter_by(id=race_id).first()
+        if not race:
+            return jsonify({'error': 'Раса не найдена'}), 404
+
+        # Проверяем, что у пользователя ещё нет этой расы
+        existing = session_db.query(UserRace).filter_by(
+            user_id=player_id,
+            race_id=race_id
+        ).first()
+        if existing:
+            return jsonify({'error': 'Вы уже добавили эту расу'}), 400
+
+        # Создаём пользовательскую расу
+        user_race = UserRace(user_id=player_id, race_id=race_id)
+        session_db.add(user_race)
+        session_db.flush()  # Получаем ID user_race
+
+        # Получаем все юниты расы и создаём для каждого UserRaceUnit с дефолтным скином
+        race_units = session_db.query(RaceUnit).filter_by(race_id=race_id).all()
+        units_created = 0
+
+        for race_unit in race_units:
+            # Ищем первый (дефолтный) скин для этого юнита расы
+            default_skin = session_db.query(RaceUnitSkin).filter_by(
+                race_unit_id=race_unit.id
+            ).first()
+
+            if default_skin:
+                # Создаём UserRaceUnit с дефолтным скином и нулевыми бустами
+                user_race_unit = UserRaceUnit(
+                    user_race_id=user_race.id,
+                    race_unit_id=race_unit.id,
+                    skin_id=default_skin.id,
+                    attack_boost=0,
+                    defense_boost=0,
+                    min_damage_boost=0,
+                    max_damage_boost=0,
+                    health_boost=0,
+                    speed_boost=0,
+                    initiative_boost=0,
+                    range_boost=0
+                )
+                session_db.add(user_race_unit)
+                units_created += 1
+
+        # Сначала коммитим user_race и user_race_units
+        session_db.commit()
+
+        # Теперь инициализируем лимиты найма для новой расы (в отдельной сессии)
+        from core.unit_limits import initialize_user_race_unit_limits
+        initialize_user_race_unit_limits(db, user_race.id)
+
+        return jsonify({
+            'success': True,
+            'message': f'Раса "{race.name}" добавлена! Создано {units_created} юнитов.',
+            'user_race_id': user_race.id,
+            'race_name': race.name,
+            'units_created': units_created
+        })
+
+
+# ============================================================================
+# CHALLENGES API - PvE сражения с AI
+# ============================================================================
+
+@arena_bp.route('/api/public/challenges', methods=['GET'])
+@token_required
+def get_challenges():
+    """Получить список активных челленджей"""
+    with db.get_session() as session:
+        challenges = session.query(Challenge).filter_by(is_active=True).order_by(Challenge.sort_order, Challenge.id).all()
+
+        result = []
+        for c in challenges:
+            # Подсчитываем общую силу армии челленджа
+            total_power = 0
+            units_list = []
+            for cu in c.units:
+                ru = cu.race_unit
+                if ru:
+                    unit_power = (ru.attack + ru.defense + (ru.min_damage + ru.max_damage) / 2 +
+                                  ru.health / 10 + ru.speed + ru.initiative)
+                    total_power += unit_power * cu.count
+                    units_list.append({
+                        'name': ru.name,
+                        'count': cu.count
+                    })
+
+            result.append({
+                'id': c.id,
+                'name': c.name,
+                'description': c.description,
+                'reward_gold': c.reward_gold,
+                'reward_gems': c.reward_gems,
+                'ai_difficulty': c.ai_difficulty.value,
+                'sprite_url': f'/challenges/{c.id}/sprite' if c.sprite_data else None,
+                'units': units_list,
+                'units_count': len(c.units),
+                'total_units': sum(u.count for u in c.units),
+                'estimated_power': int(total_power)
+            })
+
+        return jsonify({'challenges': result})
+
+
+@arena_bp.route('/api/public/challenges/<int:challenge_id>', methods=['GET'])
+@token_required
+def get_challenge_details(challenge_id):
+    """Получить детали челленджа с армией"""
+    with db.get_session() as session:
+        challenge = session.query(Challenge).filter_by(id=challenge_id, is_active=True).first()
+        if not challenge:
+            return jsonify({'error': 'Challenge not found'}), 404
+
+        units = []
+        for cu in challenge.units:
+            skin = None
+            if cu.race_unit.skins:
+                skin = cu.race_unit.skins[0]
+
+            units.append({
+                'race_unit_id': cu.race_unit_id,
+                'count': cu.count,
+                'name': cu.race_unit.name,
+                'race_name': cu.race_unit.race.name if cu.race_unit.race else None,
+                'level': cu.race_unit.unit_level.level if cu.race_unit.unit_level else 1,
+                'attack': cu.race_unit.attack,
+                'defense': cu.race_unit.defense,
+                'health': cu.race_unit.health,
+                'speed': cu.race_unit.speed,
+                'skin_id': skin.id if skin else None,
+                'sprite_url': f'/arena/api/public/skins/{skin.id}/sprite' if skin else None
+            })
+
+        return jsonify({
+            'id': challenge.id,
+            'name': challenge.name,
+            'description': challenge.description,
+            'reward_gold': challenge.reward_gold,
+            'reward_gems': challenge.reward_gems,
+            'ai_difficulty': challenge.ai_difficulty.value,
+            'sprite_url': f'/challenges/{challenge.id}/sprite' if challenge.sprite_data else None,
+            'units': units
+        })
+
+
+@arena_bp.route('/api/public/challenges/<int:challenge_id>/start', methods=['POST'])
+@token_required
+def start_challenge(challenge_id):
+    """Начать челлендж - создать игру против AI"""
+    player_id = request.player_id
+    data = request.get_json() or {}
+    army_id = data.get('army_id')
+
+    if not army_id:
+        return jsonify({'error': 'army_id is required'}), 400
+
+    # Используем GameEngine для создания игры челленджа
+    try:
+        with db.get_session() as session_db:
+            game_engine = GameEngine(session_db)
+            game_id = game_engine.create_challenge_game(player_id, army_id, challenge_id)
+
+            # Получаем имя челленджа для сообщения
+            challenge = session_db.query(Challenge).filter_by(id=challenge_id).first()
+            challenge_name = challenge.name if challenge else f"Challenge #{challenge_id}"
+
+        return jsonify({
+            'success': True,
+            'game_id': game_id,
+            'message': f'Challenge "{challenge_name}" started!'
+        })
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+    except Exception as e:
+        logger.error(f"Error starting challenge: {e}")
+        return jsonify({'error': 'Failed to start challenge'}), 500
+
+
+@arena_bp.route('/api/public/challenges/<int:challenge_id>/completions', methods=['GET'])
+@token_required
+def get_challenge_completions(challenge_id):
+    """Получить историю прохождений челленджа для текущего игрока"""
+    player_id = request.player_id
+
+    with db.get_session() as session:
+        completions = session.query(ChallengeCompletion).filter_by(
+            challenge_id=challenge_id,
+            user_id=player_id
+        ).order_by(ChallengeCompletion.completed_at.desc()).limit(10).all()
+
+        result = []
+        for cc in completions:
+            result.append({
+                'id': cc.id,
+                'is_victory': cc.is_victory,
+                'reward_gold_earned': cc.reward_gold_earned,
+                'reward_gems_earned': cc.reward_gems_earned,
+                'completed_at': cc.completed_at.isoformat() if cc.completed_at else None
+            })
+
+        return jsonify({'completions': result})
+
+
+@arena_bp.route('/api/public/games/<int:game_id>/ai-turn', methods=['POST'])
+@token_required
+def execute_ai_turn(game_id):
+    """Выполнить ход AI (вызывается клиентом когда ход AI)"""
+    player_id = request.player_id
+
+    with db.get_session() as session:
+        game = session.query(Game).filter_by(id=game_id).first()
+        if not game:
+            return jsonify({'error': 'Game not found'}), 404
+
+        if not game.is_challenge:
+            return jsonify({'error': 'This is not a challenge game'}), 400
+
+        # Проверяем что игрок участвует в этой игре
+        if game.player1_id != player_id:
+            return jsonify({'error': 'You are not playing this game'}), 403
+
+        # Проверяем что сейчас ход AI
+        if game.current_player_id != game.ai_player_id:
+            return jsonify({'error': 'It is not AI turn'}), 400
+
+    try:
+        with db.get_session() as session_db:
+            game_engine = GameEngine(session_db)
+            result = game_engine.execute_ai_turn(game_id)
+            return jsonify(result)
+    except Exception as e:
+        logger.error(f"Error executing AI turn: {e}")
+        return jsonify({'error': 'Failed to execute AI turn'}), 500

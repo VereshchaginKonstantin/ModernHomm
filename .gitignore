@@ -55,3 +55,4 @@ postgres_data/
 
 # SSL certificates
 certbot/
+redis_data/

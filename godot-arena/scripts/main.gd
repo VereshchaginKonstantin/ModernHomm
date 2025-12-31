@@ -7,12 +7,12 @@ extends Control
 @onready var army_stats: Label = %ArmyStats
 @onready var opponent_select: OptionButton = %OpponentSelect
 @onready var opponent_stats: Label = %OpponentStats
-@onready var field_5x5: Button = %Field5x5
-@onready var field_7x7: Button = %Field7x7
-@onready var field_10x10: Button = %Field10x10
+# Секция выбора размера поля (скрыта - размер выбирается автоматически)
+@onready var field_section: Control = $VBoxContainer/FieldSection
 @onready var start_button: Button = %StartButton
 @onready var army_button: Button = %ArmyButton
 @onready var races_button: Button = %RacesButton
+@onready var challenges_button: Button = %ChallengesButton
 @onready var status_label: Label = %StatusLabel
 @onready var battles_panel: PanelContainer = %BattlesPanel
 @onready var battles_toggle: Button = %BattlesToggle
@@ -43,10 +43,12 @@ var current_player: Dictionary = {}
 var player_armies: Array = []  # Список армий игрока
 var selected_army: Dictionary = {}  # Выбранная армия для боя
 var selected_opponent: Dictionary = {}
-var selected_field_size: String = "5x5"
+# selected_field_size удалён - размер поля выбирается автоматически на сервере
 var waiting_game_id: int = 0
 var waiting_timer: Timer
-var pending_games: Array = []
+var pending_games_timer: Timer  # Таймер для автообновления списка ожидающих игр
+var pending_games: Array = []  # Входящие вызовы (ждут моего принятия)
+var my_waiting_games: Array = []  # Мои исходящие вызовы (жду принятия противником)
 var active_games: Array = []
 var history_games: Array = []
 
@@ -70,12 +72,14 @@ func _ready() -> void:
 	# Подключаем UI
 	army_select.item_selected.connect(_on_army_selected)
 	opponent_select.item_selected.connect(_on_opponent_selected)
-	field_5x5.pressed.connect(_on_field_5x5_pressed)
-	field_7x7.pressed.connect(_on_field_7x7_pressed)
-	field_10x10.pressed.connect(_on_field_10x10_pressed)
 	start_button.pressed.connect(_on_start_pressed)
+
+	# Скрываем секцию выбора размера поля (размер выбирается автоматически)
+	if field_section:
+		field_section.visible = false
 	army_button.pressed.connect(_on_army_pressed)
 	races_button.pressed.connect(_on_races_pressed)
+	challenges_button.pressed.connect(_on_challenges_pressed)
 	$VBoxContainer/BackButton.pressed.connect(_on_back_pressed)
 
 	# Подключаем панель боёв
@@ -93,6 +97,12 @@ func _ready() -> void:
 	waiting_timer.wait_time = 2.0
 	waiting_timer.timeout.connect(_on_waiting_timeout)
 	add_child(waiting_timer)
+
+	# Создаём таймер для автообновления списка ожидающих игр
+	pending_games_timer = Timer.new()
+	pending_games_timer.wait_time = 5.0
+	pending_games_timer.timeout.connect(_on_pending_games_timeout)
+	add_child(pending_games_timer)
 
 	# Начальное положение панели боёв (за экраном справа)
 	# Панель занимает 50% экрана (anchor_left=0.5), сдвигаем на ширину экрана
@@ -157,6 +167,11 @@ func _open_battles_panel() -> void:
 	battles_panel_open = true
 	battles_toggle.text = "<"
 
+	# Обновляем список ожидающих игр при открытии панели
+	ApiClient.get_pending_games()
+	# Запускаем автообновление
+	pending_games_timer.start()
+
 	# Панель занимает 50% экрана (anchor_left=0.5), открытая позиция = 0
 	battles_panel_tween = create_tween()
 	battles_panel_tween.tween_property(battles_panel, "position:x", 0.0, 0.3).set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_CUBIC)
@@ -167,17 +182,27 @@ func _close_battles_panel() -> void:
 
 	battles_panel_open = false
 	battles_toggle.text = ">"
+	# Останавливаем автообновление
+	pending_games_timer.stop()
 
 	# Закрытая позиция = 50% ширины экрана (панель уезжает за правый край)
 	battles_panel_tween = create_tween()
 	battles_panel_tween.tween_property(battles_panel, "position:x", get_viewport_rect().size.x * 0.5, 0.3).set_ease(Tween.EASE_IN).set_trans(Tween.TRANS_CUBIC)
 	battles_panel_tween.tween_callback(func(): battles_panel.visible = false)
 
+func _on_pending_games_timeout() -> void:
+	# Периодически обновляем список ожидающих игр пока панель открыта
+	if battles_panel_open and ApiClient.is_authenticated():
+		ApiClient.get_pending_games()
+
 func _on_army_pressed() -> void:
 	get_tree().change_scene_to_file("res://scenes/army_editor.tscn")
 
 func _on_races_pressed() -> void:
 	get_tree().change_scene_to_file("res://scenes/race_manager.tscn")
+
+func _on_challenges_pressed() -> void:
+	get_tree().change_scene_to_file("res://scenes/challenges.tscn")
 
 func _on_login_pressed() -> void:
 	var username = username_input.text.strip_edges()
@@ -297,6 +322,7 @@ func _handle_game_response(data: Dictionary) -> void:
 	# Обрабатываем ответ на ожидающие игры
 	if data.has("pending_games"):
 		pending_games = data.get("pending_games", [])
+		my_waiting_games = data.get("my_waiting_games", [])
 		active_games = data.get("active_games", [])
 		history_games = data.get("history", [])
 		_display_battles_list()
@@ -308,6 +334,8 @@ func _handle_game_response(data: Dictionary) -> void:
 			waiting_game_id = data.get("game_id")
 			status_label.text = "Ожидание принятия игры противником..."
 			waiting_timer.start()
+			# Сразу обновляем список игр чтобы показать созданную игру
+			ApiClient.get_pending_games()
 		elif data.get("status") == "in_progress":
 			GameManager.current_game_id = data.get("game_id")
 			get_tree().change_scene_to_file("res://scenes/game.tscn")
@@ -513,24 +541,6 @@ func _on_opponent_selected(index: int) -> void:
 	]
 	_update_start_button()
 
-func _on_field_5x5_pressed() -> void:
-	selected_field_size = "5x5"
-	field_5x5.button_pressed = true
-	field_7x7.button_pressed = false
-	field_10x10.button_pressed = false
-
-func _on_field_7x7_pressed() -> void:
-	selected_field_size = "7x7"
-	field_5x5.button_pressed = false
-	field_7x7.button_pressed = true
-	field_10x10.button_pressed = false
-
-func _on_field_10x10_pressed() -> void:
-	selected_field_size = "10x10"
-	field_5x5.button_pressed = false
-	field_7x7.button_pressed = false
-	field_10x10.button_pressed = true
-
 func _update_start_button() -> void:
 	start_button.disabled = current_player.is_empty() or selected_army.is_empty() or selected_opponent.is_empty()
 
@@ -541,10 +551,10 @@ func _on_start_pressed() -> void:
 	start_button.disabled = true
 	status_label.text = "Создание игры..."
 
-	# Используем новый API с army_id
+	# Используем новый API с army_id (размер поля определяется автоматически)
 	ApiClient.create_game(
 		selected_opponent.get("username", selected_opponent.get("name", "")),
-		selected_field_size,
+		"",  # Размер поля выбирается автоматически на сервере
 		selected_army.get("army_id", 0)
 	)
 
@@ -621,6 +631,26 @@ func _display_battles_list() -> void:
 
 		pending_list.add_child(hbox)
 
+	# Мои исходящие вызовы (ожидаем принятия)
+	for game in my_waiting_games:
+		has_battles = true
+		var hbox = HBoxContainer.new()
+		hbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+
+		var label = Label.new()
+		label.text = "vs %s - Ожидаем..." % game.get("player2_name", "???")
+		label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		label.modulate = Color(1, 1, 0.7)  # Жёлтый оттенок для ожидания
+		hbox.add_child(label)
+
+		var cancel_btn = Button.new()
+		cancel_btn.text = "Отмена"
+		cancel_btn.custom_minimum_size = Vector2(70, 0)
+		cancel_btn.pressed.connect(_on_decline_game.bind(game.get("game_id", 0)))
+		hbox.add_child(cancel_btn)
+
+		pending_list.add_child(hbox)
+
 	# Активные игры
 	for game in active_games:
 		has_battles = true
@@ -639,7 +669,8 @@ func _display_battles_list() -> void:
 
 		var continue_btn = Button.new()
 		continue_btn.text = "Играть"
-		continue_btn.pressed.connect(_on_continue_game.bind(game.get("game_id", 0)))
+		var is_challenge = game.get("is_challenge", false)
+		continue_btn.pressed.connect(_on_continue_game.bind(game.get("game_id", 0), is_challenge))
 		hbox.add_child(continue_btn)
 
 		pending_list.add_child(hbox)
@@ -671,7 +702,7 @@ func _display_battles_list() -> void:
 	battles_toggle.visible = has_battles or not current_player.is_empty()
 
 	# Автоматически открываем панель если есть активные бои или вызовы
-	if pending_games.size() > 0 or active_games.size() > 0:
+	if pending_games.size() > 0 or my_waiting_games.size() > 0 or active_games.size() > 0:
 		if not battles_panel_open:
 			_open_battles_panel()
 
@@ -686,8 +717,9 @@ func _on_decline_game(game_id: int) -> void:
 	ApiClient.decline_game(game_id)
 	_check_pending_games()
 
-func _on_continue_game(game_id: int) -> void:
+func _on_continue_game(game_id: int, is_challenge: bool = false) -> void:
 	GameManager.current_game_id = game_id
+	GameManager.is_challenge_game = is_challenge
 	get_tree().change_scene_to_file("res://scenes/game.tscn")
 
 func _on_back_pressed() -> void:

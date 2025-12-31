@@ -7,13 +7,15 @@ extends Control
 @onready var race_name_label: Label = %RaceNameLabel
 @onready var levels_container: VBoxContainer = %LevelsContainer
 @onready var status_label: Label = %StatusLabel
+@onready var add_race_button: Button = %AddRaceButton
 
 var user_races: Array = []
+var available_races: Array = []  # Все доступные расы для добавления
 var selected_race: Dictionary = {}
 var user_balance: Dictionary = {}
 
 # Состояние запроса
-enum RequestState { IDLE, LOADING_RACES, UNLOCKING_LEVEL, UPGRADING_SPEED }
+enum RequestState { IDLE, LOADING_RACES, UNLOCKING_LEVEL, UPGRADING_SPEED, LOADING_AVAILABLE_RACES, ADDING_RACE }
 var request_state: RequestState = RequestState.IDLE
 var pending_action: Dictionary = {}  # Для хранения данных об ожидающем действии
 
@@ -22,6 +24,10 @@ func _ready() -> void:
 	back_button.pressed.connect(_on_back_pressed)
 	ApiClient.request_completed.connect(_on_api_response)
 	ApiClient.request_failed.connect(_on_api_error)
+
+	# Подключаем кнопку добавления расы
+	if add_race_button:
+		add_race_button.pressed.connect(_on_add_race_pressed)
 
 	# Загружаем расы
 	_load_races()
@@ -38,15 +44,22 @@ func _load_races() -> void:
 
 
 func _on_api_response(data: Dictionary) -> void:
-	match request_state:
+	var current_state = request_state
+	match current_state:
 		RequestState.LOADING_RACES:
 			_handle_races_loaded(data)
 		RequestState.UNLOCKING_LEVEL:
 			_handle_level_unlocked(data)
 		RequestState.UPGRADING_SPEED:
 			_handle_speed_upgraded(data)
+		RequestState.LOADING_AVAILABLE_RACES:
+			_handle_available_races_loaded(data)
+		RequestState.ADDING_RACE:
+			_handle_race_added(data)
 
-	request_state = RequestState.IDLE
+	# Сбрасываем state только если он не изменился (не запущен новый запрос)
+	if request_state == current_state:
+		request_state = RequestState.IDLE
 
 
 func _on_api_error(error: String) -> void:
@@ -94,6 +107,23 @@ func _handle_speed_upgraded(data: Dictionary) -> void:
 		status_label.text = "Ошибка: " + data.error
 
 
+func _handle_available_races_loaded(data: Dictionary) -> void:
+	if data.has("races"):
+		available_races = data.races
+		_show_add_race_dialog()
+	elif data.has("error"):
+		status_label.text = "Ошибка: " + data.error
+
+
+func _handle_race_added(data: Dictionary) -> void:
+	if data.has("success") and data.success:
+		status_label.text = data.get("message", "Раса добавлена!")
+		# Перезагружаем данные
+		_load_races()
+	elif data.has("error"):
+		status_label.text = "Ошибка: " + data.error
+
+
 func _update_balance_label() -> void:
 	var coins = int(user_balance.get("balance", 0))
 	var crystals = int(user_balance.get("crystals", 0))
@@ -108,7 +138,7 @@ func _populate_races_list() -> void:
 
 	if user_races.is_empty():
 		var label = Label.new()
-		label.text = "У вас нет рас"
+		label.text = "У вас нет рас. Добавьте расу!"
 		label.add_theme_color_override("font_color", Color(0.6, 0.6, 0.6))
 		races_container.add_child(label)
 		return
@@ -172,7 +202,7 @@ func _create_level_panel(user_race_id: int, limit: Dictionary) -> PanelContainer
 	hbox.add_child(info_vbox)
 
 	var level_num = limit.get("level", 0)
-	var level_icon = limit.get("level_icon", "")
+	var unit_name = limit.get("unit_name", "Уровень %d" % level_num)
 	var is_unlocked = limit.get("level_unlocked", false)
 	var available = limit.get("available_count", 0)
 	var daily_speed = limit.get("daily_speed", 0)
@@ -180,9 +210,9 @@ func _create_level_panel(user_race_id: int, limit: Dictionary) -> PanelContainer
 	var speed_cost_coins = limit.get("speed_upgrade_cost", 0)
 	var speed_cost_gems = limit.get("speed_upgrade_cost_gems", 0)
 
-	# Заголовок уровня
+	# Заголовок уровня - показываем название юнита
 	var title_label = Label.new()
-	title_label.text = "%s Уровень %d" % [level_icon, level_num]
+	title_label.text = unit_name
 	title_label.add_theme_font_size_override("font_size", 20)
 	if is_unlocked:
 		title_label.add_theme_color_override("font_color", Color(0.4, 0.9, 0.4))
@@ -245,3 +275,100 @@ func _on_upgrade_speed(user_race_id: int, unit_level_id: int, use_gems: bool) ->
 	request_state = RequestState.UPGRADING_SPEED
 	pending_action = {"use_gems": use_gems}
 	ApiClient.upgrade_race_speed(user_race_id, unit_level_id, use_gems)
+
+
+# ============= Добавление расы =============
+
+func _on_add_race_pressed() -> void:
+	status_label.text = "Загрузка доступных рас..."
+	request_state = RequestState.LOADING_AVAILABLE_RACES
+	ApiClient.get_available_races()
+
+
+func _show_add_race_dialog() -> void:
+	# Фильтруем только расы, которых нет у пользователя
+	var races_to_add = []
+	for race in available_races:
+		if not race.get("is_owned", false):
+			races_to_add.append(race)
+
+	if races_to_add.is_empty():
+		status_label.text = "Все расы уже добавлены!"
+		return
+
+	# Показываем диалог выбора расы в панели уровней
+	race_name_label.text = "Выберите расу для добавления"
+
+	# Очищаем контейнер уровней
+	for child in levels_container.get_children():
+		child.queue_free()
+
+	# Создаём карточки для каждой доступной расы
+	for race in races_to_add:
+		var panel = _create_race_card(race)
+		levels_container.add_child(panel)
+
+	status_label.text = ""
+
+
+func _create_race_card(race: Dictionary) -> PanelContainer:
+	var panel = PanelContainer.new()
+	panel.custom_minimum_size = Vector2(0, 120)
+
+	var hbox = HBoxContainer.new()
+	hbox.add_theme_constant_override("separation", 20)
+	panel.add_child(hbox)
+
+	# Информация о расе
+	var info_vbox = VBoxContainer.new()
+	info_vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	hbox.add_child(info_vbox)
+
+	# Название расы
+	var name_label = Label.new()
+	var free_text = " [БЕСПЛАТНО]" if race.get("is_free", false) else ""
+	name_label.text = race.get("name", "???") + free_text
+	name_label.add_theme_font_size_override("font_size", 22)
+	if race.get("is_free", false):
+		name_label.add_theme_color_override("font_color", Color(0.4, 0.9, 0.4))
+	else:
+		name_label.add_theme_color_override("font_color", Color(0.9, 0.8, 0.2))
+	info_vbox.add_child(name_label)
+
+	# Описание
+	var desc_label = Label.new()
+	desc_label.text = race.get("description", "")
+	desc_label.add_theme_font_size_override("font_size", 14)
+	desc_label.add_theme_color_override("font_color", Color(0.8, 0.8, 0.8))
+	desc_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	info_vbox.add_child(desc_label)
+
+	# Превью юнитов
+	var units_preview = race.get("units_preview", [])
+	if not units_preview.is_empty():
+		var units_text = "Юниты: "
+		var unit_names = []
+		for u in units_preview:
+			unit_names.append(u.get("name", "?"))
+		units_text += ", ".join(unit_names) + "..."
+
+		var units_label = Label.new()
+		units_label.text = units_text
+		units_label.add_theme_font_size_override("font_size", 12)
+		units_label.add_theme_color_override("font_color", Color(0.6, 0.6, 0.6))
+		info_vbox.add_child(units_label)
+
+	# Кнопка добавления
+	var add_btn = Button.new()
+	add_btn.text = "Добавить"
+	add_btn.custom_minimum_size = Vector2(120, 50)
+	add_btn.pressed.connect(_on_add_race_confirmed.bind(race.get("id", 0)))
+	hbox.add_child(add_btn)
+
+	return panel
+
+
+func _on_add_race_confirmed(race_id: int) -> void:
+	status_label.text = "Добавление расы..."
+	request_state = RequestState.ADDING_RACE
+	ApiClient.add_user_race(race_id)

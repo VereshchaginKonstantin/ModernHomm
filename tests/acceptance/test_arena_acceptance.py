@@ -674,6 +674,601 @@ class TestFullBattleFlow:
             f"Game should be completed: {game_state}"
 
 
+class DebugAuthAPIClient:
+    """HTTP клиент для проверки Debug Auth (без JWT токена)."""
+
+    def __init__(self, base_url: str = ARENA_API_URL, player_id: int = None):
+        self.base_url = base_url
+        self.session = requests.Session()
+        self.session.verify = False
+        self.player_id = player_id
+        # Устанавливаем X-Debug-Player-Id вместо Authorization
+        if player_id:
+            self.session.headers["X-Debug-Player-Id"] = str(player_id)
+
+    def get_debug_auth_status(self) -> dict:
+        """Получить статус debug auth."""
+        return self.session.get(f"{self.base_url}/debug/auth_status", timeout=10)
+
+    def get_me(self) -> dict:
+        """Получить информацию о текущем игроке (через debug auth)."""
+        return self.session.get(f"{self.base_url}/me", timeout=10)
+
+    def get_armies(self) -> dict:
+        """Получить список армий игрока (через debug auth)."""
+        return self.session.get(f"{self.base_url}/armies", timeout=10)
+
+    def get_pending_games(self) -> dict:
+        """Получить ожидающие игры (через debug auth)."""
+        return self.session.get(f"{self.base_url}/games/pending", timeout=10)
+
+
+class TestDebugAuth:
+    """Тесты для Debug Auth режима (вход без пароля через player_id в URL)."""
+
+    @pytest.fixture(scope="class")
+    def db_session(self):
+        """Фикстура для доступа к production БД."""
+        engine = create_engine(PROD_DATABASE_URL)
+        Session = sessionmaker(bind=engine)
+        session = Session()
+        yield session
+        session.close()
+
+    def test_debug_auth_status_endpoint_exists(self):
+        """Проверка: эндпоинт /debug/auth_status доступен публично."""
+        client = DebugAuthAPIClient()
+        response = client.get_debug_auth_status()
+
+        assert response.status_code == 200, \
+            f"Debug auth status endpoint should return 200, got {response.status_code}: {response.text}"
+
+        data = response.json()
+        assert 'debug_auth' in data, \
+            f"Response should contain 'debug_auth' field: {data}"
+        # Значение может быть True или False
+        assert isinstance(data['debug_auth'], bool), \
+            f"'debug_auth' should be boolean: {data}"
+
+    def test_debug_auth_disabled_rejects_requests(self, db_session):
+        """Проверка: когда debug_auth=false, запросы с X-Debug-Player-Id отклоняются."""
+        from db.models.core import Config
+
+        # Сохраняем текущее значение
+        config = db_session.query(Config).filter_by(key='debug_auth').first()
+        original_value = config.value if config else None
+
+        try:
+            # Устанавливаем debug_auth = false
+            if config:
+                config.value = 'false'
+            else:
+                config = Config(key='debug_auth', value='false', description='Debug auth mode')
+                db_session.add(config)
+            db_session.commit()
+
+            # Пытаемся запросить /me с X-Debug-Player-Id
+            client = DebugAuthAPIClient(player_id=4)
+            response = client.get_me()
+
+            # Должен вернуть 401 (Unauthorized) так как debug_auth отключен
+            assert response.status_code == 401, \
+                f"When debug_auth is disabled, should return 401, got {response.status_code}: {response.text}"
+
+        finally:
+            # Восстанавливаем значение
+            if original_value is not None:
+                config.value = original_value
+                db_session.commit()
+
+    def test_debug_auth_enabled_allows_requests(self, db_session):
+        """Проверка: когда debug_auth=true, запросы с X-Debug-Player-Id работают без JWT."""
+        from db.models.core import Config
+
+        # Сохраняем текущее значение
+        config = db_session.query(Config).filter_by(key='debug_auth').first()
+        original_value = config.value if config else None
+
+        try:
+            # Устанавливаем debug_auth = true
+            if config:
+                config.value = 'true'
+            else:
+                config = Config(key='debug_auth', value='true', description='Debug auth mode')
+                db_session.add(config)
+            db_session.commit()
+
+            # Запрашиваем /me с X-Debug-Player-Id
+            client = DebugAuthAPIClient(player_id=4)
+            response = client.get_me()
+
+            # Должен вернуть 200 и данные игрока
+            assert response.status_code == 200, \
+                f"When debug_auth is enabled, should return 200, got {response.status_code}: {response.text}"
+
+            data = response.json()
+            # Проверяем что player_id правильный (может быть в корне или в current_player)
+            player_id = data.get('player_id') or data.get('id')
+            if not player_id and 'current_player' in data:
+                player_id = data['current_player'].get('id')
+            assert player_id == 4, \
+                f"Player ID should be 4: {data}"
+
+        finally:
+            # Восстанавливаем значение
+            if original_value is not None:
+                config.value = original_value
+                db_session.commit()
+
+    def test_debug_auth_can_get_armies(self, db_session):
+        """Проверка: через debug auth можно получить список армий."""
+        from db.models.core import Config
+
+        # Сохраняем текущее значение
+        config = db_session.query(Config).filter_by(key='debug_auth').first()
+        original_value = config.value if config else None
+
+        try:
+            # Включаем debug_auth
+            if config:
+                config.value = 'true'
+            else:
+                config = Config(key='debug_auth', value='true', description='Debug auth mode')
+                db_session.add(config)
+            db_session.commit()
+
+            # Запрашиваем армии
+            client = DebugAuthAPIClient(player_id=4)
+            response = client.get_armies()
+
+            assert response.status_code == 200, \
+                f"Should be able to get armies with debug auth: {response.status_code}: {response.text}"
+
+            data = response.json()
+            assert 'armies' in data, \
+                f"Response should contain 'armies': {data}"
+
+        finally:
+            # Восстанавливаем значение
+            if original_value is not None:
+                config.value = original_value
+                db_session.commit()
+
+    def test_debug_auth_can_get_pending_games(self, db_session):
+        """Проверка: через debug auth можно получить ожидающие игры."""
+        from db.models.core import Config
+
+        # Сохраняем текущее значение
+        config = db_session.query(Config).filter_by(key='debug_auth').first()
+        original_value = config.value if config else None
+
+        try:
+            # Включаем debug_auth
+            if config:
+                config.value = 'true'
+            else:
+                config = Config(key='debug_auth', value='true', description='Debug auth mode')
+                db_session.add(config)
+            db_session.commit()
+
+            # Запрашиваем ожидающие игры
+            client = DebugAuthAPIClient(player_id=4)
+            response = client.get_pending_games()
+
+            assert response.status_code == 200, \
+                f"Should be able to get pending games with debug auth: {response.status_code}: {response.text}"
+
+            data = response.json()
+            assert 'pending_games' in data, \
+                f"Response should contain 'pending_games': {data}"
+
+        finally:
+            # Восстанавливаем значение
+            if original_value is not None:
+                config.value = original_value
+                db_session.commit()
+
+    def test_debug_auth_without_player_id_fails(self, db_session):
+        """Проверка: запрос без X-Debug-Player-Id требует JWT токен."""
+        from db.models.core import Config
+
+        # Сохраняем текущее значение
+        config = db_session.query(Config).filter_by(key='debug_auth').first()
+        original_value = config.value if config else None
+
+        try:
+            # Включаем debug_auth
+            if config:
+                config.value = 'true'
+            else:
+                config = Config(key='debug_auth', value='true', description='Debug auth mode')
+                db_session.add(config)
+            db_session.commit()
+
+            # Запрашиваем /me БЕЗ X-Debug-Player-Id
+            client = DebugAuthAPIClient(player_id=None)  # Не устанавливаем player_id
+            response = client.get_me()
+
+            # Должен вернуть 401 так как нет ни JWT, ни X-Debug-Player-Id
+            assert response.status_code == 401, \
+                f"Without X-Debug-Player-Id header, should return 401, got {response.status_code}: {response.text}"
+
+        finally:
+            # Восстанавливаем значение
+            if original_value is not None:
+                config.value = original_value
+                db_session.commit()
+
+    def test_debug_auth_invalid_player_id_fails(self, db_session):
+        """Проверка: неверный player_id (0 или отрицательный) отклоняется."""
+        from db.models.core import Config
+
+        # Сохраняем текущее значение
+        config = db_session.query(Config).filter_by(key='debug_auth').first()
+        original_value = config.value if config else None
+
+        try:
+            # Включаем debug_auth
+            if config:
+                config.value = 'true'
+            else:
+                config = Config(key='debug_auth', value='true', description='Debug auth mode')
+                db_session.add(config)
+            db_session.commit()
+
+            # Пробуем с player_id = 0
+            client = DebugAuthAPIClient(player_id=0)
+            response = client.get_me()
+
+            # Должен вернуть 401 так как player_id = 0 не валиден
+            assert response.status_code == 401, \
+                f"With player_id=0, should return 401, got {response.status_code}: {response.text}"
+
+        finally:
+            # Восстанавливаем значение
+            if original_value is not None:
+                config.value = original_value
+                db_session.commit()
+
+
+class TestArmySelectionForBattle:
+    """Тесты для проверки списка армий при выборе для боя."""
+
+    @pytest.fixture(scope="class")
+    def db_session(self):
+        """Фикстура для доступа к production БД."""
+        engine = create_engine(PROD_DATABASE_URL)
+        Session = sessionmaker(bind=engine)
+        session = Session()
+        yield session
+        session.close()
+
+    @pytest.fixture(scope="class")
+    def ensure_debug_auth(self, db_session):
+        """Убеждаемся что debug_auth включен для тестов."""
+        from db.models.core import Config
+
+        config = db_session.query(Config).filter_by(key='debug_auth').first()
+        original_value = config.value if config else None
+
+        if config:
+            config.value = 'true'
+        else:
+            config = Config(key='debug_auth', value='true', description='Debug auth mode')
+            db_session.add(config)
+        db_session.commit()
+
+        yield
+
+        # Восстанавливаем
+        if original_value is not None:
+            config.value = original_value
+            db_session.commit()
+
+    def test_armies_endpoint_returns_list(self, ensure_debug_auth):
+        """Проверка: /armies возвращает список армий."""
+        client = DebugAuthAPIClient(player_id=4)
+        response = client.get_armies()
+
+        assert response.status_code == 200, \
+            f"Should return 200, got {response.status_code}: {response.text}"
+
+        data = response.json()
+        assert 'armies' in data, \
+            f"Response should contain 'armies' field: {data}"
+        assert isinstance(data['armies'], list), \
+            f"'armies' should be a list: {data}"
+
+    def test_army_with_units_is_available_for_battle(self, ensure_debug_auth, db_session):
+        """Проверка: армия с юнитами и не в бою доступна для выбора."""
+        client = DebugAuthAPIClient(player_id=4)
+        response = client.get_armies()
+
+        assert response.status_code == 200
+        data = response.json()
+        armies = data.get('armies', [])
+
+        # Ищем армию с юнитами
+        armies_with_units = [
+            a for a in armies
+            if len(a.get('units', [])) > 0 and sum(u.get('count', 0) for u in a.get('units', [])) > 0
+        ]
+
+        assert len(armies_with_units) > 0, \
+            f"Player should have at least one army with units: {armies}"
+
+        # Проверяем что хотя бы одна армия с юнитами не в бою
+        available_armies = [
+            a for a in armies_with_units
+            if not a.get('is_in_battle', False)
+        ]
+
+        # Если все армии в бою - это допустимое состояние для теста
+        # Пропускаем проверку доступности, но проверяем структуру
+        if len(available_armies) == 0:
+            pytest.skip("All armies with units are currently in battle - this is a valid state")
+
+        # Проверяем структуру армии
+        army = available_armies[0]
+        assert 'army_id' in army, f"Army should have army_id: {army}"
+        assert 'army_name' in army, f"Army should have army_name: {army}"
+        assert 'army_cost' in army, f"Army should have army_cost: {army}"
+        assert 'is_in_battle' in army, f"Army should have is_in_battle flag: {army}"
+        assert army['is_in_battle'] == False, f"Available army should not be in battle: {army}"
+
+    def test_army_selection_criteria_for_battle(self, ensure_debug_auth):
+        """Проверка критериев доступности армии для боя:
+        1. Армия должна иметь юнитов (count > 0)
+        2. Армия не должна участвовать в бою (is_in_battle == false)
+        """
+        client = DebugAuthAPIClient(player_id=4)
+        response = client.get_armies()
+
+        assert response.status_code == 200
+        data = response.json()
+        armies = data.get('armies', [])
+
+        for army in armies:
+            army_id = army.get('army_id')
+            army_name = army.get('army_name')
+            is_in_battle = army.get('is_in_battle', False)
+            units = army.get('units', [])
+            total_units = sum(u.get('count', 0) for u in units)
+
+            # Определяем доступность армии для боя
+            is_available = not is_in_battle and total_units > 0
+
+            print(f"Army {army_id} '{army_name}': units={total_units}, in_battle={is_in_battle}, available={is_available}")
+
+            # Проверяем что поле is_in_battle присутствует
+            assert 'is_in_battle' in army, \
+                f"Army {army_id} should have 'is_in_battle' field"
+
+    def test_empty_army_should_be_marked(self, ensure_debug_auth):
+        """Проверка: пустая армия (без юнитов) помечена и имеет army_cost=0."""
+        client = DebugAuthAPIClient(player_id=4)
+        response = client.get_armies()
+
+        assert response.status_code == 200
+        data = response.json()
+        armies = data.get('armies', [])
+
+        # Ищем пустые армии
+        empty_armies = [
+            a for a in armies
+            if len(a.get('units', [])) == 0 or sum(u.get('count', 0) for u in a.get('units', [])) == 0
+        ]
+
+        for army in empty_armies:
+            # Пустая армия должна иметь army_cost = 0
+            assert army.get('army_cost', -1) == 0, \
+                f"Empty army should have army_cost=0: {army}"
+
+    def test_army_in_battle_is_marked(self, ensure_debug_auth, db_session):
+        """Проверка: армия, участвующая в активном бою, помечена is_in_battle=true."""
+        # Проверяем есть ли активные игры у игрока
+        active_games = db_session.query(Game).filter(
+            Game.status.in_([GameStatus.WAITING, GameStatus.IN_PROGRESS]),
+            (Game.player1_id == 4) | (Game.player2_id == 4)
+        ).all()
+
+        if not active_games:
+            pytest.skip("No active games for player 4, cannot test is_in_battle marking")
+
+        # Собираем ID армий в бою
+        busy_army_ids = set()
+        for game in active_games:
+            if game.player1_id == 4 and game.player1_army_id:
+                busy_army_ids.add(game.player1_army_id)
+            if game.player2_id == 4 and game.player2_army_id:
+                busy_army_ids.add(game.player2_army_id)
+
+        if not busy_army_ids:
+            pytest.skip("No armies in active games")
+
+        client = DebugAuthAPIClient(player_id=4)
+        response = client.get_armies()
+        data = response.json()
+        armies = data.get('armies', [])
+
+        # Проверяем что армии в бою помечены
+        for army in armies:
+            army_id = army.get('army_id')
+            if army_id in busy_army_ids:
+                assert army.get('is_in_battle') == True, \
+                    f"Army {army_id} is in active game but not marked as is_in_battle: {army}"
+
+    def test_at_least_one_army_available_when_player_has_units(self, ensure_debug_auth, db_session):
+        """Ключевой тест: если у игрока есть армия с юнитами и она не в бою,
+        она ДОЛЖНА быть доступна для выбора в списке армий."""
+        # Проверяем в БД что у игрока есть армия с юнитами
+        player_armies = db_session.query(Army).join(
+            UserRace, Army.user_race_id == UserRace.id
+        ).filter(UserRace.user_id == 4).all()
+
+        armies_with_units_in_db = []
+        for army in player_armies:
+            # Получаем юнитов армии через отдельный запрос
+            army_units = db_session.query(ArmyUnit).filter(
+                ArmyUnit.army_id == army.id,
+                ArmyUnit.count > 0
+            ).all()
+            total_units = sum(au.count for au in army_units)
+            if total_units > 0:
+                armies_with_units_in_db.append(army)
+
+        if not armies_with_units_in_db:
+            pytest.skip("Player 4 has no armies with units in database")
+
+        # Проверяем какие армии в бою
+        active_games = db_session.query(Game).filter(
+            Game.status.in_([GameStatus.WAITING, GameStatus.IN_PROGRESS]),
+            (Game.player1_id == 4) | (Game.player2_id == 4)
+        ).all()
+
+        busy_army_ids = set()
+        for game in active_games:
+            if game.player1_id == 4 and game.player1_army_id:
+                busy_army_ids.add(game.player1_army_id)
+            if game.player2_id == 4 and game.player2_army_id:
+                busy_army_ids.add(game.player2_army_id)
+
+        # Ищем армию с юнитами НЕ в бою
+        available_in_db = [a for a in armies_with_units_in_db if a.id not in busy_army_ids]
+
+        if not available_in_db:
+            pytest.skip("All armies with units are in battle")
+
+        # Теперь проверяем API
+        client = DebugAuthAPIClient(player_id=4)
+        response = client.get_armies()
+
+        assert response.status_code == 200, \
+            f"Armies endpoint should return 200: {response.text}"
+
+        data = response.json()
+        armies = data.get('armies', [])
+
+        assert len(armies) > 0, \
+            f"API should return armies list, but got empty: {data}"
+
+        # Проверяем что доступная армия есть в ответе API
+        available_army_ids_from_api = [
+            a['army_id'] for a in armies
+            if not a.get('is_in_battle', False)
+            and sum(u.get('count', 0) for u in a.get('units', [])) > 0
+        ]
+
+        expected_army_ids = [a.id for a in available_in_db]
+
+        for expected_id in expected_army_ids:
+            assert expected_id in available_army_ids_from_api, \
+                f"Army {expected_id} has units and is not in battle, " \
+                f"but not available in API response. " \
+                f"Expected: {expected_army_ids}, Got available: {available_army_ids_from_api}, " \
+                f"All armies from API: {armies}"
+
+
+class WebUIClient:
+    """HTTP клиент для Web UI с сессионной авторизацией."""
+
+    def __init__(self, base_url: str = API_BASE_URL):
+        self.base_url = base_url
+        self.session = requests.Session()
+        self.session.verify = False
+
+    def login(self, username: str, password: str) -> requests.Response:
+        """Авторизация через Web форму."""
+        # Сначала делаем GET на /login чтобы получить CSRF/сессию
+        self.session.get(f"{self.base_url}/login", timeout=10)
+        # Потом логинимся
+        response = self.session.post(
+            f"{self.base_url}/login",
+            data={"username": username, "password": password},
+            allow_redirects=True,
+            timeout=10
+        )
+        return response
+
+    def get_page(self, path: str) -> requests.Response:
+        """Получить страницу (GET запрос)."""
+        return self.session.get(
+            f"{self.base_url}{path}",
+            allow_redirects=True,
+            timeout=10
+        )
+
+
+class TestWebArmyUI:
+    """Тесты для Web UI управления армиями."""
+
+    @pytest.fixture(scope="class")
+    def db_session(self):
+        """Фикстура для доступа к production БД."""
+        engine = create_engine(PROD_DATABASE_URL)
+        Session = sessionmaker(bind=engine)
+        session = Session()
+        yield session
+        session.close()
+
+    @pytest.fixture(scope="class")
+    def web_client(self, db_session):
+        """Фикстура: Web клиент с авторизацией okarien (user_id=4, владелец армии id=1)."""
+        # Для теста используем пользователя okarien с паролем 'admin'
+        # SHA256('admin') = 8c6976e5b5410415bde908bd4dee15dfb167a9c873fc4bb8a81f6f2ab448a918
+        client = WebUIClient()
+        response = client.login("okarien", "admin")
+        # 200 - успешный логин с редиректом на главную
+        assert response.status_code == 200, \
+            f"Login should succeed, got {response.status_code}: {response.text[:500]}"
+        # Проверяем что мы не на странице логина
+        assert "/login" not in response.url or "username" not in response.text, \
+            f"Should be logged in, but got login page: {response.url}"
+        return client
+
+    def test_army_hire_page_accessible(self, web_client, db_session):
+        """Проверка: страница найма юнитов /army/armies/1/hire доступна."""
+        # Сначала проверим что армия с id=1 существует
+        army = db_session.query(Army).filter(Army.id == 1).first()
+        if not army:
+            pytest.skip("Army with id=1 does not exist")
+
+        response = web_client.get_page("/army/armies/1/hire")
+
+        # Должен вернуть 200, не 500 или редирект на логин
+        assert response.status_code == 200, \
+            f"Hire page should return 200, got {response.status_code}"
+
+        # Проверяем что это не страница логина
+        assert "/login" not in response.url, \
+            f"Should not redirect to login, redirected to: {response.url}"
+
+        # Проверяем что страница содержит ожидаемый контент
+        assert "Наём" in response.text or "hire" in response.text.lower() or "Юниты" in response.text, \
+            f"Page should contain hire-related content"
+
+    def test_armies_list_page_accessible(self, web_client):
+        """Проверка: страница списка армий /army/armies доступна."""
+        response = web_client.get_page("/army/armies")
+
+        assert response.status_code == 200, \
+            f"Armies list page should return 200, got {response.status_code}"
+        assert "/login" not in response.url, \
+            f"Should not redirect to login"
+
+    def test_army_detail_page_accessible(self, web_client, db_session):
+        """Проверка: страница деталей армии доступна."""
+        # Находим любую армию
+        army = db_session.query(Army).first()
+        if not army:
+            pytest.skip("No armies in database")
+
+        response = web_client.get_page(f"/army/armies/{army.id}")
+
+        assert response.status_code == 200, \
+            f"Army detail page should return 200, got {response.status_code}"
+
+
 def run_acceptance_tests():
     """Запуск приёмочных тестов."""
     exit_code = pytest.main([
