@@ -11,7 +11,7 @@ from datetime import datetime
 from decimal import Decimal
 
 from db.repository import Database
-from db.models import UserRaceUnitLimit, UnitLevel, UserRace, GameUser
+from db.models import UserRaceUnitLimit, UnitLevel, UserRace, GameUser, GameRace
 
 logger = logging.getLogger(__name__)
 
@@ -21,8 +21,8 @@ def accumulate_hourly_units(db: Database) -> int:
     Почасовое накопление юнитов для найма.
 
     Для каждого UserRaceUnitLimit с разблокированным уровнем:
-    - Вычисляет hourly_rate = daily_speed / 24
-    - Добавляет hourly_rate к accumulated_fraction
+    - Вычисляет количество пропущенных часов с момента последнего обновления
+    - Добавляет hourly_rate * hours_passed к accumulated_fraction
     - Когда accumulated_fraction >= 1, перемещает целую часть в available_count
 
     Args:
@@ -41,12 +41,23 @@ def accumulate_hourly_units(db: Database) -> int:
         ).all()
 
         for limit in limits:
+            # Вычисляем количество часов с момента последнего обновления
+            last_update = limit.last_accumulate_at or limit.created_at or now
+            hours_passed = (now - last_update).total_seconds() / 3600.0
+
+            # Если прошло меньше часа - пропускаем (будет обработано при следующем запуске)
+            # Максимум 168 часов (7 дней) для защиты от переполнения
+            if hours_passed < 1.0:
+                continue
+            hours_passed = min(hours_passed, 168.0)
+
             # Вычисляем почасовую скорость: daily_speed / 24
             hourly_rate = Decimal(str(limit.daily_speed)) / Decimal('24')
 
-            # Добавляем к накопленной дробной части
+            # Добавляем к накопленной дробной части с учётом пропущенных часов
             current_fraction = Decimal(str(limit.accumulated_fraction))
-            new_fraction = current_fraction + hourly_rate
+            rate_to_add = hourly_rate * Decimal(str(hours_passed))
+            new_fraction = current_fraction + rate_to_add
 
             # Выделяем целую часть для добавления к available_count
             units_to_add = int(new_fraction)
@@ -63,7 +74,7 @@ def accumulate_hourly_units(db: Database) -> int:
                     logger.info(
                         f"Accumulated {units_to_add} units for user_race {limit.user_race_id}, "
                         f"level {limit.unit_level_id}: available={limit.available_count}, "
-                        f"fraction={remaining_fraction:.6f}"
+                        f"fraction={remaining_fraction:.6f}, hours_passed={hours_passed:.2f}"
                     )
 
         session.commit()
@@ -206,8 +217,11 @@ def unlock_race_unit_level(db: Database, user_id: int, user_race_id: int, unit_l
         if limit.level_unlocked:
             return False, "Уровень уже разблокирован", None
 
-        # Проверяем кристаллы
-        cost = level.level_access_cost_gems
+        # Получаем расу для race-specific стоимости
+        race = user_race.race
+
+        # Проверяем кристаллы (используем стоимость из расы)
+        cost = race.get_level_unlock_cost(level.level)
         if user.crystals < cost:
             return False, f"Недостаточно кристаллов. Нужно: {cost}, есть: {user.crystals}", None
 
@@ -266,8 +280,12 @@ def upgrade_race_recruit_speed(db: Database, user_id: int, user_race_id: int, un
         if not limit.level_unlocked:
             return False, "Уровень не разблокирован", None
 
+        # Получаем расу для race-specific стоимости
+        race = user_race.race
+
         if use_gems:
-            cost = level.speed_upgrade_cost_gems
+            # Используем стоимость из расы
+            cost = race.get_speed_upgrade_cost(level.level)
             if user.crystals < cost:
                 return False, f"Недостаточно кристаллов. Нужно: {cost}, есть: {user.crystals}", None
             user.crystals -= cost

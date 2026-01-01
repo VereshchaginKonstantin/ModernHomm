@@ -176,6 +176,9 @@ class Game(Base):
     challenge_id = Column(Integer, ForeignKey('challenges.id', ondelete='SET NULL'), nullable=True)  # Ссылка на челлендж
     ai_player_id = Column(Integer, ForeignKey('game_users.id'), nullable=True)  # Кто из игроков - AI
 
+    # Подсчёт ходов без урона для механики ничьей
+    turns_without_damage = Column(Integer, nullable=False, default=0)  # Счётчик ходов без урона
+
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     started_at = Column(DateTime, nullable=True)  # Когда игра была принята
     completed_at = Column(DateTime, nullable=True)  # Когда игра завершилась
@@ -216,7 +219,8 @@ class BattleUnit(Base):
     position_y = Column(Integer, nullable=False)
 
     # Боевые характеристики
-    total_count = Column(Integer, nullable=False)  # Общее количество юнитов в группе
+    initial_count = Column(Integer, nullable=False, default=1)  # Начальное количество юнитов (для расчета наград)
+    total_count = Column(Integer, nullable=False)  # Текущее количество юнитов в группе
     remaining_hp = Column(Integer, nullable=False)  # Оставшиеся жизни у текущего юнита
     morale = Column(Numeric(10, 2), nullable=False, default=100)  # Кураж (100 = 100%, нейтральный)
     fatigue = Column(Numeric(10, 2), nullable=False, default=0)  # Усталость
@@ -338,6 +342,11 @@ class Challenge(Base):
     # Сложность AI
     ai_difficulty = Column(Enum(AIDifficulty, values_callable=lambda obj: [e.value for e in obj], name='ai_difficulty', create_type=False), nullable=False, default=AIDifficulty.NORMAL)
 
+    # Предустановленные шаблоны полей для разных размеров (опционально)
+    field_template_5x5_id = Column(Integer, ForeignKey('battle_field_templates.id', ondelete='SET NULL'), nullable=True)
+    field_template_7x7_id = Column(Integer, ForeignKey('battle_field_templates.id', ondelete='SET NULL'), nullable=True)
+    field_template_10x10_id = Column(Integer, ForeignKey('battle_field_templates.id', ondelete='SET NULL'), nullable=True)
+
     # Спрайт для отображения
     sprite_data = Column(LargeBinary, nullable=True)
     sprite_mime_type = Column(String(50), nullable=True)
@@ -351,6 +360,9 @@ class Challenge(Base):
 
     # Связи
     units = relationship("ChallengeUnit", back_populates="challenge", cascade="all, delete-orphan")
+    field_template_5x5 = relationship("BattleFieldTemplate", foreign_keys=[field_template_5x5_id])
+    field_template_7x7 = relationship("BattleFieldTemplate", foreign_keys=[field_template_7x7_id])
+    field_template_10x10 = relationship("BattleFieldTemplate", foreign_keys=[field_template_10x10_id])
 
     __table_args__ = (
         CheckConstraint('reward_gold >= 0', name='positive_reward_gold'),

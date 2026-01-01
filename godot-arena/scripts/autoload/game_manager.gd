@@ -5,6 +5,8 @@ signal game_state_updated(state: Dictionary)
 signal unit_actions_received(actions: Dictionary)
 signal move_completed(result: Dictionary)
 signal game_over(winner_id: int, winner_name: String)
+signal game_draw()  # Сигнал ничьей
+signal draw_warning(turns_without_damage: int, turns_until_draw: int)  # Предупреждение о ничьей
 signal turn_changed(current_player_id: int)
 signal error_occurred(message: String)
 signal players_loaded(players: Array)
@@ -268,16 +270,26 @@ func _on_api_response(data: Dictionary) -> void:
 		if old_current_player != 0 and old_current_player != game_state.current_player_id:
 			turn_changed.emit(game_state.current_player_id)
 
+		# Проверяем предупреждение о ничьей
+		var draw_warn = game_state.get("draw_warning")
+		if draw_warn != null:
+			draw_warning.emit(draw_warn.get("turns_without_damage", 0), draw_warn.get("turns_until_draw", 0))
+
 		# Проверяем конец игры
 		if game_state.get("is_game_over", false):
 			stop_polling()
-			var winner_id = game_state.get("winner_id", 0)
-			var winner_name = ""
-			if winner_id == game_state.get("player1_id"):
-				winner_name = game_state.get("player1_name", "Игрок 1")
+
+			# Проверяем ничью
+			if game_state.get("is_draw", false):
+				game_draw.emit()
 			else:
-				winner_name = game_state.get("player2_name", "Игрок 2")
-			game_over.emit(winner_id, winner_name)
+				var winner_id = game_state.get("winner_id", 0)
+				var winner_name = ""
+				if winner_id == game_state.get("player1_id"):
+					winner_name = game_state.get("player1_name", "Игрок 1")
+				else:
+					winner_name = game_state.get("player2_name", "Игрок 2")
+				game_over.emit(winner_id, winner_name)
 
 		game_state_updated.emit(game_state)
 

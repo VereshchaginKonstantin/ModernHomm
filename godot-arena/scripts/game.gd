@@ -143,6 +143,8 @@ func _ready() -> void:
 	GameManager.unit_actions_received.connect(_on_unit_actions_received)
 	GameManager.move_completed.connect(_on_move_completed)
 	GameManager.game_over.connect(_on_game_over)
+	GameManager.game_draw.connect(_on_game_draw)
+	GameManager.draw_warning.connect(_on_draw_warning)
 	GameManager.turn_changed.connect(_on_turn_changed)
 	GameManager.error_occurred.connect(_on_error)
 
@@ -2411,6 +2413,27 @@ func _on_game_over(winner_id: int, winner_name: String) -> void:
 		title.text = "ПОРАЖЕНИЕ"
 		title.add_theme_color_override("font_color", Color.RED)
 		message.text = winner_name + " одержал победу."
+
+func _on_game_draw() -> void:
+	# Устанавливаем флаг чтобы предотвратить обновления
+	is_game_over_displayed = true
+
+	# Очищаем поле боя
+	_clear_board()
+
+	game_over_overlay.visible = true
+
+	var title = game_over_overlay.get_node("VBox/Title")
+	var message = game_over_overlay.get_node("VBox/Message")
+
+	title.text = "НИЧЬЯ!"
+	title.add_theme_color_override("font_color", Color.GRAY)
+	message.text = "5 ходов без урона. Награды не начисляются."
+
+func _on_draw_warning(turns_without_damage: int, turns_until_draw: int) -> void:
+	# Показываем предупреждение о приближающейся ничьей
+	hint_label.text = "⚠️ %d ходов без урона! Ещё %d и ничья!" % [turns_without_damage, turns_until_draw]
+	hint_label.add_theme_color_override("font_color", Color.ORANGE)
 
 ## Очищает поле боя (удаляет все клетки и юнитов)
 func _clear_board() -> void:

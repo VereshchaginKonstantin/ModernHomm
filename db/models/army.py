@@ -18,11 +18,46 @@ class GameRace(Base):
     name = Column(String(255), nullable=False, unique=True)
     description = Column(Text, nullable=True)
     is_free = Column(Boolean, nullable=False, default=False)  # Бесплатная раса
+
+    # Стоимость разблокировки уровней (кристаллы) - JSON массив для уровней 1-7
+    # Формат: {"1": 0, "2": 0, "3": 50, "4": 100, "5": 200, "6": 500, "7": 1000}
+    level_unlock_costs = Column(Text, nullable=True)  # JSON
+
+    # Стоимость улучшения скорости найма (кристаллы) - JSON массив для уровней 1-7
+    # Формат: {"1": 1, "2": 10, "3": 10, "4": 10, "5": 10, "6": 10, "7": 10}
+    speed_upgrade_costs = Column(Text, nullable=True)  # JSON
+
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 
     # Связи
     race_units = relationship("RaceUnit", back_populates="race", cascade="all, delete-orphan")
+
+    def get_level_unlock_cost(self, level: int) -> int:
+        """Получить стоимость разблокировки уровня в кристаллах"""
+        import json
+        if not self.level_unlock_costs:
+            # Дефолтные значения из UnitLevel
+            defaults = {1: 0, 2: 0, 3: 50, 4: 100, 5: 200, 6: 500, 7: 1000}
+            return defaults.get(level, 0)
+        try:
+            costs = json.loads(self.level_unlock_costs)
+            return int(costs.get(str(level), 0))
+        except (json.JSONDecodeError, ValueError):
+            return 0
+
+    def get_speed_upgrade_cost(self, level: int) -> int:
+        """Получить стоимость улучшения скорости в кристаллах"""
+        import json
+        if not self.speed_upgrade_costs:
+            # Дефолтные значения из UnitLevel
+            defaults = {1: 1, 2: 10, 3: 10, 4: 10, 5: 10, 6: 10, 7: 10}
+            return defaults.get(level, 10)
+        try:
+            costs = json.loads(self.speed_upgrade_costs)
+            return int(costs.get(str(level), 10))
+        except (json.JSONDecodeError, ValueError):
+            return 10
 
     def __repr__(self):
         return f"<GameRace(id={self.id}, name={self.name}, is_free={self.is_free})>"

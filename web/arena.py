@@ -301,6 +301,21 @@ class GameState:
     def to_dict(self) -> dict:
         """Преобразовать в словарь для JSON"""
         game = self.game
+
+        # Определяем ничью: игра завершена и нет победителя
+        is_draw = game.status == GameStatus.COMPLETED and game.winner_id is None
+
+        # Данные для предупреждения о ничьей
+        turns_without_damage = game.turns_without_damage or 0
+        draw_warning = None
+        if turns_without_damage >= 2 and game.status == GameStatus.IN_PROGRESS:
+            turns_until_draw = 5 - turns_without_damage
+            draw_warning = {
+                'turns_without_damage': turns_without_damage,
+                'turns_until_draw': turns_until_draw,
+                'message': f'Внимание! {turns_without_damage} ходов без урона. Ещё {turns_until_draw} и будет ничья!'
+            }
+
         return {
             'game_id': game.id,
             'status': game.status.value,
@@ -316,6 +331,8 @@ class GameState:
             'current_player_id': game.current_player_id,
             'is_game_over': game.status == GameStatus.COMPLETED,
             'winner_id': game.winner_id,
+            'is_draw': is_draw,
+            'draw_warning': draw_warning,
             'is_challenge': game.is_challenge,  # Флаг PvE челленджа
             'challenge_id': game.challenge_id,  # ID челленджа если есть
             'units': self.units,
@@ -865,6 +882,16 @@ def api_public_game_state(game_id):
         game = session_db.query(Game).filter_by(id=game_id).first()
         if not game:
             return jsonify({'error': 'Game not found'}), 404
+
+        # Автоматически пропускаем ход юнитов без действий (башни без целей, заблокированные юниты)
+        if game.status == GameStatus.IN_PROGRESS and game.current_player_id:
+            game_engine = GameEngine(session_db)
+            auto_skipped = game_engine._auto_skip_inactive_units(game, game.current_player_id)
+
+            # Если все юниты текущего игрока пропустили ход - переключаем ход
+            if auto_skipped and game_engine._all_units_moved(game, game.current_player_id):
+                game_engine._switch_turn(game)
+                session_db.commit()
 
         game_state = GameState.from_game(game, session_db)
         return jsonify(game_state.to_dict())
@@ -2149,6 +2176,9 @@ def api_get_race_unit_limits(user_race_id):
         if not user_race:
             return jsonify({'error': 'Раса не найдена'}), 404
 
+        # Получаем расу для race-specific стоимостей
+        race = user_race.race
+
         # Получаем лимиты
         limits = session_db.query(UserRaceUnitLimit).filter_by(
             user_race_id=user_race_id
@@ -2164,18 +2194,23 @@ def api_get_race_unit_limits(user_race_id):
 
         result = []
         for limit in limits:
+            level = limit.unit_level.level
+            # Используем стоимости из расы (или дефолтные из UnitLevel если не заданы)
+            unlock_cost = race.get_level_unlock_cost(level)
+            speed_cost = race.get_speed_upgrade_cost(level)
+
             result.append({
                 'id': limit.id,
                 'unit_level_id': limit.unit_level_id,
-                'level': limit.unit_level.level,
+                'level': level,
                 'level_icon': limit.unit_level.icon,
                 'available_count': limit.available_count,
                 'daily_speed': limit.daily_speed,
                 'level_unlocked': limit.level_unlocked,
                 'accumulated_fraction': float(limit.accumulated_fraction),
-                'unlock_cost_gems': limit.unit_level.level_access_cost_gems,
+                'unlock_cost_gems': unlock_cost,
                 'speed_upgrade_cost': float(limit.unit_level.speed_upgrade_cost),
-                'speed_upgrade_cost_gems': limit.unit_level.speed_upgrade_cost_gems
+                'speed_upgrade_cost_gems': speed_cost
             })
 
         return jsonify({'limits': result})
@@ -2252,21 +2287,29 @@ def api_get_user_races_with_limits():
             for ru in race_units:
                 race_units_by_level[ru.unit_level_id] = ru.name
 
+            # Получаем race-specific стоимости
+            race = ur.race
+
             limits_data = []
             for limit in limits:
-                unit_name = race_units_by_level.get(limit.unit_level_id, f"Уровень {limit.unit_level.level}")
+                level = limit.unit_level.level
+                unit_name = race_units_by_level.get(limit.unit_level_id, f"Уровень {level}")
+                # Используем стоимости из расы
+                unlock_cost = race.get_level_unlock_cost(level)
+                speed_cost = race.get_speed_upgrade_cost(level)
+
                 limits_data.append({
                     'id': limit.id,
                     'unit_level_id': limit.unit_level_id,
-                    'level': limit.unit_level.level,
+                    'level': level,
                     'level_icon': limit.unit_level.icon,
                     'unit_name': unit_name,
                     'available_count': limit.available_count,
                     'daily_speed': limit.daily_speed,
                     'level_unlocked': limit.level_unlocked,
-                    'unlock_cost_gems': limit.unit_level.level_access_cost_gems,
+                    'unlock_cost_gems': unlock_cost,
                     'speed_upgrade_cost': float(limit.unit_level.speed_upgrade_cost),
-                    'speed_upgrade_cost_gems': limit.unit_level.speed_upgrade_cost_gems
+                    'speed_upgrade_cost_gems': speed_cost
                 })
 
             result.append({
@@ -2572,5 +2615,6 @@ def execute_ai_turn(game_id):
             result = game_engine.execute_ai_turn(game_id)
             return jsonify(result)
     except Exception as e:
-        logger.error(f"Error executing AI turn: {e}")
+        import traceback
+        logger.error(f"Error executing AI turn: {e}\n{traceback.format_exc()}")
         return jsonify({'error': 'Failed to execute AI turn'}), 500

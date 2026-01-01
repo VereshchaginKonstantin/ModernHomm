@@ -363,6 +363,9 @@ class GameEngine:
         player1 = self.db.query(GameUser).filter_by(id=game.player1_id).first()
         self._log_event(game.id, "game_started", f"Игра началась! Первый ход: {player1.username}")
 
+        # Автоматически пропустить ход юнитов, которые не могут действовать (башни без целей и т.д.)
+        self._auto_skip_inactive_units(game, game.current_player_id)
+
         self.db.commit()
         return True, "Игра начата! Ходит первый игрок"
 
@@ -735,6 +738,7 @@ class GameEngine:
 
         # Проверить, все ли юниты игрока мертвы
         turn_switched = False
+        damage_dealt = damage > 0 or counterattack_damage > 0
         winner_id = self._check_game_over(game)
         if winner_id:
             # Завершение игры - _complete_game создаст отдельный лог game_ended (будет последним)
@@ -743,8 +747,13 @@ class GameEngine:
         else:
             # Проверить, все ли юниты текущего игрока походили
             if self._all_units_moved(game, player_id):
-                self._switch_turn(game)
+                self._switch_turn(game, damage_dealt=damage_dealt)
                 turn_switched = True
+
+                # Проверяем условие ничьей после смены хода
+                is_draw, turns_without = self.check_draw_condition(game)
+                if is_draw:
+                    self.complete_game_as_draw(game)
 
         self.db.commit()
 
@@ -794,8 +803,13 @@ class GameEngine:
         # Проверить, все ли юниты походили
         turn_switched = False
         if self._all_units_moved(game, player_id):
-            self._switch_turn(game)
+            self._switch_turn(game, damage_dealt=False)  # Пропуск хода = нет урона
             turn_switched = True
+
+            # Проверяем условие ничьей после смены хода
+            is_draw, turns_without = self.check_draw_condition(game)
+            if is_draw:
+                self.complete_game_as_draw(game)
 
         game.last_move_at = datetime.utcnow()
         self.db.commit()
@@ -1120,6 +1134,7 @@ class GameEngine:
                 player_id=player.id,
                 position_x=x,
                 position_y=y,
+                initial_count=army_unit.count,
                 total_count=army_unit.count,
                 remaining_hp=health,
                 morale=100,  # Изначально 100 = коэффициент 1.0 (нейтральный)
@@ -1128,16 +1143,18 @@ class GameEngine:
             )
             self.db.add(battle_unit)
 
-    def _generate_obstacles(self, game: Game):
+    def _generate_obstacles(self, game: Game, preferred_template_id: int = None):
         """
         Генерировать препятствия на игровом поле.
 
+        Если указан preferred_template_id - используется он.
         Если есть активные шаблоны полей соответствующего размера,
         выбирается случайный шаблон и используются его препятствия.
         Иначе генерируются случайные препятствия.
 
         Args:
             game: Игра
+            preferred_template_id: Опциональный ID предпочтительного шаблона (для челленджей)
         """
         # Явно загружаем field, если relationship не подгружен
         field = game.field
@@ -1160,17 +1177,32 @@ class GameEngine:
                 occupied.add((battle_unit.position_x, battle_unit.position_y + 1))
                 occupied.add((battle_unit.position_x + 1, battle_unit.position_y + 1))
 
-        # Попробовать найти активный шаблон поля подходящего размера
-        templates = self.db.query(BattleFieldTemplate).filter(
-            BattleFieldTemplate.field_size_id == field.id,
-            BattleFieldTemplate.is_active == True
-        ).all()
+        # Попробовать найти шаблон поля
+        template = None
 
-        logger.info(f"Game {game.id}: Found {len(templates)} active templates for field_size_id={field.id}")
+        # Если указан предпочтительный шаблон - используем его
+        if preferred_template_id:
+            template = self.db.query(BattleFieldTemplate).filter(
+                BattleFieldTemplate.id == preferred_template_id,
+                BattleFieldTemplate.is_active == True
+            ).first()
+            if template:
+                logger.info(f"Game {game.id}: Using preferred template id={preferred_template_id}")
 
-        if templates:
-            # Выбираем случайный шаблон
-            template = random.choice(templates)
+        # Если предпочтительный не найден или не указан - ищем случайный
+        if not template:
+            templates = self.db.query(BattleFieldTemplate).filter(
+                BattleFieldTemplate.field_size_id == field.id,
+                BattleFieldTemplate.is_active == True
+            ).all()
+
+            logger.info(f"Game {game.id}: Found {len(templates)} active templates for field_size_id={field.id}")
+
+            if templates:
+                # Выбираем случайный шаблон
+                template = random.choice(templates)
+
+        if template:
             game.battle_field_template_id = template.id
 
             # Копируем препятствия из шаблона
@@ -1567,6 +1599,153 @@ class GameEngine:
 
         return targets
 
+    def _unit_can_act(self, game: Game, unit: BattleUnit) -> bool:
+        """
+        Проверить, может ли юнит совершить какое-либо действие (движение или атаку).
+
+        Башни (speed=0) могут только атаковать. Заблокированные юниты не могут двигаться.
+
+        Args:
+            game: Игра
+            unit: Юнит в бою
+
+        Returns:
+            bool: True, если юнит может что-то сделать
+        """
+        if self._count_alive_units(unit) == 0:
+            return False
+
+        unit_stats = self._get_unit_stats(unit)
+        speed = unit_stats.get('speed', 0) or 0
+
+        # Проверяем, есть ли доступные цели для атаки
+        targets = self._get_available_targets(game, unit)
+        if targets:
+            return True
+
+        # Если скорость 0 (башня) - не может двигаться
+        if speed == 0:
+            return False
+
+        # Проверяем, есть ли возможность двигаться
+        # (используем логику из AI - _get_possible_moves)
+        is_flying = unit_stats.get('is_flying', False)
+
+        # Получаем препятствия
+        obstacles = self.db.query(Obstacle).filter_by(game_id=game.id).all()
+        obstacle_positions = set()
+        for obs in obstacles:
+            for ox in range(obs.width or 1):
+                for oy in range(obs.height or 1):
+                    obstacle_positions.add((obs.position_x + ox, obs.position_y + oy))
+
+        # Получаем позиции всех юнитов
+        all_units = self.db.query(BattleUnit).filter(
+            BattleUnit.game_id == game.id,
+            BattleUnit.total_count > 0
+        ).all()
+        unit_positions = {}
+        for u in all_units:
+            unit_positions[(u.position_x, u.position_y)] = u
+            ru = u.race_unit or (u.army_unit.race_unit if u.army_unit else None)
+            if ru and ru.is_big:
+                unit_positions[(u.position_x + 1, u.position_y)] = u
+                unit_positions[(u.position_x, u.position_y + 1)] = u
+                unit_positions[(u.position_x + 1, u.position_y + 1)] = u
+
+        is_big = unit_stats.get('is_big', False)
+
+        # Проверяем хотя бы одну возможную позицию для перемещения
+        for dx in range(-speed, speed + 1):
+            for dy in range(-speed, speed + 1):
+                if abs(dx) + abs(dy) > speed or (dx == 0 and dy == 0):
+                    continue
+
+                new_x = unit.position_x + dx
+                new_y = unit.position_y + dy
+
+                # Проверяем границы поля
+                if new_x < 0 or new_y < 0:
+                    continue
+                if is_big:
+                    if new_x + 1 >= game.field.width or new_y + 1 >= game.field.height:
+                        continue
+                else:
+                    if new_x >= game.field.width or new_y >= game.field.height:
+                        continue
+
+                # Проверяем препятствия (летающие их игнорируют)
+                if not is_flying:
+                    if (new_x, new_y) in obstacle_positions:
+                        continue
+                    if is_big:
+                        if ((new_x + 1, new_y) in obstacle_positions or
+                            (new_x, new_y + 1) in obstacle_positions or
+                            (new_x + 1, new_y + 1) in obstacle_positions):
+                            continue
+
+                # Проверяем других юнитов
+                if (new_x, new_y) in unit_positions and unit_positions[(new_x, new_y)] != unit:
+                    continue
+                if is_big:
+                    conflict = False
+                    for ox, oy in [(1, 0), (0, 1), (1, 1)]:
+                        pos = (new_x + ox, new_y + oy)
+                        if pos in unit_positions and unit_positions[pos] != unit:
+                            conflict = True
+                            break
+                    if conflict:
+                        continue
+
+                # Нашли хотя бы одну позицию для перемещения
+                return True
+
+        return False
+
+    def _auto_skip_inactive_units(self, game: Game, player_id: int) -> List[Dict]:
+        """
+        Автоматически пропустить ход юнитов, которые не могут совершить никаких действий.
+        Применяет к ним эффекты (регенерация, яд).
+
+        Args:
+            game: Игра
+            player_id: ID игрока
+
+        Returns:
+            List[Dict]: Список автоматически пропущенных юнитов
+        """
+        skipped = []
+
+        # Получаем непоходивших юнитов игрока
+        units = self.db.query(BattleUnit).filter(
+            BattleUnit.game_id == game.id,
+            BattleUnit.player_id == player_id,
+            BattleUnit.has_moved == 0,
+            BattleUnit.total_count > 0
+        ).all()
+
+        for unit in units:
+            if not self._unit_can_act(game, unit):
+                unit_stats = self._get_unit_stats(unit)
+                unit.has_moved = 1
+
+                # Применяем эффекты к юниту
+                regeneration = unit_stats.get('regeneration_health', 0) or 0
+                if regeneration > 0:
+                    self._apply_regeneration(game, unit, regeneration)
+
+                if unit.poison_remaining_turns > 0:
+                    self._apply_poison_damage(game, unit)
+
+                skipped.append({
+                    'unit_id': unit.id,
+                    'unit_name': unit_stats['name'],
+                    'reason': 'Нет доступных действий'
+                })
+                self._log_event(game.id, "auto_skip", f"{unit_stats['name']} автоматически пропускает ход (нет доступных действий)")
+
+        return skipped
+
     def _all_units_moved(self, game: Game, player_id: int) -> bool:
         """
         Проверить, все ли юниты игрока походили
@@ -1586,13 +1765,20 @@ class GameEngine:
 
         return unmoved == 0
 
-    def _switch_turn(self, game: Game):
+    def _switch_turn(self, game: Game, damage_dealt: bool = False):
         """
         Переключить ход на другого игрока
 
         Args:
             game: Игра
+            damage_dealt: Был ли нанесен урон в этом ходу
         """
+        # Обновляем счётчик ходов без урона
+        if damage_dealt:
+            game.turns_without_damage = 0
+        else:
+            game.turns_without_damage = (game.turns_without_damage or 0) + 1
+
         # Сменить игрока
         if game.current_player_id == game.player1_id:
             game.current_player_id = game.player2_id
@@ -1612,10 +1798,62 @@ class GameEngine:
         # Применить эффекты начала хода для всех юнитов нового игрока
         self._apply_turn_start_effects(game, game.current_player_id)
 
+        # Автоматически пропустить ход юнитов, которые не могут действовать (башни без целей и т.д.)
+        self._auto_skip_inactive_units(game, game.current_player_id)
+
         # Добавить запись в лог о смене хода
         current_player = self.db.query(GameUser).filter_by(id=game.current_player_id).first()
         player_name = current_player.username if current_player else "Игрок"
         self._log_event(game.id, "turn_switch", f"Ход переходит к {player_name}")
+
+    def check_draw_condition(self, game: Game) -> Tuple[bool, int]:
+        """
+        Проверить условие ничьей (5 ходов без урона)
+
+        Args:
+            game: Игра
+
+        Returns:
+            Tuple[bool, int]: (is_draw, turns_without_damage)
+        """
+        turns = game.turns_without_damage or 0
+        return turns >= 5, turns
+
+    def complete_game_as_draw(self, game: Game) -> Dict:
+        """
+        Завершить игру ничьей. Никто не получает награды.
+        Для челленджей армия восстанавливается.
+
+        Args:
+            game: Игра
+
+        Returns:
+            Dict с информацией о ничьей
+        """
+        game.status = GameStatus.COMPLETED
+        game.winner_id = None  # Ничья - нет победителя
+        game.completed_at = datetime.utcnow()
+
+        # Для челленджей: не списываем юнитов (армия восстанавливается)
+        # Для обычных игр: тоже не списываем - это ничья
+        # Поэтому _save_battle_units_damage НЕ вызываем
+
+        self._log_event(game.id, "game_draw",
+                        "⚖️ НИЧЬЯ! 5 ходов подряд без урона. Награды не начисляются.")
+
+        player1 = self.db.query(GameUser).filter_by(id=game.player1_id).first()
+        player2 = self.db.query(GameUser).filter_by(id=game.player2_id).first()
+
+        logger.info(f"Игра #{game.id} завершена ничьей: {player1.username} vs {player2.username}")
+
+        self.db.commit()
+
+        return {
+            'is_draw': True,
+            'message': 'Ничья! 5 ходов без урона. Награды не начисляются.',
+            'player1': player1.username,
+            'player2': player2.username
+        }
 
     def _apply_turn_start_effects(self, game: Game, player_id: int):
         """
@@ -1867,6 +2105,11 @@ class GameEngine:
 
         for battle_unit in game.battle_units:
             army_unit = battle_unit.army_unit
+
+            # Пропускаем юнитов AI (у них нет army_unit)
+            if army_unit is None:
+                continue
+
             army = army_unit.army
             unit_stats = self._get_unit_stats(battle_unit)
 
@@ -1956,7 +2199,8 @@ class GameEngine:
             unit_stats = self._get_unit_stats(battle_unit)
             unit_price = unit_stats['price']
             unit_name = unit_stats['name']
-            initial_count = battle_unit.army_unit.count
+            # Используем initial_count из BattleUnit (сохраняется при создании игры)
+            initial_count = battle_unit.initial_count
             alive_count = self._count_alive_units(battle_unit)
             killed_count = initial_count - alive_count
 
@@ -2008,13 +2252,20 @@ class GameEngine:
         self.db.commit()
         logger.info(f"Игра #{game.id} успешно завершена")
 
+        # Если это челлендж - начисляем награды и записываем прохождение
+        challenge_result = None
+        if game.is_challenge and game.challenge_id:
+            challenge_result = self.complete_challenge(game.id, winner_id)
+            logger.info(f"Challenge completed: {challenge_result}")
+
         # Вернуть награду и статистику
         stats = {
             'killed_enemy_value': killed_enemy_value,
             'lost_own_value': lost_own_value,
             'net_profit': net_profit,
             'killed_enemy_details': killed_enemy_details,
-            'lost_own_details': lost_own_details
+            'lost_own_details': lost_own_details,
+            'challenge_result': challenge_result
         }
 
         return reward, stats
@@ -2129,6 +2380,7 @@ class GameEngine:
                 player_id=player_id,
                 position_x=0,
                 position_y=player_y,
+                initial_count=au.count,
                 total_count=au.count,
                 remaining_hp=ru.health,
                 morale=100,  # Изначально 100 = коэффициент 1.0 (нейтральный)
@@ -2160,6 +2412,7 @@ class GameEngine:
                 player_id=ai_player.id,
                 position_x=field.width - 1 if not is_big else field.width - 2,
                 position_y=ai_y,
+                initial_count=cu.count,
                 total_count=cu.count,
                 remaining_hp=ru.health,
                 morale=100,  # Изначально 100 = коэффициент 1.0 (нейтральный)
@@ -2170,8 +2423,17 @@ class GameEngine:
             session.add(battle_unit)
             ai_y += height_needed
 
-        # Генерируем препятствия (используем тот же метод что и для обычных игр)
-        self._generate_obstacles(game)
+        # Выбираем предустановленный шаблон поля для челленджа (если задан)
+        preferred_template_id = None
+        if field_size == 5 and challenge.field_template_5x5_id:
+            preferred_template_id = challenge.field_template_5x5_id
+        elif field_size == 7 and challenge.field_template_7x7_id:
+            preferred_template_id = challenge.field_template_7x7_id
+        elif field_size == 10 and challenge.field_template_10x10_id:
+            preferred_template_id = challenge.field_template_10x10_id
+
+        # Генерируем препятствия (используем шаблон из челленджа или случайный)
+        self._generate_obstacles(game, preferred_template_id)
 
         # Логируем начало игры
         self._log_event(
@@ -2179,6 +2441,9 @@ class GameEngine:
             "challenge_start",
             f"Челлендж '{challenge.name}' начат! Сложность: {challenge.ai_difficulty.value}"
         )
+
+        # Автоматически пропустить ход юнитов, которые не могут действовать (башни без целей и т.д.)
+        self._auto_skip_inactive_units(game, game.current_player_id)
 
         session.commit()
         logger.info(f"Challenge game #{game.id} created: player={player_id}, challenge={challenge_id}")
@@ -2430,7 +2695,7 @@ class GameEngine:
             # Если есть unit_id - пропускаем ход конкретного юнита
             unit_id = action.get('unit_id')
             if unit_id:
-                result = self.skip_unit_turn(game_id, ai_player_id, unit_id)
+                success, message, turn_switched = self.skip_unit_turn(game_id, ai_player_id, unit_id)
             else:
                 # Пропускаем ход всех непоходивших юнитов
                 ai_units = self.db.query(BattleUnit).filter_by(
@@ -2438,27 +2703,27 @@ class GameEngine:
                     player_id=ai_player_id,
                     has_moved=0
                 ).filter(BattleUnit.total_count > 0).all()
-                result = (True, "All units skipped", False)
+                success, message, turn_switched = True, "All units skipped", False
                 for unit in ai_units:
-                    result = self.skip_unit_turn(game_id, ai_player_id, unit.id)
-            return {'success': True, 'action': 'skip', 'result': result}
+                    success, message, turn_switched = self.skip_unit_turn(game_id, ai_player_id, unit.id)
+            return {'success': success, 'action': 'skip', 'message': message, 'turn_switched': turn_switched}
 
         elif action['action'] == 'move':
-            result = self.move_unit(
+            success, message, turn_switched = self.move_unit(
                 game_id, ai_player_id,
                 action['unit_id'],
                 action['target_x'],
                 action['target_y']
             )
-            return {'success': True, 'action': 'move', 'result': result}
+            return {'success': success, 'action': 'move', 'message': message, 'turn_switched': turn_switched, 'unit_id': action['unit_id']}
 
         elif action['action'] == 'attack':
-            result = self.attack(
+            success, message, turn_switched = self.attack(
                 game_id, ai_player_id,
                 action['unit_id'],
                 action['target_id']
             )
-            return {'success': True, 'action': 'attack', 'result': result}
+            return {'success': success, 'action': 'attack', 'message': message, 'turn_switched': turn_switched, 'unit_id': action['unit_id']}
 
         return {'success': False, 'error': 'Unknown action'}
 

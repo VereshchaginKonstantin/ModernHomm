@@ -567,6 +567,26 @@ EDIT_RACE_TEMPLATE = """
                 <label for="is_free" style="margin-bottom: 0;">Бесплатная раса</label>
             </div>
 
+            <h3 style="margin-top: 30px; color: #ffd700;">💎 Стоимость разблокировки уровней (кристаллы)</h3>
+            <div style="display: grid; grid-template-columns: repeat(7, 1fr); gap: 10px; margin-bottom: 20px;">
+                {% for lvl in range(1, 8) %}
+                <div class="form-group" style="margin-bottom: 0;">
+                    <label style="font-size: 12px;">Ур. {{ lvl }}</label>
+                    <input type="number" name="unlock_cost_{{ lvl }}" min="0" value="{{ level_unlock_costs.get(lvl, 0) }}" style="width: 100%;">
+                </div>
+                {% endfor %}
+            </div>
+
+            <h3 style="color: #ffd700;">⚡ Стоимость +1 скорости найма (кристаллы)</h3>
+            <div style="display: grid; grid-template-columns: repeat(7, 1fr); gap: 10px; margin-bottom: 20px;">
+                {% for lvl in range(1, 8) %}
+                <div class="form-group" style="margin-bottom: 0;">
+                    <label style="font-size: 12px;">Ур. {{ lvl }}</label>
+                    <input type="number" name="speed_cost_{{ lvl }}" min="0" value="{{ speed_upgrade_costs.get(lvl, 10) }}" style="width: 100%;">
+                </div>
+                {% endfor %}
+            </div>
+
             <button type="submit" class="btn btn-success">💾 Сохранить</button>
             <a href="{{ url_for('races.races_list') }}" class="btn btn-secondary">Назад</a>
         </form>
@@ -1148,6 +1168,8 @@ def create_race():
 @admin_required
 def edit_race(race_id):
     """Редактировать расу"""
+    import json
+
     with db.get_session() as session_db:
         race = session_db.query(GameRace).filter_by(id=race_id).first()
         if not race:
@@ -1157,6 +1179,17 @@ def edit_race(race_id):
             race.name = request.form.get('name')
             race.description = request.form.get('description')
             race.is_free = request.form.get('is_free') == 'on'
+
+            # Сохраняем стоимости разблокировки и апгрейда скорости
+            unlock_costs = {}
+            speed_costs = {}
+            for lvl in range(1, 8):
+                unlock_costs[str(lvl)] = int(request.form.get(f'unlock_cost_{lvl}', 0))
+                speed_costs[str(lvl)] = int(request.form.get(f'speed_cost_{lvl}', 10))
+
+            race.level_unlock_costs = json.dumps(unlock_costs)
+            race.speed_upgrade_costs = json.dumps(speed_costs)
+
             session_db.commit()
             return redirect(url_for('races.edit_race', race_id=race_id))
 
@@ -1164,7 +1197,37 @@ def edit_race(race_id):
         units = session_db.query(RaceUnit).filter_by(race_id=race_id).all()
         units_by_level = {u.unit_level.level: u for u in units if u.unit_level}
 
-        return render_template_string(EDIT_RACE_TEMPLATE, race=race, units_by_level=units_by_level)
+        # Парсим стоимости для шаблона
+        level_unlock_costs = {}
+        speed_upgrade_costs = {}
+        try:
+            if race.level_unlock_costs:
+                parsed = json.loads(race.level_unlock_costs)
+                level_unlock_costs = {int(k): v for k, v in parsed.items()}
+        except (json.JSONDecodeError, ValueError):
+            pass
+
+        try:
+            if race.speed_upgrade_costs:
+                parsed = json.loads(race.speed_upgrade_costs)
+                speed_upgrade_costs = {int(k): v for k, v in parsed.items()}
+        except (json.JSONDecodeError, ValueError):
+            pass
+
+        # Дефолтные значения
+        for lvl in range(1, 8):
+            if lvl not in level_unlock_costs:
+                level_unlock_costs[lvl] = {1: 0, 2: 0, 3: 50, 4: 100, 5: 200, 6: 500, 7: 1000}.get(lvl, 0)
+            if lvl not in speed_upgrade_costs:
+                speed_upgrade_costs[lvl] = {1: 1, 2: 10, 3: 10, 4: 10, 5: 10, 6: 10, 7: 10}.get(lvl, 10)
+
+        return render_template_string(
+            EDIT_RACE_TEMPLATE,
+            race=race,
+            units_by_level=units_by_level,
+            level_unlock_costs=level_unlock_costs,
+            speed_upgrade_costs=speed_upgrade_costs
+        )
 
 
 @races_bp.route('/<int:race_id>/delete', methods=['POST'])
@@ -2310,12 +2373,6 @@ EDIT_UNIT_LEVEL_TEMPLATE = """
             </div>
 
             <div class="form-group">
-                <label>Стоимость улучшения скорости (кристаллы)</label>
-                <input type="number" name="speed_upgrade_cost_gems" min="0" value="{{ level.speed_upgrade_cost_gems }}" required>
-                <small style="display: block; color: #aaa; margin-top: 5px;">Стоимость +1 к скорости найма в кристаллах</small>
-            </div>
-
-            <div class="form-group">
                 <label>Стоимость разблокировки уровня (кристаллы)</label>
                 <input type="number" name="level_access_cost_gems" min="0" value="{{ level.level_access_cost_gems }}" required>
                 <small style="display: block; color: #aaa; margin-top: 5px;">Стоимость разблокировки найма юнитов этого уровня</small>
@@ -2356,7 +2413,6 @@ def edit_unit_level(level_id):
             # Параметры найма
             level.daily_recruit_speed = int(request.form.get('daily_recruit_speed', 1))
             level.speed_upgrade_cost = float(request.form.get('speed_upgrade_cost', 100))
-            level.speed_upgrade_cost_gems = int(request.form.get('speed_upgrade_cost_gems', 10))
             level.level_access_cost_gems = int(request.form.get('level_access_cost_gems', 0))
             session_db.commit()
             return redirect(url_for('races.unit_levels_list'))

@@ -7,7 +7,7 @@ from flask import Blueprint, render_template_string, request, redirect, url_for,
 import os
 import json
 import base64
-from db.models import Challenge, ChallengeUnit, ChallengeCompletion, AIDifficulty, GameRace, RaceUnit
+from db.models import Challenge, ChallengeUnit, ChallengeCompletion, AIDifficulty, GameRace, RaceUnit, BattleFieldTemplate, Field
 from db.repository import Database
 
 # Database connection
@@ -603,6 +603,53 @@ CHALLENGE_FORM_TEMPLATE = """
                     </div>
                 </div>
 
+                <!-- Секция предустановленных полей -->
+                <div class="army-section">
+                    <div class="army-title">
+                        <span>🗺️</span>
+                        <span>Предустановленные шаблоны полей (опционально)</span>
+                    </div>
+                    <p style="color:#666; font-size:13px; margin-bottom:15px;">
+                        Если выбран шаблон - он будет использоваться для челленджа вместо случайного.
+                        Шаблон выбирается в зависимости от размера поля (определяется автоматически по размеру армий).
+                    </p>
+                    <div class="form-row-3">
+                        <div class="form-group">
+                            <label>Шаблон для поля 5x5</label>
+                            <select name="field_template_5x5_id">
+                                <option value="">-- Случайный --</option>
+                                {% for template in field_templates_5x5 %}
+                                <option value="{{ template.id }}" {{ 'selected' if challenge and challenge.field_template_5x5_id == template.id else '' }}>
+                                    {{ template.name }}
+                                </option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>Шаблон для поля 7x7</label>
+                            <select name="field_template_7x7_id">
+                                <option value="">-- Случайный --</option>
+                                {% for template in field_templates_7x7 %}
+                                <option value="{{ template.id }}" {{ 'selected' if challenge and challenge.field_template_7x7_id == template.id else '' }}>
+                                    {{ template.name }}
+                                </option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>Шаблон для поля 10x10</label>
+                            <select name="field_template_10x10_id">
+                                <option value="">-- Случайный --</option>
+                                {% for template in field_templates_10x10 %}
+                                <option value="{{ template.id }}" {{ 'selected' if challenge and challenge.field_template_10x10_id == template.id else '' }}>
+                                    {{ template.name }}
+                                </option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                    </div>
+                </div>
+
                 <!-- Секция армии AI -->
                 <div class="army-section">
                     <div class="army-title">
@@ -768,6 +815,11 @@ def create_challenge():
                 flash('Название челленджа обязательно', 'error')
                 return redirect(url_for('challenges.create_challenge'))
 
+            # Обрабатываем предустановленные шаблоны полей
+            ft_5x5 = request.form.get('field_template_5x5_id', '').strip()
+            ft_7x7 = request.form.get('field_template_7x7_id', '').strip()
+            ft_10x10 = request.form.get('field_template_10x10_id', '').strip()
+
             # Создаём челлендж
             challenge = Challenge(
                 name=name,
@@ -776,7 +828,10 @@ def create_challenge():
                 reward_gems=int(request.form.get('reward_gems', 0)),
                 ai_difficulty=AIDifficulty(request.form.get('ai_difficulty', 'normal')),
                 is_active=request.form.get('is_active') == '1',
-                sort_order=int(request.form.get('sort_order', 0))
+                sort_order=int(request.form.get('sort_order', 0)),
+                field_template_5x5_id=int(ft_5x5) if ft_5x5 else None,
+                field_template_7x7_id=int(ft_7x7) if ft_7x7 else None,
+                field_template_10x10_id=int(ft_10x10) if ft_10x10 else None
             )
 
             # Обрабатываем спрайт
@@ -808,12 +863,35 @@ def create_challenge():
         # GET - показать форму
         races = session.query(GameRace).order_by(GameRace.name).all()
 
+        # Получаем шаблоны полей для каждого размера
+        field_5x5 = session.query(Field).filter_by(width=5, height=5).first()
+        field_7x7 = session.query(Field).filter_by(width=7, height=7).first()
+        field_10x10 = session.query(Field).filter_by(width=10, height=10).first()
+
+        field_templates_5x5 = session.query(BattleFieldTemplate).filter(
+            BattleFieldTemplate.field_size_id == field_5x5.id,
+            BattleFieldTemplate.is_active == True
+        ).order_by(BattleFieldTemplate.name).all() if field_5x5 else []
+
+        field_templates_7x7 = session.query(BattleFieldTemplate).filter(
+            BattleFieldTemplate.field_size_id == field_7x7.id,
+            BattleFieldTemplate.is_active == True
+        ).order_by(BattleFieldTemplate.name).all() if field_7x7 else []
+
+        field_templates_10x10 = session.query(BattleFieldTemplate).filter(
+            BattleFieldTemplate.field_size_id == field_10x10.id,
+            BattleFieldTemplate.is_active == True
+        ).order_by(BattleFieldTemplate.name).all() if field_10x10 else []
+
         return render_template_string(
             CHALLENGE_FORM_TEMPLATE,
             challenge=None,
             races=races,
             selected_units={},
             difficulties=AI_DIFFICULTIES,
+            field_templates_5x5=field_templates_5x5,
+            field_templates_7x7=field_templates_7x7,
+            field_templates_10x10=field_templates_10x10,
             active_page='challenges'
         )
 
@@ -836,6 +914,14 @@ def edit_challenge(challenge_id):
             challenge.ai_difficulty = AIDifficulty(request.form.get('ai_difficulty', 'normal'))
             challenge.is_active = request.form.get('is_active') == '1'
             challenge.sort_order = int(request.form.get('sort_order', 0))
+
+            # Обрабатываем предустановленные шаблоны полей
+            ft_5x5 = request.form.get('field_template_5x5_id', '').strip()
+            ft_7x7 = request.form.get('field_template_7x7_id', '').strip()
+            ft_10x10 = request.form.get('field_template_10x10_id', '').strip()
+            challenge.field_template_5x5_id = int(ft_5x5) if ft_5x5 else None
+            challenge.field_template_7x7_id = int(ft_7x7) if ft_7x7 else None
+            challenge.field_template_10x10_id = int(ft_10x10) if ft_10x10 else None
 
             # Обрабатываем спрайт
             sprite = request.files.get('sprite')
@@ -868,12 +954,35 @@ def edit_challenge(challenge_id):
         # Собираем выбранных юнитов
         selected_units = {cu.race_unit_id: cu.count for cu in challenge.units}
 
+        # Получаем шаблоны полей для каждого размера
+        field_5x5 = session.query(Field).filter_by(width=5, height=5).first()
+        field_7x7 = session.query(Field).filter_by(width=7, height=7).first()
+        field_10x10 = session.query(Field).filter_by(width=10, height=10).first()
+
+        field_templates_5x5 = session.query(BattleFieldTemplate).filter(
+            BattleFieldTemplate.field_size_id == field_5x5.id,
+            BattleFieldTemplate.is_active == True
+        ).order_by(BattleFieldTemplate.name).all() if field_5x5 else []
+
+        field_templates_7x7 = session.query(BattleFieldTemplate).filter(
+            BattleFieldTemplate.field_size_id == field_7x7.id,
+            BattleFieldTemplate.is_active == True
+        ).order_by(BattleFieldTemplate.name).all() if field_7x7 else []
+
+        field_templates_10x10 = session.query(BattleFieldTemplate).filter(
+            BattleFieldTemplate.field_size_id == field_10x10.id,
+            BattleFieldTemplate.is_active == True
+        ).order_by(BattleFieldTemplate.name).all() if field_10x10 else []
+
         return render_template_string(
             CHALLENGE_FORM_TEMPLATE,
             challenge=challenge,
             races=races,
             selected_units=selected_units,
             difficulties=AI_DIFFICULTIES,
+            field_templates_5x5=field_templates_5x5,
+            field_templates_7x7=field_templates_7x7,
+            field_templates_10x10=field_templates_10x10,
             active_page='challenges'
         )
 

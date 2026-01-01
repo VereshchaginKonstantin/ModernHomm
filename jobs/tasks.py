@@ -77,6 +77,7 @@ def hourly_recruit_accumulate(self):
     """
     Hourly unit recruitment accumulation.
     Runs every hour to add units based on daily_speed / 24.
+    Compensates for missed hours since last update.
     """
     job_name = 'hourly_recruit_accumulate'
     log_id = log_job_start(job_name)
@@ -93,12 +94,23 @@ def hourly_recruit_accumulate(self):
             ).all()
 
             for limit in limits:
+                # Calculate hours passed since last update
+                last_update = limit.last_accumulate_at or limit.created_at or now
+                hours_passed = (now - last_update).total_seconds() / 3600.0
+
+                # Skip if less than 1 hour passed (will be processed in next run)
+                # Maximum 168 hours (7 days) to prevent overflow
+                if hours_passed < 1.0:
+                    continue
+                hours_passed = min(hours_passed, 168.0)
+
                 # Calculate hourly rate: daily_speed / 24
                 hourly_rate = Decimal(str(limit.daily_speed)) / Decimal('24')
 
-                # Add to accumulated fraction
+                # Add to accumulated fraction with hours compensation
                 current_fraction = Decimal(str(limit.accumulated_fraction))
-                new_fraction = current_fraction + hourly_rate
+                rate_to_add = hourly_rate * Decimal(str(hours_passed))
+                new_fraction = current_fraction + rate_to_add
 
                 # Extract whole units to add to available_count
                 units_to_add = int(new_fraction)

@@ -246,18 +246,12 @@ func _create_level_panel(user_race_id: int, limit: Dictionary) -> PanelContainer
 		unlock_btn.pressed.connect(_on_unlock_level.bind(user_race_id, limit.get("unit_level_id", 0)))
 		buttons_vbox.add_child(unlock_btn)
 	else:
-		# Кнопки улучшения скорости
+		# Кнопка улучшения скорости (только за монеты)
 		var upgrade_coins_btn = Button.new()
-		upgrade_coins_btn.text = "+1 скор. (%.0f монет)" % speed_cost_coins
+		upgrade_coins_btn.text = "+1 скорость найма (%.0f монет)" % speed_cost_coins
 		upgrade_coins_btn.custom_minimum_size = Vector2(200, 35)
 		upgrade_coins_btn.pressed.connect(_on_upgrade_speed.bind(user_race_id, limit.get("unit_level_id", 0), false))
 		buttons_vbox.add_child(upgrade_coins_btn)
-
-		var upgrade_gems_btn = Button.new()
-		upgrade_gems_btn.text = "+1 скор. (%d крист.)" % speed_cost_gems
-		upgrade_gems_btn.custom_minimum_size = Vector2(200, 35)
-		upgrade_gems_btn.pressed.connect(_on_upgrade_speed.bind(user_race_id, limit.get("unit_level_id", 0), true))
-		buttons_vbox.add_child(upgrade_gems_btn)
 
 	return panel
 
